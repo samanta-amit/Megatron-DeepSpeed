@@ -2,8 +2,11 @@
 
 """Pretrain GPT"""
 
+import os
 import torch
 import math
+# import logging
+
 from functools import partial
 from megatron import get_args
 from megatron import print_rank_0
@@ -18,25 +21,125 @@ from megatron.training import pretrain
 from megatron.utils import get_ltor_masks_and_position_ids
 from megatron.utils import average_losses_across_data_parallel_group
 from megatron.arguments import core_transformer_config_from_args
+from megatron.utils import (
+    report_memory,
+    throughput_calculator,
+    checkpoint_throughput_calculator
+)
+from pathlib import Path
 
 import deepspeed
 from deepspeed.runtime.utils import see_memory_usage
 from deepspeed.accelerator.real_accelerator import get_accelerator
-import os
 import subprocess
+import wandb
 
+import time
 from torch import nn
 import torch.nn.functional as F
+
+# from ezpz import get_logger
+from ezpz.dist import setup_torch, get_world_size
+
+RANK = setup_torch(
+    backend='deepspeed',
+    port='5432',
+)
+WORLD_SIZE = get_world_size()
+LEVEL = "DEBUG" if RANK == 0 else "CRITICAL"
+
+
+# os.environ['']
+# wblogger = logging.getLogger("wandb")
+# wblogger.setLevel(logging.DEBUG)
+
+# log = get_logger(__name__, level=LEVEL)
+#
+# log.critical(f"Hello from rank: {RANK} / {WORLD_SIZE} !")
+
+import socket
+from typing import Optional
+# log.critical(f"Setting up W&B from rank: {RANK} with {wb_project_name}")
+
+
+def setup_wandb(project_name: Optional[str] = None):
+    print(f"Setting up W&B from: {RANK}")
+    project_name = (
+        os.environ.get('WB_PROJECT', 'GenSLM-Megatron-DS')
+        if project_name is None else project_name
+    )
+    print(f"Setting up wandb from rank: {RANK}")
+    print(f"Using: WB PROJECT: {project_name}")
+    # if get_rank() == 0:
+    # tensorboard_dir = args.tensorboard_dir
+    tensorboard_dir = None
+    # if config is None:
+    tensorboard_dir = os.environ.get('TENSORBOARD_DIR', None)
+    # else:
+    #     tensorboard_dir = (
+    #         config.get(
+    #             'tensorboard_dir',
+    #             None,  # os.getcwd()
+    #         )
+    #     )
+    if tensorboard_dir is not None:
+        print(f'Patching tensorboard from {tensorboard_dir}')
+        wandb.tensorboard.patch(root_logdir=tensorboard_dir)
+    # wbrun_id = wandb.util.generate_id()
+    current_time = time.time()
+    # local_time = time.localtime(current_time)
+    # if wandb.run is None:
+    wandb.init(
+        resume='allow',
+        sync_tensorboard=(tensorboard_dir is not None),  # True,
+        project=(project_name if project_name is not None else None),
+        # dir=(tensorboard_dir if tensorboard_dir is not None else None),
+    )
+    assert wandb.run is not None
+    print(f"W&B RUN: [{wandb.run.name}]({wandb.run.url})")
+    wandb.run.config.update({'current_time': current_time})
+    model_size = os.environ.get('MODEL_SIZE', None)
+    wandb.run.config.update({'world_size': get_world_size()})
+    # if config is not None:
+    #     wandb.run.config.update(config)
+    env = {
+        k: v for k, v in dict(os.environ).items()
+        if not k.startswith('_ModuleTable')
+    }
+    _ = env.pop('LS_COLORS', None)
+    _ = env.pop('PS1', None)
+    wandb.run.config.update({'env': env})
+    hostname = socket.gethostbyaddr(socket.gethostname())[0]
+    if hostname.startswith('theta'):
+        wandb.run.config.update({'machine': 'ThetaGPU'})
+    elif hostname.startswith('x3'):
+        wandb.run.config.update({'machine': 'Polaris'})
+    elif hostname.startswith('x1'):
+        wandb.run.config.update({'machine': 'Sunspot'})
+    elif hostname.startswith('nid'):
+        wandb.run.config.update({'machine': 'Perlmutter'})
+    elif hostname.startswith('login'):
+        wandb.run.config.update({'machine': 'NERSC'})
+    else:
+        wandb.run.config.update({'machine': hostname})
+    if model_size is not None:
+        wandb.run.config.update({'MODEL_SIZE': model_size})
 
 
 def model_provider(pre_process=True, post_process=True):
     """Build the model."""
-
     print_rank_0('building GPT model ...')
-    see_memory_usage(f"Before Building Model", force=True)
-
+    see_memory_usage("Before Building Model", force=True)
     args = get_args()
     config = core_transformer_config_from_args(args)
+    # args = get_args()
+    # timers = get_timers()
+    if wandb.run is not None:
+        print(f"Updating WandB run: [{wandb.run.name}]({wandb.run.url})")
+        wandb.run.config.update({"args": vars(args)})
+    if RANK == 0:
+        git_ds_info()
+
     with deepspeed.zero.Init(sequence_data_parallel_group=mpu.get_sequence_data_parallel_group(),
                              remote_device=None if args.remote_device == 'none' else args.remote_device,
                              config_dict_or_path=args.deepspeed_config,
@@ -92,7 +195,21 @@ def model_provider(pre_process=True, post_process=True):
                 pre_process=pre_process,
                 post_process=post_process
             )
-    see_memory_usage(f"After Building Model", force=True)
+    num_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    # print_rank_0('\n ------------------------ ')
+    # print_rank_0(f'num of parameters {num_params}')
+    # print_rank_0('------------------------\n ')
+    print_rank_0(80 * '-')
+    print_rank_0(f"Number of parameters in model: {num_params}")
+    print_rank_0(80 * '-')
+    see_memory_usage("After Building Model", force=True)
+    if wandb.run is not None:
+        wandb.run.watch(
+            model,
+            log='all',
+            log_graph=True,
+        )
+        wandb.run.config.update({'num_params': num_params})
     return model
 
 
@@ -118,7 +235,8 @@ def get_batch(data_iterator):
     tokens = tokens_[:, :-1].contiguous()
 
     # Get the masks and postition ids.
-    skip_mask = args.use_flash_attn or args.use_flash_attn_triton
+    skip_mask = hasattr(args, 'use_flash_attn') or hasattr(args, 'flash_attn_triton')
+    # skip_mask = args.use_flash_attn or args.use_flash_attn_triton
     attention_mask, loss_mask, position_ids = get_ltor_masks_and_position_ids(
         tokens,
         tokenizer.eod,
@@ -357,11 +475,91 @@ def git_ds_info():
     print(f'**** Git info for Megatron: git_hash={git_hash} git_branch={git_branch} ****')
 
 
+def main():
+    if RANK == 0:
+        setup_wandb()
+
+    model = pretrain(
+        train_valid_test_datasets_provider,
+        model_provider,
+        ModelType.encoder_or_decoder,
+        forward_step,
+        args_defaults={'tokenizer_type': 'GPT2BPETokenizer'},
+        data_post_process=data_post_process
+    )
+    # # from megatron.training import get_model
+    # if wandb.run is not None:
+    #     args = get_args()
+    #     timers = get_timers()
+    #     # model = get_model(model_provider, ModelType.encoder_or_decoder)
+    #     elapsed_time = timers('interval-time').elapsed(barrier=True)
+    #     total_iterations = os.environ.get(
+    #         "TOTAL_ITERATIONS",
+    #         (args.train_iters + args.eval_iters)
+    #     )
+    #     seq_len = args.seq_length
+    #     elapsed_time_per_iteration = elapsed_time / total_iterations
+    #     if model is not None:
+    #         samples_per_sec, tflops, approx_params_in_billions = throughput_calculator(
+    #             model,
+    #             args,
+    #             elapsed_time,
+    #             total_iterations,
+    #         )
+    #         # Compute throughput.
+    #         samples_per_sec_per_replica = samples_per_sec / args.data_parallel_size
+    #         tokens_per_sec = samples_per_sec * seq_len
+    #         tokens_per_sec_per_replica = tokens_per_sec / args.data_parallel_size
+    #         sample_consumption_rate = args.consumed_train_samples / elapsed_time
+    #         token_consumption_rate = args.consumed_train_tokens / elapsed_time
+    #         # Tensorboard values.
+    #         tdata = {
+    #             # 'iteration': iteration,
+    #             'consumed_train_samples': args.consumed_train_samples,
+    #             'consumed_train_tokens': args.consumed_train_tokens,
+    #             # 'learning_rate': learning_rate,
+    #             # 'batch_size': batch_size,
+    #             # 'loss_scale': loss_scale,
+    #             # 'grad_norm': grad_norm,
+    #         }
+    #         # for key in loss_dict:
+    #         #     tdata[f'lm-loss/{key}'] = loss_dict[key]
+    #
+    #         tdata = {f'train/{k}': v for k, v in tdata.items()}
+    #         # if wbrun is not None and wbrun is wandb.run:
+    #         if wandb.run is not None:
+    #             wandb.run.log(tdata, commit=False)
+    #             tput = {
+    #                 'throughput/iteration-time': elapsed_time_per_iteration,  # 1000 ms / s
+    #                 'throughput/samples_per_sec': samples_per_sec,
+    #                 'throughput/samples_per_sec_per_replica': samples_per_sec_per_replica,
+    #                 'throughput/tokens_per_sec': tokens_per_sec,
+    #                 'throughput/tokens_per_sec_per_replica': tokens_per_sec_per_replica,
+    #                 'throughput/tflops': tflops,
+    #                 'throughput/approx_params_in_billions': approx_params_in_billions,
+    #                 'throughput/sample_consumption_rate': sample_consumption_rate,
+    #                 'throughput/token_consumption_rate': token_consumption_rate,
+    #                 'throughput/elapsed_ms_per_iteration': elapsed_time_per_iteration,
+    #             }
+    #             wandb.run.log(tput)
+    return model
+
+
+
 if __name__ == "__main__":
-    git_ds_info()
-    pretrain(train_valid_test_datasets_provider,
-             model_provider,
-             ModelType.encoder_or_decoder,
-             forward_step,
-             args_defaults={'tokenizer_type': 'GPT2BPETokenizer'},
-             data_post_process=data_post_process)
+    # git_ds_info()
+    # pretrain(train_valid_test_datasets_provider,
+    #          model_provider,
+    #          ModelType.encoder_or_decoder,
+    #          forward_step,
+    #          args_defaults={'tokenizer_type': 'GPT2BPETokenizer'},
+    #          data_post_process=data_post_process)
+    import sys
+    import deepspeed.comm as dist
+    model = main()
+    dist.log_summary()
+    if wandb.run is not None:
+        print(f"wandb.run.name: {wandb.run.name}")
+        print(f"wandb.run.url: {wandb.run.url}")
+        wandb.finish()
+    sys.exit()
