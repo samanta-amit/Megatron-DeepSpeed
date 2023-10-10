@@ -117,6 +117,8 @@ elasticDistributed() {
         NHOSTS=$(wc -l < "${HOSTFILE}")
         NGPU_PER_HOST=$(nvidia-smi -L | wc -l)
         NGPUS="$(( NHOSTS * NGPU_PER_HOST ))"
+        export MASTER_ADDR="127.0.0.1"
+        export MASTER_PORT="5432"
         EXEC_STR=(
             "${MPI_COMMAND}"
             "${MPI_DEFAULTS}"
