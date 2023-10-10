@@ -41,23 +41,36 @@ function thetagpuMPI() {
         NVME_PATH="/raid/scratch/"
         MPI_COMMAND=$(which mpirun)
         # export PATH="${CONDA_PREFIX}/bin:${PATH}"
-        _MPI_DEFAULTS=(
-            "--hostfile ${HOSTFILE}"
-            "-x CFLAGS"
-            "-x LDFLAGS"
-            "-x http_proxy"
-            "-x PYTHONUSERBASE"
-            "-x https_proxy"
-            "-x PATH"
-            "-x CUDA_DEVICE_MAX_CONNECTIONS"
-            "-x LD_LIBRARY_PATH"
-        )
-        _MPI_ELASTIC=(
-            "-n ${NGPUS}"
-            "-npernode ${NGPU_PER_HOST}"
-        )
-        export MPI_DEFAULTS="$(join_by ' ' ${_MPI_DEFAULTS})"
-        export MPI_ELASTIC="$(join_by ' ' ${_MPI_ELASTIC})"
+        MPI_DEFAULTS="\
+            --hostfile ${HOSTFILE} \
+            -x CFLAGS \
+            -x LDFLAGS \
+            -x http_proxy \
+            -x CUDA_DEVICE_MAX_CONNECTIONS \
+            -x PYTHONUSERBASE \
+            -x https_proxy \
+            -x PATH \
+            -x LD_LIBRARY_PATH"
+        MPI_ELASTIC="\
+            -n ${NGPUS} \
+            -npernode ${NGPU_PER_HOST}"
+        # _MPI_DEFAULTS=(
+        #     "--hostfile ${HOSTFILE}"
+        #     "-x CFLAGS"
+        #     "-x LDFLAGS"
+        #     "-x http_proxy"
+        #     "-x PYTHONUSERBASE"
+        #     "-x https_proxy"
+        #     "-x PATH"
+        #     "-x CUDA_DEVICE_MAX_CONNECTIONS"
+        #     "-x LD_LIBRARY_PATH"
+        # )
+        # _MPI_ELASTIC=(
+        #     "-n ${NGPUS}"
+        #     "-npernode ${NGPU_PER_HOST}"
+        # )
+        # export MPI_DEFAULTS="$(join_by ' ' ${_MPI_DEFAULTS})"
+        # export MPI_ELASTIC="$(join_by ' ' ${_MPI_ELASTIC})"
     else
         echo "Skipping thetaGPUMPI() on $(hostname)"
     fi
@@ -71,17 +84,24 @@ function polarisMPI() {
         export NGPUS=$((${NHOSTS}*${NGPU_PER_HOST}))
         export MPI_COMMAND=$(which mpiexec)
         export NVME_PATH="/local/scratch/"
-        _MPI_DEFAULTS=(
-            "--envall"
-            "--verbose"
-            "--hostfile ${HOSTFILE}"
-        )
-        _MPI_ELASTIC=(
-            "-n ${NGPUS}"
-            "--ppn ${NGPU_PER_HOST}"
-        )
-        export MPI_DEFAULTS="$(join_by ' ' ${_MPI_DEFAULTS})"
-        export MPI_ELASTIC="$(join_by ' ' ${_MPI_ELASTIC})"
+        MPI_DEFAULTS="\
+            --envall \
+            --verbose \
+            --hostfile ${HOSTFILE}"
+        MPI_ELASTIC="\
+            -n ${NGPUS} \
+            --ppn ${NGPU_PER_HOST}"
+        # _MPI_DEFAULTS=(
+        #     "--envall"
+        #     "--verbose"
+        #     "--hostfile ${HOSTFILE}"
+        # )
+        # _MPI_ELASTIC=(
+        #     "-n ${NGPUS}"
+        #     "--ppn ${NGPU_PER_HOST}"
+        # )
+        # export MPI_DEFAULTS="$(join_by ' ' ${_MPI_DEFAULTS})"
+        # export MPI_ELASTIC="$(join_by ' ' ${_MPI_ELASTIC})"
     else
         echo "Skipping polarisMPI() on $(hostname)"
     fi
@@ -107,7 +127,7 @@ function setupMPI() {
 
 function condaPolaris() {
     if [[ "$(hostname)" == x3* ]]; then
-        DATE_STR="2023-09-29"
+        DATE_STR="2023-10-04"
         [ "${CONDA_EXE}" ] || loadCondaEnv "${DATE_STR}"
         [ "${VIRTUAL_ENV}" ] || setupVenv "${DATE_STR}"
     else
