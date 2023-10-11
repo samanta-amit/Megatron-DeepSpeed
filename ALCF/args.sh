@@ -146,8 +146,10 @@ echo "--------------------------------"
 # ┗━━━━━━━━━━━━┛
 [ "$(hostname)==login*" ] && MEGATRON_DIR="/global/homes/f/foremans/m3957/foremans/projects/saforem2/Megatron-DeepSpeed"
 [ "$(hostname)==nid*" ] && MEGATRON_DIR="/global/homes/f/foremans/m3957/foremans/projects/saforem2/Megatron-DeepSpeed"
-[ "$(hostname)==theta*" ] && MEGATRON_DIR="/lus/grand/projects/datascience/foremans/locations/thetaGPU/projects/saforem2/Megatron-DS-Benchmarking"
-[ "$(hostname)==x3*" ] && MEGATRON_DIR="/lus/grand/projects/datascience/foremans/locations/thetaGPU/projects/saforem2/Megatron-DS-Benchmarking"
+[ "$(hostname)==theta*" ] && MEGATRON_DIR="/lus/eagle/projects/datasets/BookCorpusDataset"
+# "/lus/grand/projects/datascience/foremans/locations/thetaGPU/projects/saforem2/Megatron-DS-Benchmarking"
+[ "$(hostname)==x3*" ] && MEGATRON_DIR="/lus/eagle/projects/datasets/BookCorpusDataset"
+# /lus/grand/projects/datascience/foremans/locations/thetaGPU/projects/saforem2/Megatron-DS-Benchmarking"
 
 # DATA_PATH=/lus/grand/projects/datascience/vsastry/genslm_subsample_200k_sequence_document/genslm_subsample_200k_sequence_document
 DATA_DIR="${MEGATRON_DIR}/dataset"
