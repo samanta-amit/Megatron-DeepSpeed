@@ -144,16 +144,20 @@ echo "--------------------------------"
 # ┏━━━━━━━━━━━━┓
 # ┃ Data paths ┃
 # ┗━━━━━━━━━━━━┛
-[ "$(hostname)==login*" ] && MEGATRON_DIR="/global/homes/f/foremans/m3957/foremans/projects/saforem2/Megatron-DeepSpeed"
-[ "$(hostname)==nid*" ] && MEGATRON_DIR="/global/homes/f/foremans/m3957/foremans/projects/saforem2/Megatron-DeepSpeed"
-[ "$(hostname)==theta*" ] && MEGATRON_DIR="/lus/eagle/projects/datasets/BookCorpusDataset"
+[ "$(hostname)==login*" ] && DATA_PARENT="/global/homes/f/foremans/m3957/foremans/projects/saforem2/Megatron-DeepSpeed"
+[ "$(hostname)==nid*" ] && DATA_PARENT="/global/homes/f/foremans/m3957/foremans/projects/saforem2/Megatron-DeepSpeed"
+# [ "$(hostname)==theta*" ] && DATA_PARENT="/lus/eagle/projects/datasets/BookCorpusDataset"
+[ "$(hostname)==theta*" ] && DATA_PARENT="/lus/grand/projects/fallwkshp23/datasets/GenSLMSubSample200k"
+[ "$(hostname)==x3*" ] && DATA_PARENT="/lus/grand/projects/fallwkshp23/datasets/GenSLMSubSample200k"
 # "/lus/grand/projects/datascience/foremans/locations/thetaGPU/projects/saforem2/Megatron-DS-Benchmarking"
-[ "$(hostname)==x3*" ] && MEGATRON_DIR="/lus/eagle/projects/datasets/BookCorpusDataset"
+# /lus/grand/projects/fallwkshp23/datasets/GenSLMSubSample200k/dataset/genslm_subsample_200k_sequence_document"
+# [ "$(hostname)==x3*" ] && DATA_PARENT="/lus/eagle/projects/datasets/BookCorpusDataset"
 # /lus/grand/projects/datascience/foremans/locations/thetaGPU/projects/saforem2/Megatron-DS-Benchmarking"
+# /lus/grand/projects/fallwkshp23/datasets/GenSLMSubSample200k/dataset/genslm_subsample_200k_sequence_document.bin
 
 # DATA_PATH=/lus/grand/projects/datascience/vsastry/genslm_subsample_200k_sequence_document/genslm_subsample_200k_sequence_document
-DATA_DIR="${MEGATRON_DIR}/dataset"
-DATA_PATH="${DATA_DIR}/BookCorpusDataset_text_document"
+DATA_DIR="${DATA_PARENT}/dataset"
+DATA_PATH="${DATA_DIR}/genslm_subsample_200k_sequence_document"
 VOCAB_FILE="${DATA_DIR}/gpt2-vocab.json"
 MERGE_FILE="${DATA_DIR}/gpt2-merges.txt"
 
