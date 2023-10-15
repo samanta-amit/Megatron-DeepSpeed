@@ -39,7 +39,7 @@ from torch import nn
 import torch.nn.functional as F
 
 # from ezpz import get_logger
-from ezpz.dist import setup_torch, get_world_size
+from ezpz.dist import setup_torch, get_world_size, setup_wandb
 
 RANK = setup_torch(
     backend='deepspeed',
@@ -47,6 +47,19 @@ RANK = setup_torch(
 )
 WORLD_SIZE = get_world_size()
 LEVEL = "DEBUG" if RANK == 0 else "CRITICAL"
+
+if RANK == 0:
+    print(f"Setting up W&B from: {RANK}")
+    project_name = (
+        os.environ.get(
+            'WB_PROJECT',
+            os.environ.get(
+                'WANDB_PROJECT',
+                'GenSLM-Megatron-DS'
+            ),
+        )
+    )
+    setup_wandb(project_name=project_name)
 
 
 # os.environ['']
@@ -62,68 +75,68 @@ from typing import Optional
 # log.critical(f"Setting up W&B from rank: {RANK} with {wb_project_name}")
 
 
-def setup_wandb(project_name: Optional[str] = None):
-    print(f"Setting up W&B from: {RANK}")
-    project_name = (
-        os.environ.get('WB_PROJECT', 'GenSLM-Megatron-DS')
-        if project_name is None else project_name
-    )
-    print(f"Setting up wandb from rank: {RANK}")
-    print(f"Using: WB PROJECT: {project_name}")
-    # if get_rank() == 0:
-    # tensorboard_dir = args.tensorboard_dir
-    tensorboard_dir = None
-    # if config is None:
-    tensorboard_dir = os.environ.get('TENSORBOARD_DIR', None)
-    # else:
-    #     tensorboard_dir = (
-    #         config.get(
-    #             'tensorboard_dir',
-    #             None,  # os.getcwd()
-    #         )
-    #     )
-    if tensorboard_dir is not None:
-        print(f'Patching tensorboard from {tensorboard_dir}')
-        wandb.tensorboard.patch(root_logdir=tensorboard_dir)
-    # wbrun_id = wandb.util.generate_id()
-    current_time = time.time()
-    # local_time = time.localtime(current_time)
-    # if wandb.run is None:
-    wandb.init(
-        resume='allow',
-        sync_tensorboard=(tensorboard_dir is not None),  # True,
-        project=(project_name if project_name is not None else None),
-        # dir=(tensorboard_dir if tensorboard_dir is not None else None),
-    )
-    assert wandb.run is not None
-    print(f"W&B RUN: [{wandb.run.name}]({wandb.run.url})")
-    wandb.run.config.update({'current_time': current_time})
-    model_size = os.environ.get('MODEL_SIZE', None)
-    wandb.run.config.update({'world_size': get_world_size()})
-    # if config is not None:
-    #     wandb.run.config.update(config)
-    env = {
-        k: v for k, v in dict(os.environ).items()
-        if not k.startswith('_ModuleTable')
-    }
-    _ = env.pop('LS_COLORS', None)
-    _ = env.pop('PS1', None)
-    wandb.run.config.update({'env': env})
-    hostname = socket.gethostbyaddr(socket.gethostname())[0]
-    if hostname.startswith('theta'):
-        wandb.run.config.update({'machine': 'ThetaGPU'})
-    elif hostname.startswith('x3'):
-        wandb.run.config.update({'machine': 'Polaris'})
-    elif hostname.startswith('x1'):
-        wandb.run.config.update({'machine': 'Sunspot'})
-    elif hostname.startswith('nid'):
-        wandb.run.config.update({'machine': 'Perlmutter'})
-    elif hostname.startswith('login'):
-        wandb.run.config.update({'machine': 'NERSC'})
-    else:
-        wandb.run.config.update({'machine': hostname})
-    if model_size is not None:
-        wandb.run.config.update({'MODEL_SIZE': model_size})
+# def setup_wandb(project_name: Optional[str] = None):
+#     print(f"Setting up W&B from: {RANK}")
+#     project_name = (
+#         os.environ.get('WB_PROJECT', 'GenSLM-Megatron-DS')
+#         if project_name is None else project_name
+#     )
+#     print(f"Setting up wandb from rank: {RANK}")
+#     print(f"Using: WB PROJECT: {project_name}")
+#     # if get_rank() == 0:
+#     # tensorboard_dir = args.tensorboard_dir
+#     tensorboard_dir = None
+#     # if config is None:
+#     tensorboard_dir = os.environ.get('TENSORBOARD_DIR', None)
+#     # else:
+#     #     tensorboard_dir = (
+#     #         config.get(
+#     #             'tensorboard_dir',
+#     #             None,  # os.getcwd()
+#     #         )
+#     #     )
+#     if tensorboard_dir is not None:
+#         print(f'Patching tensorboard from {tensorboard_dir}')
+#         wandb.tensorboard.patch(root_logdir=tensorboard_dir)
+#     # wbrun_id = wandb.util.generate_id()
+#     current_time = time.time()
+#     # local_time = time.localtime(current_time)
+#     # if wandb.run is None:
+#     wandb.init(
+#         resume='allow',
+#         sync_tensorboard=(tensorboard_dir is not None),  # True,
+#         project=(project_name if project_name is not None else None),
+#         # dir=(tensorboard_dir if tensorboard_dir is not None else None),
+#     )
+#     assert wandb.run is not None
+#     print(f"W&B RUN: [{wandb.run.name}]({wandb.run.url})")
+#     wandb.run.config.update({'current_time': current_time})
+#     model_size = os.environ.get('MODEL_SIZE', None)
+#     wandb.run.config.update({'world_size': get_world_size()})
+#     # if config is not None:
+#     #     wandb.run.config.update(config)
+#     env = {
+#         k: v for k, v in dict(os.environ).items()
+#         if not k.startswith('_ModuleTable')
+#     }
+#     _ = env.pop('LS_COLORS', None)
+#     _ = env.pop('PS1', None)
+#     wandb.run.config.update({'env': env})
+#     hostname = socket.gethostbyaddr(socket.gethostname())[0]
+#     if hostname.startswith('theta'):
+#         wandb.run.config.update({'machine': 'ThetaGPU'})
+#     elif hostname.startswith('x3'):
+#         wandb.run.config.update({'machine': 'Polaris'})
+#     elif hostname.startswith('x1'):
+#         wandb.run.config.update({'machine': 'Sunspot'})
+#     elif hostname.startswith('nid'):
+#         wandb.run.config.update({'machine': 'Perlmutter'})
+#     elif hostname.startswith('login'):
+#         wandb.run.config.update({'machine': 'NERSC'})
+#     else:
+#         wandb.run.config.update({'machine': hostname})
+#     if model_size is not None:
+#         wandb.run.config.update({'MODEL_SIZE': model_size})
 
 
 def model_provider(pre_process=True, post_process=True):
@@ -476,8 +489,8 @@ def git_ds_info():
 
 
 def main():
-    if RANK == 0:
-        setup_wandb()
+    # if RANK == 0:
+    #     setup_wandb()
 
     model = pretrain(
         train_valid_test_datasets_provider,
