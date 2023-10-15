@@ -130,8 +130,10 @@ elasticDistributed() {
         )
     elif [[ $(hostname) == nid*  || $(hostname) == login* ]]; then
         echo "Setting up from Perlmutter on $(hostname)"
-        [ $(hostname) == nid* ] && NHOSTS="$SLURM_NNODES" || NHOSTS=1
-        [ $(hostname) == nid* ] && export MACHINE="perlmutter" || export MACHINE="NERSC"
+        NHOSTS=${SLURM_NNODES-1}
+        MACHINE="Perlmutter"
+        # [ $(hostname) == nid* ] && NHOSTS="$SLURM_NNODES" || NHOSTS=1
+        # [ $(hostname) == nid* ] && export MACHINE="perlmutter" || export MACHINE="NERSC"
         NGPU_PER_HOST=$(nvidia-smi -L | wc -l)
         # NGPU_PER_HOST="$SLURM_GPUS_ON_NODE"
         NGPUS="$(( NHOSTS * NGPU_PER_HOST ))"
