@@ -159,22 +159,39 @@ echo "--------------------------------"
 # ┏━━━━━━━━━━━━┓
 # ┃ Data paths ┃
 # ┗━━━━━━━━━━━━┛
-[ "$(hostname)==login*" ] && DATA_PARENT="/global/homes/f/foremans/m3957/foremans/projects/saforem2/Megatron-DeepSpeed"
-[ "$(hostname)==nid*" ] && DATA_PARENT="/global/homes/f/foremans/m3957/foremans/projects/saforem2/Megatron-DeepSpeed"
-# [ "$(hostname)==theta*" ] && DATA_PARENT="/lus/eagle/projects/datasets/BookCorpusDataset"
-[ "$(hostname)==theta*" ] && DATA_PARENT="/lus/grand/projects/fallwkshp23/datasets/GenSLMSubSample200k"
-[ "$(hostname)==x3*" ] && DATA_PARENT="/lus/grand/projects/fallwkshp23/datasets/GenSLMSubSample200k"
-# "/lus/grand/projects/datascience/foremans/locations/thetaGPU/projects/saforem2/Megatron-DS-Benchmarking"
-# /lus/grand/projects/fallwkshp23/datasets/GenSLMSubSample200k/dataset/genslm_subsample_200k_sequence_document"
-# [ "$(hostname)==x3*" ] && DATA_PARENT="/lus/eagle/projects/datasets/BookCorpusDataset"
-# /lus/grand/projects/datascience/foremans/locations/thetaGPU/projects/saforem2/Megatron-DS-Benchmarking"
-# /lus/grand/projects/fallwkshp23/datasets/GenSLMSubSample200k/dataset/genslm_subsample_200k_sequence_document.bin
+if [[ $(hostname) == nid* || $(hostname) == login* ]]; then
+    DATA_PARENT="/global/homes/f/foremans/m3957/foremans/projects/saforem2/Megatron-DeepSpeed"
+    DATA_TYPE="BookCorpusDataset_text_document"
+elif [[ $(hostname) == theta* || $(hostname) == x3* ]]; then
+    DATA_PARENT="/lus/grand/projects/fallwkshp23/datasets/GenSLMSubSample200k"
+    DATA_TYPE="genslm_subsample_200k_sequence_document"
+else
+    echo "Unable to determine DATA_PARENT for $(hostname)."
+    echo "Exiting!"
+    exit 1
+fi
 
-# DATA_PATH=/lus/grand/projects/datascience/vsastry/genslm_subsample_200k_sequence_document/genslm_subsample_200k_sequence_document
 DATA_DIR="${DATA_PARENT}/dataset"
-DATA_PATH="${DATA_DIR}/genslm_subsample_200k_sequence_document"
+DATA_PATH="${DATA_DIR}/${DATA_TYPE}"
 VOCAB_FILE="${DATA_DIR}/gpt2-vocab.json"
 MERGE_FILE="${DATA_DIR}/gpt2-merges.txt"
+# #
+# [ "$(hostname)==login*" ] && DATA_PARENT="/global/homes/f/foremans/m3957/foremans/projects/saforem2/Megatron-DeepSpeed"
+# [ "$(hostname)==nid*" ] && DATA_PARENT="/global/homes/f/foremans/m3957/foremans/projects/saforem2/Megatron-DeepSpeed"
+# # [ "$(hostname)==theta*" ] && DATA_PARENT="/lus/eagle/projects/datasets/BookCorpusDataset"
+# [ "$(hostname)==theta*" ] && DATA_PARENT="/lus/grand/projects/fallwkshp23/datasets/GenSLMSubSample200k"
+# [ "$(hostname)==x3*" ] && DATA_PARENT="/lus/grand/projects/fallwkshp23/datasets/GenSLMSubSample200k"
+# # "/lus/grand/projects/datascience/foremans/locations/thetaGPU/projects/saforem2/Megatron-DS-Benchmarking"
+# # /lus/grand/projects/fallwkshp23/datasets/GenSLMSubSample200k/dataset/genslm_subsample_200k_sequence_document"
+# # [ "$(hostname)==x3*" ] && DATA_PARENT="/lus/eagle/projects/datasets/BookCorpusDataset"
+# # /lus/grand/projects/datascience/foremans/locations/thetaGPU/projects/saforem2/Megatron-DS-Benchmarking"
+# # /lus/grand/projects/fallwkshp23/datasets/GenSLMSubSample200k/dataset/genslm_subsample_200k_sequence_document.bin
+#
+# # DATA_PATH=/lus/grand/projects/datascience/vsastry/genslm_subsample_200k_sequence_document/genslm_subsample_200k_sequence_document
+# DATA_DIR="${DATA_PARENT}/dataset"
+# DATA_PATH="${DATA_DIR}/genslm_subsample_200k_sequence_document"
+# VOCAB_FILE="${DATA_DIR}/gpt2-vocab.json"
+# MERGE_FILE="${DATA_DIR}/gpt2-merges.txt"
 
 # ┏━━━━━━━━━━━━━━━━━━━┓
 # ┃ FILE I/O SETTINGS ┃
