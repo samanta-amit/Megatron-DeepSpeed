@@ -60,8 +60,11 @@ export MICRO_BATCH=${MICRO_BATCH:-1}
 export GRADIENT_ACCUMULATION_STEPS=${GAS:-1}
 export MODEL_TYPE=${MODEL_TYPE:-"gpt"} # set bert or gpt
 export SP_TYPE=${SP_TYPE:-"megatron"} # set ds or megatron
+export ZERO_STAGE=${ZERO_STAGE:-1}
+export MPSIZE=${MPSIZE:-${WORLD_SIZE:-1}}
+export SPSIZE=${SPSIZE:-1}
 
-
+#
 # Deal with Sequence Parallel implementation ---------------------------------------
 # ----------------------------------------------------------------------------------
 if [[ ${SP_TYPE} == "ds" ]]; then
@@ -100,6 +103,12 @@ elif [[ ${SP_TYPE} == "megatron" ]]; then
     [ "$MPSIZE" ] && echo "Caught MPSIZE: ${MPSIZE} from env" || MPSIZE="${WORLD_SIZE}"
     [ "$ZERO_STAGE" ] && echo "Caught ${ZERO_STAGE} from env" || ZERO_STAGE=0
     [ "$USE_SEQUENCE_PARALLEL" ] && echo "Caught USE_SP: $USE_SEQUENCE_PARALLEL from env" || USE_SEQUENCE_PARALLEL=1
+    if [[ ${PPSIZE} > 1 ]]; then # && ${MPSIZE}==${WORLD_SIZE} ]];
+        MPSIZE=$(( WORLD_SIZE / PPSIZE ))
+        echo "Re-setting MPSIZE to ${WORLD_SIZE} / ${PPSIZE} = $(( WORLD_SIZE / PPSIZE ))"
+        echo "MPSIZE: $MPSIZE"
+        # MPSIZE="${WORLD_SIZE}/"
+    fi
     export SPSIZE="${SPSIZE}"
     export MPSIZE="${MPSIZE}"
     export ZERO_STAGE="${ZERO_STAGE}"
@@ -109,7 +118,7 @@ else
     # exit 1
 fi
 # ------------------------------------------------------------------------
-
+#
 echo "####################################################"
 echo "USING: ${SP_TYPE}" 
 echo "SPSIZE: ${SPSIZE}"
@@ -137,8 +146,14 @@ fi
 # [ "${GLOBAL_BATCH:-${GLOBAL_BATCH}}" == 0 ] && GLOBAL_BATCH=1 || echo "GLOBAL_BATCH: ${GLOBAL_BATCH}"
 export GLOBAL_BATCH="$GLOBAL_BATCH"
 
+DPSIZE=$(( $WORLD_SIZE / $PPSIZE / $MPSIZE ))
+
+# echo "@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@"
+# echo "@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@"
+
 echo "--------------------------------"
 echo "GLOBAL_BATCH=${GLOBAL_BATCH}"
+echo "USING DPSIZE: ${DPSIZE}"
 echo "--------------------------------"
 
 # ┏━━━━━━━━━━━━┓
@@ -194,7 +209,7 @@ fi
 if [[ $DDP_IMPL == 'FSDP' ]]; then
     RUN_STR="FSDP_${RUN_STR}"
 fi
-if [[ $USE_ACTIVATION_CHECKPOINTING == 1 ]] ;then
+if [[ $USE_ACTIVATION_CHECKPOINTING == 1 ]]; then
     RUN_STR="actCkpt_${RUN_STR}"
 fi
 if [[ $USE_SEQUENCE_PARALLEL == 1 ]] ; then
