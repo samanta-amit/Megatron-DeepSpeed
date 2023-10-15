@@ -126,7 +126,7 @@ function setupMPI() {
 }
 
 function condaPolaris() {
-    if [[ "$(hostname)" == x3* ]]; then
+    if [[ $(hostname) == x3* ]]; then
         DATE_STR="2023-10-04"
         [ "${CONDA_EXE}" ] || loadCondaEnv "${DATE_STR}"
         [ "${VIRTUAL_ENV}" ] || setupVenv "${DATE_STR}"
@@ -136,10 +136,12 @@ function condaPolaris() {
 }
 
 function condaThetaGPU() {
-    if [[ "$(hostname)" == theta* ]]; then
+    if [[ $(hostname) == theta* ]]; then
         DATE_STR="2023-01-11"
-        [ "${CONDA_EXE}" ] || loadCondaEnv "${DATE_STR}"
-        [ "${VIRTUAL_ENV}" ] || setupVenv "${DATE_STR}"
+        [ "${CONDA_EXE}" ] && echo "Caught CONDA_EXE: ${CONDA_EXE}" || loadCondaEnv "${DATE_STR}"
+        [ "${VIRTUAL_ENV}" ] && echo "Caught VIRTUAL_ENV: ${VIRTUAL_ENV}" || setupVenv "${DATE_STR}"
+        # [ "${CONDA_EXE}" ] || loadCondaEnv "${DATE_STR}"
+        # [ "${VIRTUAL_ENV}" ] || setupVenv "${DATE_STR}"
     else
         echo "Skipping condaThetaGPU() on $(hostname)"
     fi
@@ -151,8 +153,8 @@ function setupThetaGPU() {
     if [[ $(hostname) == theta* ]]; then
         setupMPI
         DATE_STR="2023-01-11"
-        [ "${CONDA_EXE}" ] || loadCondaEnv "${DATE_STR}" || echo "Caught CONDA_EXE: ${CONDA_EXE}"
-        [ "${VIRTUAL_ENV}" ] || setupVenv "${DATE_STR}" || echo "Caught VIRTUAL_ENV: ${VIRTUAL_ENV}"
+        [ "${CONDA_EXE}" ] && echo "Caught CONDA_EXE: ${CONDA_EXE}" || loadCondaEnv "${DATE_STR}" 
+        [ "${VIRTUAL_ENV}" ] && echo "Caught VIRTUAL_ENV: ${VIRTUAL_ENV}" || setupVenv "${DATE_STR}" 
     else
         echo "Skipping setupThetaGPU() on $(hostname)"
     fi
@@ -161,23 +163,24 @@ function setupThetaGPU() {
 function setupPolaris() {
     export LAB="ALCF"
     export MACHINE="Polaris"
-    if [[ "$(hostname)" == x3* ]]; then
+    if [[ $(hostname) == x3* ]]; then
         # SETUP MPI --------------------------------
         setupMPI
         # SETUP Python --------------------------------
         DATE_STR="2023-09-29"
-        [ "${CONDA_EXE}" ] || loadCondaEnv "${DATE_STR}-unstable" || echo "Caught CONDA_EXE: ${CONDA_EXE}"
-        [ "${VIRTUAL_ENV}" ] || setupVenv "${DATE_STR}" || echo "Caught VIRTUAL_ENV: ${VIRTUAL_ENV}"
+        [ "${CONDA_EXE}" ] && echo "Caught CONDA_EXE: ${CONDA_EXE}" || loadCondaEnv "${DATE_STR}-unstable"
+        [ "${VIRTUAL_ENV}" ] && echo "Caught VIRTUAL_ENV: ${VIRTUAL_ENV}"  || setupVenv "${DATE_STR}"
     else
         echo "Skipping setupPolaris() on $(hostname)"
     fi
 }
 
 function setupALCF() {
+    # if [[ $(hostname -s) == theta* || $(hostname -s) == x3* ]]; then echo "True" ; else echo "False" ; fi
     if [[ $(hostname) == theta* || $(hostname) == x3* ]]; then
         setupMPI
-        [ "$(hostname)==theta*" ] && setupThetaGPU || echo "Skipping setupThetaGPU from $(hostname)"
-        [ "$(hostname)==x3*" ] && setupPolaris || echo "Skipping setupPolaris from $(hostname)"
+        [ $(hostname) == theta* ] && setupThetaGPU || echo "Skipping setupThetaGPU from $(hostname)"
+        [ $(hostname) == x3* ] && setupPolaris || echo "Skipping setupPolaris from $(hostname)"
     else
         echo "Skipping setupALCF() on $(hostname)"
     fi
@@ -223,7 +226,7 @@ function setupMachine() {
         setupALCF
         [ "${HOSTNAME}==theta*" ] && condaThetaGPU
         [ "${HOSTNAME}==x3*" ] && condaPolaris
-    elif [[ "${HOSTNAME}== nid*" || "${HOSTNAME}== login*"  ]]; then
+    elif [[ $(hostname) == nid* || $(hostname) == login* ]]; then
         export LAB="NERSC"
         setupPerlmutter
         [ "${HOSTNAME}==login*" ] && setupPerlmutter
