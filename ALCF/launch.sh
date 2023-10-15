@@ -103,7 +103,7 @@ fullNode() {
 # ┃ Use all available GPUs on all available nodes ┃
 # ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
 elasticDistributed() {
-    if [[ "$(hostname)==theta*" || "$(hostname)==x3*" ]]; then
+    if [[ $(hostname) == theta* || $(hostname) == x3* ]]; then
         if [[ $(hostname) == theta* ]]; then
             echo "Setting up ThetaGPU from $(hostname)"
             HOSTFILE="${COBALT_NODEFILE}"
@@ -128,10 +128,10 @@ elasticDistributed() {
             "${gpt_args}"
             "${ds_args}"
         )
-    elif [[ "$(hostname)==nid*"  || "$(hostname)==login*" ]]; then
+    elif [[ $(hostname) == nid*  || $(hostname) == login* ]]; then
         echo "Setting up from Perlmutter on $(hostname)"
-        [ "$(hostname)==nid*" ] && NHOSTS="$SLURM_NNODES" || NHOSTS=1
-        [ "$(hostname)==nid*" ] && export MACHINE="perlmutter" || export MACHINE="NERSC"
+        [ $(hostname) == nid* ] && NHOSTS="$SLURM_NNODES" || NHOSTS=1
+        [ $(hostname) == nid* ] && export MACHINE="perlmutter" || export MACHINE="NERSC"
         NGPU_PER_HOST=$(nvidia-smi -L | wc -l)
         # NGPU_PER_HOST="$SLURM_GPUS_ON_NODE"
         NGPUS="$(( NHOSTS * NGPU_PER_HOST ))"
