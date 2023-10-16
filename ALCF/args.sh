@@ -279,6 +279,10 @@ CPU_OPTIM=" --cpu-optimizer"
 # OFFLOAD_DEVICE="none"  
 # CPU_OPTIM=" "
 
+
+[ "${WANDB_MODE}" == "disabled" ] && WANDB_ENABLE="false" || WANDB_ENABLE="true"
+echo "WANDB_ENABLE: ${WANDB_ENABLE}"
+
 # ┏━━━━━━━━━━━━━━━━━━┓
 # ┃ DeepSpeed Config ┃
 # ┗━━━━━━━━━━━━━━━━━━┛
@@ -346,7 +350,7 @@ if [[ $ZERO_STAGE == "3" ]] ; then
 "debug": false
 },
 "wandb": {
-"enabled": true,
+"enabled": $WANDB_ENABLE,
 "project": "GenSLM-Megatron-DS"
 }
 }
@@ -403,7 +407,7 @@ else
 "debug": false
 },
 "wandb": {
-"enabled": true,
+"enabled": $WANDB_ENABLE,
 "project": "GenSLM-Megatron-DS"
 }
 }
