@@ -503,6 +503,7 @@ elif [[ "${USE_FLASH_ATTN_TRITON}" ]]; then
 fi
 
 if [[ "$USE_SEQUENCE_PARALLEL" == 1 ]]; then
+    export CUDA_DEVICE_MAX_CONNECTIONS=1
     gpt_args+=(
     "--sequence-parallel"
 )

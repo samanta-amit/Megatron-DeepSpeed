@@ -176,7 +176,6 @@ function setupPolaris() {
 }
 
 function setupALCF() {
-    # if [[ $(hostname -s) == theta* || $(hostname -s) == x3* ]]; then echo "True" ; else echo "False" ; fi
     if [[ $(hostname) == theta* || $(hostname) == x3* ]]; then
         setupMPI
         [ $(hostname) == theta* ] && setupThetaGPU || echo "Skipping setupThetaGPU from $(hostname)"
@@ -186,30 +185,45 @@ function setupALCF() {
     fi
 }
 
+
+function setupSrun() {
+    if [[ $(hostname) == login* || $(hostname) == nid* ]]; then
+        export NHOSTS="${SLURM_NNODES:-1}"
+        export NGPU_PER_HOST="${SLURM_GPUS_ON_NODE:-$(nvidia-smi -L | wc -l)}"
+        export NGPUS="$(( NHOSTS * NGPU_PER_HOST ))"
+        export SRUN_EXEC="srun -N ${NHOSTS} -n ${NGPUS} -l -u"
+    else
+        echo "Skipping setupSrun() on $(hostname)"
+    fi
+}
+
 # ┏━━━━━━━┓
 # ┃ NERSC ┃
 # ┗━━━━━━━┛
 function setupPerlmutter() {
     if [[ $(hostname) == login* || $(hostname) == nid* ]]; then
         module load libfabric cudatoolkit pytorch/2.0.1
-        if [[ $(hostname) == login* ]]; then
-            export MACHINE="NERSC"
-            module load pytorch/2.0.1
-            export NHOSTS=1
-            export NGPU_PER_HOST=1
-            export NGPUS=1
-            # echo "$(hostname)" > "${HERE}/hostfile"
-        elif [[ $(hostname) == nid* ]]; then
-            export NODELIST="${SLURM_JOB_NODELIST:-$(hostname)}"
-            export NODE_RANK=0
-            export CUDA_DEVICE_MAX_CONNECTIONS=1
-            export MACHINE="PERLMUTTER"
-            export NHOSTS="${SLURM_NNODES:-1}"
-            export NGPU_PER_HOST="${SLURM_GPUS_ON_NODE:-$(nvidia-smi -L | wc -l)}"
-            export NGPUS="$(( NHOSTS * NGPU_PER_HOST ))"
-        else
-            echo "Unexpected $(hostname) on NERSC"
-        fi
+        [ $SLURM_JOB_ID ] \
+            && echo "Caught SLURM_JOB_ID: ${SLURM_JOB_ID}" \
+            || echo "!!!!!! Running without SLURM allocation !!!!!!!!"
+        # if [[ $(hostname) == login* ]]; then
+        #     export MACHINE="NERSC"
+        #     module load pytorch/2.0.1
+        #     export NHOSTS=1
+        #     export NGPU_PER_HOST=1
+        #     export NGPUS=1
+        #     # echo "$(hostname)" > "${HERE}/hostfile"
+        # elif [[ $(hostname) == nid* ]]; then
+        # export NODE_RANK=0
+        export NODELIST="${SLURM_JOB_NODELIST:-$(hostname)}"
+        # export CUDA_DEVICE_MAX_CONNECTIONS=1
+        export MACHINE="Perlmutter"
+        export NHOSTS="${SLURM_NNODES:-1}"
+        export NGPU_PER_HOST="${SLURM_GPUS_ON_NODE:-$(nvidia-smi -L | wc -l)}"
+        export NGPUS="$(( NHOSTS * NGPU_PER_HOST ))"
+        # else
+        #     echo "Unexpected $(hostname) on NERSC"
+        # fi
         echo "+++++++++++++++++++++++++++++++++++"
         echo "Using python: $(which python3)"
         echo "+++++++++++++++++++++++++++++++++++"
@@ -228,9 +242,10 @@ function setupMachine() {
         [ "${HOSTNAME}==x3*" ] && condaPolaris
     elif [[ $(hostname) == nid* || $(hostname) == login* ]]; then
         export LAB="NERSC"
+        setupSrun
         setupPerlmutter
-        [ "${HOSTNAME}==login*" ] && setupPerlmutter
-        [ "${HOSTNAME}==nid*" ] && setupPerlmutter
+        # [ "${HOSTNAME}==login*" ] && setupPerlmutter
+        # [ "${HOSTNAME}==nid*" ] && setupPerlmutter
     else
         echo "Unexpected hostname: $(hostname)"
     fi
