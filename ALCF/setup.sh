@@ -175,15 +175,24 @@ function setupPolaris() {
     fi
 }
 
+
 function setupALCF() {
     if [[ $(hostname) == theta* || $(hostname) == x3* ]]; then
         setupMPI
-        [ $(hostname) == theta* ] && setupThetaGPU || echo "Skipping setupThetaGPU from $(hostname)"
-        [ $(hostname) == x3* ] && setupPolaris || echo "Skipping setupPolaris from $(hostname)"
+        if [[ $(hostname) == theta* ]]; then
+            echo "Setting up ThetaGPU from $(hostname)"
+            setupThetaGPU
+        elif [[ $(hostname) == x3* ]]; then
+            echo "Setting up Polaris from $(hostname)"
+            setupPolaris
+        else
+            echo "Unknown hostname $(hostname) in setupALCF()"
+        fi
     else
         echo "Skipping setupALCF() on $(hostname)"
     fi
 }
+
 
 
 function setupSrun() {
@@ -238,8 +247,8 @@ function setupMachine() {
     if [[ $(hostname) == theta* || $(hostname) == x3* ]]; then
         export LAB="ALCF"
         setupALCF
-        [ "${HOSTNAME}==theta*" ] && condaThetaGPU
-        [ "${HOSTNAME}==x3*" ] && condaPolaris
+        # [ "${HOSTNAME}==theta*" ] && condaThetaGPU
+        # [ "${HOSTNAME}==x3*" ] && condaPolaris
     elif [[ $(hostname) == nid* || $(hostname) == login* ]]; then
         export LAB="NERSC"
         setupSrun
@@ -255,7 +264,7 @@ function setupMachine() {
 # ┃ SETUP CONDA + MPI ENVIRONMENT @ ALCF ┃
 # ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
 function setup() {
-    export NCCL_DEBUG=warn
+    export NCCL_DEBUG=info
     # TORCH_EXTENSIONS_DIR="${HERE}/.cache/torch_extensions"
     export WANDB_CACHE_DIR="./cache/wandb"
     setupMachine
