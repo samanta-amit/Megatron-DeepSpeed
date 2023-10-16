@@ -10,6 +10,7 @@ import math
 from functools import partial
 from megatron import get_args
 from megatron import print_rank_0
+from rich import print
 from megatron import get_timers
 from megatron import get_tokenizer
 from megatron.core import mpu, tensor_parallel
@@ -48,8 +49,10 @@ RANK = setup_torch(
 WORLD_SIZE = get_world_size()
 LEVEL = "DEBUG" if RANK == 0 else "CRITICAL"
 
-if RANK == 0:
-    print(f"Setting up W&B from: {RANK}")
+WANDB_MODE = os.environ.get('WANDB_MODE', None)
+DISABLE_WANDB = WANDB_MODE is not None and str(WANDB_MODE).lower() == 'disabled'
+
+if RANK == 0 and not DISABLE_WANDB:
     project_name = (
         os.environ.get(
             'WB_PROJECT',
@@ -59,6 +62,9 @@ if RANK == 0:
             ),
         )
     )
+    print('--------------------------------------------------')
+    print(f"Setting up W&B from: {RANK} with {project_name}")
+    print('--------------------------------------------------')
     setup_wandb(project_name=project_name)
 
 
