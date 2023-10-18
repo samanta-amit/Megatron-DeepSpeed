@@ -452,7 +452,7 @@ gpt_args=(
     "--max-position-embeddings ${SEQ_LEN}"
     "--train-iters 10"
     "--lr-decay-iters 320000"
-    "--num-workers 1"
+    "--num-workers 0"
     "$DATA_LOAD_ARGS"
     "--data-impl mmap"
     "--split 949,50,1"
