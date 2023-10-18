@@ -264,7 +264,7 @@ function setupMachine() {
 # ┃ SETUP CONDA + MPI ENVIRONMENT @ ALCF ┃
 # ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
 function setup() {
-    export NCCL_DEBUG=info
+    export NCCL_DEBUG=warn
     # TORCH_EXTENSIONS_DIR="${HERE}/.cache/torch_extensions"
     export WANDB_CACHE_DIR="./cache/wandb"
     setupMachine
