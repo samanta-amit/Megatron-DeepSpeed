@@ -132,10 +132,10 @@ elasticDistributed() {
     if [[ $(hostname) == theta* || $(hostname) == x3* ]]; then
         if [[ $(hostname) == theta* ]]; then
             echo "Setting up ThetaGPU from $(hostname)"
-            HOSTFILE="${COBALT_NODEFILE}"
+            HOSTFILE="${HOSTFILE:-${COBALT_NODEFILE}}"
         elif [[ $(hostname) == x3* ]]; then
             echo "Setting up Polaris from $(hostname)"
-            HOSTFILE="${PBS_NODEFILE}"
+            HOSTFILE="${HOSFILE:-${PBS_NODEFILE}}"
         else
             echo "Unknown hostname $(hostname)"
             exit 1
