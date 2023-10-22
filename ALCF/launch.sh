@@ -100,7 +100,7 @@ fullNode() {
 }
 
 
-function setupSrun() {
+function setupSrunOld() {
     if [[ $(hostname) == login* || $(hostname) == nid* ]]; then
         export NODELIST="${SLURM_JOB_NODELIST:-$(hostname)}"
         export MACHINE="Perlmutter"
@@ -108,6 +108,17 @@ function setupSrun() {
         export NGPU_PER_HOST="${SLURM_GPUS_ON_NODE:-$(nvidia-smi -L | wc -l)}"
         export NGPUS="$(( NHOSTS * NGPU_PER_HOST ))"
         export SRUN_EXEC="srun -N ${NHOSTS} -n ${NGPUS} -l -u"
+    else
+        echo "Skipping setupSrun() on $(hostname)"
+    fi
+}
+
+function setupSrun() {
+    if [[ $(hostname) == login* || $(hostname) == nid* ]]; then
+        export NHOSTS="${SLURM_NNODES:-1}"
+        export NGPU_PER_HOST="${SLURM_GPUS_ON_NODE:-$(nvidia-smi -L | wc -l)}"
+        export NGPUS="$(( NHOSTS * NGPU_PER_HOST ))"
+        export SRUN_EXEC="srun --gpus ${NGPUS} --gpus-per-node ${NGPU_PER_HOST} -N ${NHOSTS} -n ${NGPUS} -l -u --verbose"
     else
         echo "Skipping setupSrun() on $(hostname)"
     fi
@@ -150,14 +161,7 @@ elasticDistributed() {
         setupPerlmutter
         setupSrun
         echo "SRUN_EXEC: ${SRUN_EXEC}"
-        # [ $(hostname) == nid* ] && NHOSTS="$SLURM_NNODES" || NHOSTS=1
-        # [ $(hostname) == nid* ] && export MACHINE="perlmutter" || export MACHINE="NERSC"
-        # NGPU_PER_HOST=$(nvidia-smi -L | wc -l)
-        # NGPU_PER_HOST="$SLURM_GPUS_ON_NODE"
-        # NGPUS="$(( NHOSTS * NGPU_PER_HOST ))"
-        # export MACHINE="perlmutter"
         export MASTER_ADDR="$SLURMD_NODENAME"
-        # export MASTER_PORT="5432"
         EXEC_STR=(
             "${SRUN_EXEC}"
             "$(which python3)"
@@ -165,16 +169,6 @@ elasticDistributed() {
             "${gpt_args}"
             "${ds_args}"
         )
-        # EXEC_STR=(
-        #     "srun"
-        #     "-N ${NHOSTS}"
-        #     "-n ${NGPUS}"
-        #     "-l -u"
-        #     "$(which python3)"
-        #     "${MAIN}"
-        #     "${gpt_args}"
-        #     "${ds_args}"
-        # )
     else
         echo "Unexpected hostname $(hostname)"
     fi
