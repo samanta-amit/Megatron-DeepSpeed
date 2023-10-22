@@ -34,8 +34,8 @@ function loadCondaEnv() {
 
 function thetagpuMPI() {
     if [[ $(hostname) == theta* ]]; then
-        export HOSTFILE="${COBALT_NODEFILE}"
-        NHOSTS=$(wc -l < "${COBALT_NODEFILE}")
+        export HOSTFILE="${HOSTFILE:-${COBALT_NODEFILE}}"
+        NHOSTS=$(wc -l < "${HOSTFILE}")
         NGPU_PER_HOST=$(nvidia-smi -L | wc -l)
         NGPUS=$((${NHOSTS}*${NGPU_PER_HOST}))
         NVME_PATH="/raid/scratch/"
@@ -78,8 +78,8 @@ function thetagpuMPI() {
 
 function polarisMPI() {
     if [[ $(hostname) == x3* ]]; then
-        export HOSTFILE="${PBS_NODEFILE}"
-        export NHOSTS=$(wc -l < "${PBS_NODEFILE}")
+        export HOSTFILE="${HOSTFILE:-${PBS_NODEFILE}}"
+        export NHOSTS=$(wc -l < "${HOSTFILE}")
         export NGPU_PER_HOST=$(nvidia-smi -L | wc -l)
         export NGPUS=$((${NHOSTS}*${NGPU_PER_HOST}))
         export MPI_COMMAND=$(which mpiexec)
