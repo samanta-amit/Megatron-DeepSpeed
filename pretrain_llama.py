@@ -51,6 +51,12 @@ DISABLE_WANDB = (
 )
 
 if RANK == 0 and not DISABLE_WANDB:
+    # args = get_args()
+    # assert args is not None
+    # tensorboard_dir = args.tensorboard_dir
+    # if args.tensorboard_dir is not None:
+    #     print(f'Setting (in env): {TENSORBOARD_DIR=}')
+    #     os.environ['TENSORBOARD_DIR'] = args.tensorboard_dir
     project_name = os.environ.get(
         "WB_PROJECT",
         os.environ.get("WANDB_PROJECT", "GenSLM-Megatron-DS"),
@@ -58,7 +64,7 @@ if RANK == 0 and not DISABLE_WANDB:
     print("--------------------------------------------------")
     print(f"Setting up W&B from: {RANK} with {project_name}")
     print("--------------------------------------------------")
-    setup_wandb(project_name=project_name)
+    setup_wandb(project_name=project_name, sync_tensorboard=True)
 
 
 def model_provider(pre_process=True, post_process=True):
@@ -66,6 +72,7 @@ def model_provider(pre_process=True, post_process=True):
     print_rank_0("building GPT model ...")
     see_memory_usage("Before Building Model", force=True)
     args = get_args()
+    assert args is not None
     config = core_transformer_config_from_args(args)
     # args = get_args()
     # timers = get_timers()
@@ -151,23 +158,21 @@ def get_batch(data_iterator):
     """Generate a batch"""
     args = get_args()
     tokenizer = get_tokenizer()
-
+    assert args is not None
+    assert tokenizer is not None
     # Items and their type.
     keys = ["text"]
     datatype = torch.int64
-
     # Broadcast data.
     if data_iterator is not None:
         data = next(data_iterator)
     else:
         data = None
     data_b = tensor_parallel.broadcast_data(keys, data, datatype)
-
     # Unpack.
     tokens_ = data_b["text"].long()
     labels = tokens_[:, 1:].contiguous()
     tokens = tokens_[:, :-1].contiguous()
-
     # Get the masks and postition ids.
     skip_mask = (
         hasattr(args, "use_flash_attn")
@@ -182,33 +187,29 @@ def get_batch(data_iterator):
         args.eod_mask_loss,
         skip_mask,
     )
-
     # For DS's sequence parallel
     seq_parallel_world_size = mpu.get_sequence_parallel_world_size()
     seq_parallel_world_rank = mpu.get_sequence_parallel_rank()
-
     # For Megatron's sequence parallel
     if args.sequence_parallel:
         seq_parallel_world_size = mpu.get_tensor_model_parallel_world_size()
         seq_parallel_world_rank = mpu.get_tensor_model_parallel_rank()
     seq_length = tokens.size(1)
-
     assert seq_length % seq_parallel_world_size == 0
     sub_seq_length = seq_length // seq_parallel_world_size
     sub_seq_start = seq_parallel_world_rank * sub_seq_length
     sub_seq_end = (seq_parallel_world_rank + 1) * sub_seq_length
-
     tokens = tokens[:, sub_seq_start:sub_seq_end]
     position_ids = position_ids[:, sub_seq_start:sub_seq_end]
     # For DS's sequence parallel
     if mpu.get_sequence_parallel_world_size() > 1:
         labels = labels[:, sub_seq_start:sub_seq_end]
-
     return tokens, labels, loss_mask, attention_mask, position_ids
 
 
 def data_post_process(data, data_sampler_state_dict):
     args = get_args()
+    assert args is not None
     if args.data_efficiency_curriculum_learning:
         if (
             "seqlen_truncate" in data_sampler_state_dict[
@@ -268,6 +269,7 @@ def get_batch_pipe(data):
     `data_iterator`"""
     args = get_args()
     tokenizer = get_tokenizer()
+    assert tokenizer is not None and args is not None
 
     # Items and their type.
     keys = ["text"]
@@ -310,25 +312,36 @@ def loss_func(loss_mask, moe_loss, mos_loss, output_tensor):
     losses = output_tensor.float()
     loss_mask = loss_mask.view(-1).float()
     loss = torch.sum(losses.view(-1) * loss_mask) / loss_mask.sum()
-
     # Reduce loss for logging.
     averaged_loss = average_losses_across_data_parallel_group([loss])
-    if args.mos or args.kd:
+    if args.mos or args.kd:  # type:ignore
         # assert max(args.num_experts) >= 1
         loss = loss + moe_loss + mos_loss
-        if args.mos:
-            return loss, {
+        if args.mos:  # type:ignore
+            # return loss, {
+            #     "total loss": loss,
+            #     "lm loss": averaged_loss[0],
+            #     "moe loss": moe_loss,
+            #     "mos loss": mos_loss,
+            # }
+            losses = {
                 "total loss": loss,
                 "lm loss": averaged_loss[0],
                 "moe loss": moe_loss,
                 "mos loss": mos_loss,
             }
-        elif args.kd:
-            return loss, {
-                "total loss": loss,
-                "lm loss": averaged_loss[0],
-                "moe loss": moe_loss,
-                "kd loss": mos_loss,
+        elif args.kd:  # type:ignore
+            # return loss, {
+            #     "total loss": loss,
+            #     "lm loss": averaged_loss[0],
+            #     "moe loss": moe_loss,
+            #     "kd loss": mos_loss,
+            # }
+            losses = {
+                "total-loss": loss,
+                "lm-loss": averaged_loss[0],
+                "moe-loss": moe_loss,
+                "kd-loss": mos_loss,
             }
         print_rank_0(
             ">>> total loss: {}, lm loss {}, kd loss {}".format(
@@ -336,15 +349,27 @@ def loss_func(loss_mask, moe_loss, mos_loss, output_tensor):
             )
         )
     else:
-        if max(args.num_experts) <= 1:
-            return loss, {"lm loss": averaged_loss[0]}
+        if max(args.num_experts) <= 1:  # type:ignore
+            losses = {"lm-loss": averaged_loss[0]}
+            # return loss, {"lm loss": averaged_loss[0]}
         else:
             loss = loss + moe_loss
-            return loss, {"lm loss": averaged_loss[0], "moe loss": moe_loss}
+            losses = {"lm-loss": averaged_loss[0], "moe loss": moe_loss}
+            # return loss, {"lm loss": averaged_loss[0], "moe loss": moe_loss}
+    if wandb is not None and wandb.run is not None:
+        # wandb.run.log({})
+        losses |= {'loss': loss}
+        wandb.run.log({f"Loss/{k}": v for k, v in losses.items()})
+    return loss, losses
 
 
 def calculate_mos_loss(
-    args, stu_output, teacher_model, tokens, position_ids, attention_mask
+        args,
+        stu_output,
+        teacher_model,
+        tokens,
+        position_ids,
+        attention_mask,
 ):
     mos_loss = 0
     alpha = args.kd_alpha_ce
@@ -399,6 +424,7 @@ def forward_step(data_iterator, model):
     """Forward step."""
     args = get_args()
     timers = get_timers()
+    assert timers is not None and args is not None
 
     # Get the batch.
     timers("batch-generator", log_level=2).start()
@@ -407,8 +433,8 @@ def forward_step(data_iterator, model):
     )
     timers("batch-generator").stop()
 
-    if args.data_efficiency_curriculum_learning:
-        args.curriculum_seqlen = tokens.size()[1]
+    if args.data_efficiency_curriculum_learning:    # type: ignore
+        args.curriculum_seqlen = tokens.size()[1]   # type: ignore
         if (
                 hasattr(
                     args,
@@ -423,12 +449,13 @@ def forward_step(data_iterator, model):
                 torch.numel(tokens)
             )
 
-    if args.mos or args.kd:
+    assert args is not None
+    if args.mos or args.kd:  # type:ignore
         # The forward func can return either the loss or the logits, depending
         # on whether passing in the labels or not.
         stu_output, other_losses = model(tokens, position_ids, attention_mask)
         if (
-                args.curriculum_learning_legacy
+                args.curriculum_learning_legacy  # type:ignore
                 and args.curriculum_seqlen < args.seq_length
         ):
             assert args.curriculum_seqlen is not None
@@ -473,7 +500,7 @@ def forward_step(data_iterator, model):
 def train_valid_test_datasets_provider(train_val_test_num_samples):
     """Build train, valid, and test datasets."""
     args = get_args()
-
+    assert args is not None
     print_rank_0(
         "> building train, validation, and test datasets " "for GPT ..."
     )

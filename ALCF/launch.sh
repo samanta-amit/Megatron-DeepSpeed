@@ -37,14 +37,14 @@ MASTER_PORT=20010
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 MPI_WRAPPER="${SCRIPT_DIR}/mpi_wrapper"
 
-sourceFile "${ALCF_DIR}/args.sh"
+# sourceFile "${ALCF_DIR}/args.sh"
 
 MAIN="${PARENT}/pretrain_${MODEL_TYPE}.py"
 
 printJobInfo() {
     echo "Job started at: ${TSTAMP} on $(hostname)"
     echo "Job running in: ${DIR}"
-    echo "Training GPT-3 with ${MODEL_SIZE} parameters"
+    echo "Training Llama2 with ${MODEL_SIZE} parameters"
     echo "Writing logs to: ${OUTPUT_DIR}"
     echo 'to view output: tail -f $(tail -1 logfiles)'
     echo "i.e. tail -f $(tail -1 "${PARENT}"/logfiles)"
@@ -70,7 +70,7 @@ fullNode() {
     echo "NGPUS ${NGPUS}"
     echo "hostfile ${DIR}/hostfile"
     echo "MAIN ${MAIN}"
-    echo "gpt_args ${gpt_args}"
+    echo "gpt_args ${ARGS}"
     NHOSTS=$(wc -l < "${HOSTFILE}")
     NGPU_PER_HOST=$(nvidia-smi -L | wc -l)
     NGPUS=$((${NHOSTS}*${NGPU_PER_HOST}))
@@ -87,8 +87,8 @@ fullNode() {
         "${MASTER_ADDR}"
         "${MASTER_PORT}"
         "${MAIN}"
-        "${gpt_args}"
-        "${ds_args}"
+        "${ARGS}"
+        # "${ds_args}"
     )
     # EXEC=$(join_by ' ' "${EXEC[*]}")
     EXEC="${EXEC[*]}"
@@ -151,8 +151,9 @@ elasticDistributed() {
             "${MPI_ELASTIC}"
             "$(which python3)"
             "${MAIN}"
-            "${gpt_args}"
-            "${ds_args}"
+            "${ARGS}"
+            # "${gpt_args}"
+            # "${ds_args}"
         )
     elif [[ $(hostname) == nid*  || $(hostname) == login* ]]; then
         echo "Setting up from Perlmutter on $(hostname)"
@@ -166,8 +167,9 @@ elasticDistributed() {
             "${SRUN_EXEC}"
             "$(which python3)"
             "${MAIN}"
-            "${gpt_args}"
-            "${ds_args}"
+            "${ARGS}"
+            # "${gpt_args}"
+            # "${ds_args}"
         )
     else
         echo "Unexpected hostname $(hostname)"
