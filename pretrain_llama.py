@@ -64,7 +64,7 @@ if RANK == 0 and not DISABLE_WANDB:
     print("--------------------------------------------------")
     print(f"Setting up W&B from: {RANK} with {project_name}")
     print("--------------------------------------------------")
-    setup_wandb(project_name=project_name, sync_tensorboard=True)
+    setup_wandb(project_name=project_name)
 
 
 def model_provider(pre_process=True, post_process=True):
