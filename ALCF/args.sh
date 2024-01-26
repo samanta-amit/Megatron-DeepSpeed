@@ -163,7 +163,6 @@ if [[ $(hostname) == nid* || $(hostname) == login* ]]; then
     DATA_PARENT="/global/homes/f/foremans/m3957/foremans/projects/saforem2/Megatron-DeepSpeed"
     DATA_TYPE="BookCorpusDataset_text_document"
 elif [[ $(hostname) == theta* || $(hostname) == x3* ]]; then
-    # DATA_PARENT="/lus/grand"
     DATA_PARENT="/lus/eagle/projects/datasets/Megatron-DeepSpeed/GenSLMSubSample200k"  # GenSLMSubSample200k"
     # DATA_TYPE="GenSLMSubSample200k"
     # DATA_PARENT="/home/foremans/datascience/foremans/locations/polaris/projects/argonne-lcf/Megatron-DeepSpeed"
@@ -181,7 +180,7 @@ DATA_PATH="${DATA_DIR}/${DATA_TYPE}"
 VOCAB_FILE="${DATA_DIR}/gpt2-vocab.json"
 MERGE_FILE="${DATA_DIR}/gpt2-merges.txt"
 # #
-# [ "$(hostname)==login*" ] && DATA_PARENT="/global/homes/f/foremans/m3957/foremans/projects/saforem2/Megatron-DeepSpeed"
+# [ "$(hostname)==login*" ] && DATA_PARENT="/global/homes/f/foremans/m3957/foremans/projects/saforem2/Megatron-DeepSpeed"_
 # [ "$(hostname)==nid*" ] && DATA_PARENT="/global/homes/f/foremans/m3957/foremans/projects/saforem2/Megatron-DeepSpeed"
 # # [ "$(hostname)==theta*" ] && DATA_PARENT="/lus/eagle/projects/datasets/BookCorpusDataset"
 # [ "$(hostname)==theta*" ] && DATA_PARENT="/lus/grand/projects/fallwkshp23/datasets/GenSLMSubSample200k"
