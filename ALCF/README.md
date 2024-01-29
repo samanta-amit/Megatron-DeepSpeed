@@ -89,5 +89,5 @@ strategies and various optimizations that are supported.
   <dt><a href="https://github.com/argonne-lcf/Megatron-DeepSpeed/blob/main/ALCF/setup.sh"><code>ALCF/setup.sh</code></a></dt>
   <dd>Locate and activate virtual environment to be used, ensure MPI variables are set properly</dd>
   <dt><a href="https://github.com/argonne-lcf/Megatron-DeepSpeed/blob/main/ALCF/launch.sh"><code>ALCF/launch.sh</code></a></dt>
-  <dd>Identify available resources and build the command to be ran i.e. figure out how many: `{nodes, GPUs per node, GPUs total}`, to pass to `mpi{run,exec}` then, use this to build  `mpiexec {mpiexec-args} python3 pretrain_gpt.py`</dd>
+  <dd>Identify available resources and build the command to be ran i.e. figure out how many: `{nodes, GPUs per node, GPUs total}`, to pass to `mpi{run,exec}` then, use this to build  `mpiexec {mpiexec-args} python3 pretrain_gpt_alcf.py`</dd>
 </dl>

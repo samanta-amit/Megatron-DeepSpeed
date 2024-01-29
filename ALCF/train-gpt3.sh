@@ -31,7 +31,7 @@ echo "+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+"
 #┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
 #┃ Make sure we're not already running; if so, exit here ┃
 #┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
-PIDS=$(ps aux | egrep "$USER.+mpi.+pretrain_gpt.py" | grep -v grep | awk '{print $2}')
+PIDS=$(ps aux | egrep "$USER.+mpi.+pretrain_gpt_alcf.py" | grep -v grep | awk '{print $2}')
 if [ -n "${PIDS}" ]; then
   echo "Already running! Exiting!"
   exit 1

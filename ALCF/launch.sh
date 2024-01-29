@@ -39,7 +39,7 @@ MPI_WRAPPER="${SCRIPT_DIR}/mpi_wrapper"
 
 # sourceFile "${ALCF_DIR}/args.sh"
 
-MAIN="${PARENT}/pretrain_${MODEL_TYPE}.py"
+MAIN="${PARENT}/pretrain_gpt_alcf.py"
 
 printJobInfo() {
     echo "Job started at: ${TSTAMP} on $(hostname)"

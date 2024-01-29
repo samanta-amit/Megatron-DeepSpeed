@@ -66,29 +66,75 @@ MEGATRON_DIR="${HERE}"
 
 # DATA_DIR="${HOME}/datascience/foremans/locations/thetaGPU/projects/saforem2/Megatron-DeepSpeed/dataset/"
 BASE_PATH="${MEGATRON_DIR}"
-DS_CONFIG=${BASE_PATH}/deepspeed.json
-DATASET_1="${DATA_DIR}/BookCorpusDataset_text_document"
-# DATASET_1="./tmp/data/bookcorpus_train_1m_text_sentence"
-DATASET="1 ${DATASET_1}"
+DS_CONFIG="${BASE_PATH}/deepspeed.json"
+# DATASET_1="${DATA_DIR}/BookCorpusDataset_text_document"
+# # DATASET_1="./tmp/data/bookcorpus_train_1m_text_sentence"
+# DATASET="1 ${DATASET_1}"
 # CHECKPOINT_PATH=./tmp
-TOKENIZER_PATH=./tmp/tokenizer.model # offical llama tokenizer.model
+# TOKENIZER_PATH=./tmp/tokenizer.model # offical llama tokenizer.model
+# mkdir -p $TOKENIZER_PATH
 
-if [[ $(hostname) == nid* || $(hostname) == login* ]]; then
-    DATA_PARENT="/global/homes/f/foremans/m3957/foremans/projects/saforem2/Megatron-DeepSpeed"
-    DATA_TYPE="BookCorpusDataset_text_document"
-elif [[ $(hostname) == theta* || $(hostname) == x3* ]]; then
-    DATA_PARENT="/lus/grand/projects/fallwkshp23/datasets/GenSLMSubSample200k"
-    DATA_TYPE="genslm_subsample_200k_sequence_document"
-else
-    echo "Unable to determine DATA_PARENT for $(hostname)."
-    echo "Exiting!"
-    exit 1
-fi
+# if [[ $(hostname) == nid* || $(hostname) == login* ]]; then
+#     DATA_PARENT="/global/homes/f/foremans/m3957/foremans/projects/saforem2/Megatron-DeepSpeed"
+#     DATA_TYPE="BookCorpusDataset_text_document"
+# elif [[ $(hostname) == theta* || $(hostname) == x3* ]]; then
+#     DATA_PARENT="/lus/grand/projects/fallwkshp23/datasets/GenSLMSubSample200k"
+#     DATA_TYPE="genslm_subsample_200k_sequence_document"
+# else
+#     echo "Unable to determine DATA_PARENT for $(hostname)."
+#     echo "Exiting!"
+#     exit 1
+# fi
 
-DATA_DIR="${DATA_PARENT}/dataset"
-DATA_PATH="${DATA_DIR}/${DATA_TYPE}"
-VOCAB_FILE="${DATA_DIR}/gpt2-vocab.json"
-MERGE_FILE="${DATA_DIR}/gpt2-merges.txt"
+function getMachine() {
+    if [[ $(hostname) == x1* ]]; then
+        export MACHINE="SunSpot"
+    elif  [[ $(hostname) == x3* ]]; then
+        export MACHINE="Polaris"
+    elif [[ $(hostname) == x4* ]]; then
+        export MACHINE="Aurora"
+    elif [[ $(hostname) == nid* ]]; then
+        export MACHINE="Perlmutter"
+    else
+        echo "Unknown MACHINE."
+        echo "Setting MACHINE=$(hostname)"
+        echo "Writing $(hostname) to $HERE/hostfile"
+        echo $(hostname) > "$HERE/hostfile"
+        export MACHINE=$(hostname)
+        export HOSTFILE="$HERE/hostfile"
+    fi
+    echo "+---------------------------------"
+    echo "| MACHINE: ${MACHINE}"
+    echo "+---------------------------------"
+}
+
+#
+# ┏━━━━━━━━━━━━┓
+# ┃ Data paths ┃
+# ┗━━━━━━━━━━━━┛
+function setupDataPaths() {
+    # DATA_PARENT="${DATA_PARENT:-$1}"
+    getMachine
+    # if [[ $MACHINE == nid* || ]]
+    if [[ $(hostname) == nid* || $(hostname) == login* ]]; then
+        DATA_PARENT="/global/homes/f/foremans/m3957/foremans/projects/saforem2/Megatron-DeepSpeed"
+        DATA_TYPE="BookCorpusDataset_text_document"
+    elif [[ $(hostname) == x1* || $(hostname) == x3* || $(hostname) == x4* ]]; then
+        DATA_PARENT="/home/foremans/datascience/foremans/locations/polaris/projects/argonne-lcf/Megatron-DeepSpeed"
+        DATA_TYPE="books-0001_text_document"
+        # DATA_PARENT="/lus/grand"
+        # DATA_PARENT="/lus/grand/projects/fallwkshp23/datasets/GenSLMSubSample200k"
+        # DATA_TYPE="genslm_subsample_200k_sequence_document"
+    else
+        echo "Unable to determine DATA_PARENT for $(hostname)."
+        echo "Exiting!"
+        exit 1
+    fi
+    DATA_DIR="${DATA_PARENT}/dataset"
+    DATA_PATH="${DATA_DIR}/${DATA_TYPE}"
+    VOCAB_FILE="${DATA_DIR}/gpt2-vocab.json"
+    MERGE_FILE="${DATA_DIR}/gpt2-merges.txt"
+}
 
 echo "+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+"
 echo "ALCF_DIR: ${ALCF_DIR}"
@@ -303,7 +349,7 @@ fi
 DISTRIBUTED_ARGS="--nproc_per_node $GPUS_PER_NODE --nnodes $NNODES --node_rank $NODE_RANK --master_addr $MASTER_ADDR --master_port $MASTER_PORT"
 
 # torchrun $DISTRIBUTED_ARGS \
-#        pretrain_gpt.py \
+#        pretrain_gpt_alcf.py \
 
 
 # ┏━━━━━━━━━━━━━━━━━━━┓
@@ -382,7 +428,7 @@ gpt_args=(
     "--data-path $DATASET"
     "--data-impl mmap"
     "--tokenizer-type GPTSentencePieceTokenizer"
-    "--tokenizer-model $TOKENIZER_PATH"
+    # "--tokenizer-model $TOKENIZER_PATH"
     "--split 949,50,1"
     "--distributed-backend nccl"
     "--lr $LR"
