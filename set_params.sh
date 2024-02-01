@@ -68,7 +68,7 @@ fi
 NCCL=${NCCL:-nccl}
 
 run_cmd="
-    deepspeed $launcher pretrain_gpt.py \
+    deepspeed $launcher pretrain_gpt_alcf.py \
     --tensor-model-parallel-size $TP \
     --pipeline-model-parallel-size $PP \
     --num-layers $NLAYERS \
