@@ -21,10 +21,10 @@ export GLOBAL_BATCH=$(( $WORLD_SIZE * $MICRO_BATCH * $GRAD_ACC_STEPS / $TP / $PP
 TP=${TP:-1}
 PP=${PP:-1}
 
-export DATA_PARENT="/home/foremans/polaris/projects/saforem2/Megatron-DeepSpeed"
-export DATA_TYPE="BookCorpusDataset_text_document"
-# export DATA_PARENT="/lus/eagle/projects/datasets/Megatron-DeepSpeed/GenSLMSubSample200k" 
-# export DATA_TYPE="genslm_subsample_200k_sequence_document" 
+# export DATA_PARENT="/home/foremans/polaris/projects/saforem2/Megatron-DeepSpeed"
+# export DATA_TYPE="BookCorpusDataset_text_document"
+export DATA_PARENT="/lus/eagle/projects/datasets/Megatron-DeepSpeed/GenSLMSubSample200k" 
+export DATA_TYPE="genslm_subsample_200k_sequence_document" 
 export DATA_DIR="${DATA_PARENT}/dataset" 
 export DATA_PATH="${DATA_DIR}/${DATA_TYPE}"
 export VOCAB_FILE="${DATA_DIR}/gpt2-vocab.json" 
@@ -41,7 +41,7 @@ echo "!!!Please see logs at ${OUTPUT_DIR}"
 # Hostfile path
 hostfile_deepspeed=./hostfile_deepspeed
 hostfile_mpich=./hostfile_mpich
-cat $PBS_NODEFILE > hostfile_mpich 
+cat $PBS_NODEFILE > hostfile_mpich
 cat $PBS_NODEFILE > hostfile_deepspeed ; sed -e 's/$/ slots=4/' -i hostfile_deepspeed
 
 ds_args=" "
