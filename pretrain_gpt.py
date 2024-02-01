@@ -143,7 +143,6 @@ from typing import Optional
 #     if model_size is not None:
 #         wandb.run.config.update({'MODEL_SIZE': model_size})
 
-
 def model_provider(pre_process=True, post_process=True):
     """Build the model."""
     print_rank_0('building GPT model ...')
@@ -219,7 +218,6 @@ def model_provider(pre_process=True, post_process=True):
         wandb.run.config.update({'num_params': num_params})
     return model
 
-
 def get_batch(data_iterator):
     """Generate a batch"""
     args = get_args()
@@ -275,6 +273,7 @@ def get_batch(data_iterator):
 
     return tokens, labels, loss_mask, attention_mask, position_ids
 
+
 def data_post_process(data, data_sampler_state_dict):
     args = get_args()
     if args.data_efficiency_curriculum_learning:
@@ -299,6 +298,7 @@ def data_post_process(data, data_sampler_state_dict):
         else:
             args.data_efficiency_curriculum_learning_seqlen_type = None
     return data
+
 
 def get_batch_pipe(data):
     """Modification of `get_batch` to work on `next(data_iterator)` instead of `data_iterator`"""
@@ -385,6 +385,7 @@ def calculate_mos_loss(args, stu_output, teacher_model, tokens, position_ids, at
         mos_loss = mos_loss.div(args.seq_length) * beta
     return mos_loss
 
+
 def forward_step(data_iterator, model):
     """Forward step."""
     args = get_args()
@@ -438,8 +439,24 @@ def train_valid_test_datasets_provider(train_val_test_num_samples):
 
     print_rank_0('> building train, validation, and test datasets '
                  'for GPT ...')
+    files = []
+    if args.data_file_list is not None:
+        with open(args.data_file_list, 'r') as flist:
+            for f in flist.readlines():
+                w, fname = f.split()
+                files.append(float(w))
+                files.append(fname)
+    elif len(args.data_path)==1 and os.path.isdir(args.data_path[0]):
+        path=args.data_path[0] + "/"
+        for f in os.listdir(path):
+            if (os.path.isfile(path + f) and f.find(".bin")!=-1):
+                files.append(1)                
+                files.append(path + f.split(".bin")[0])
+    else:
+        files = args.data_path
+    print_rank_0(f"file list {files}")
     train_ds, valid_ds, test_ds = build_train_valid_test_datasets(
-        data_prefix=args.data_path,
+        data_prefix=files,
         data_impl=args.data_impl,
         splits_string=args.split,
         train_valid_test_num_samples=train_val_test_num_samples,
@@ -485,15 +502,19 @@ def git_ds_info():
 def main():
     # if RANK == 0:
     #     setup_wandb()
-
-    model = pretrain(
-        train_valid_test_datasets_provider,
-        model_provider,
-        ModelType.encoder_or_decoder,
-        forward_step,
-        args_defaults={'tokenizer_type': 'GPT2BPETokenizer'},
-        data_post_process=data_post_process
-    )
+    from torch.profiler import profile, record_function, ProfilerActivity
+    with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA]) as prof:
+        model = pretrain(
+            train_valid_test_datasets_provider,
+            model_provider,
+            ModelType.encoder_or_decoder,
+            forward_step,
+            args_defaults={'tokenizer_type': 'GPT2BPETokenizer'},
+            data_post_process=data_post_process
+        )
+    args = get_args()        
+    prof.export_chrome_trace(f"{args.tensorboard_dir}/torch-trace-{RANK}-of-{WORLD_SIZE}.json")
+    
     # # from megatron.training import get_model
     # if wandb.run is not None:
     #     args = get_args()

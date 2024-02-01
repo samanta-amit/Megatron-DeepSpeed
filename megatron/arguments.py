@@ -1203,6 +1203,9 @@ def _add_data_args(parser):
                        'single dataset used for all three: train, valid '
                        'and test. It is exclusive to the other '
                        '--*-data-path args')
+    group.add_argument('--data-file-list', type=str, default=None,
+                       help='The file with the list of dataset and weights')
+    
     group.add_argument('--split', type=str, default='969, 30, 1',
                        help='Comma-separated list of proportions for training,'
                        ' validation, and test split. For example the split '
@@ -1264,7 +1267,8 @@ def _add_data_args(parser):
                                 'SentencePieceTokenizer',
                                 'GPTSentencePieceTokenizer',
                                 'HFTokenizer',
-                                'NullTokenizer'],
+                                'NullTokenizer',
+                                'Llama2Tokenizer'],
                        help='What type of tokenizer to use.')
     group.add_argument('--tokenizer-model', type=str, default=None,
                        help='Sentencepiece tokenizer model.')
