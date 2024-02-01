@@ -57,7 +57,7 @@ strategies and various optimizations that are supported.
     # - other args: defined in ALCF/args.sh
     # ---------------------------------------------
     MODEL_SIZE_KEY="GPT25B" \
-        SEQ_LEN=4096 \ 
+        SEQ_LEN=4096 \
         USE_FLASH_ATTN_V2=1 \
         MICRO_BATCH=1 \
         GAS=1 \
@@ -69,6 +69,7 @@ strategies and various optimizations that are supported.
 
 ## Helper Scripts
 
+- [`pretrain_gpt_alcf.py`](https://github.com/argonne-lcf/Megatron-DeepSpeed/blob/main/pretrain_gpt_alcf.py)
 - 📂 [`ALCF/`](https://github.com/argonne-lcf/Megatron-DeepSpeed/tree/main/ALCF)  
   `├──` [`args.sh`](https://github.com/argonne-lcf/Megatron-DeepSpeed/blob/main/ALCF/models.sh)  
   `├──` [`launch.sh`](https://github.com/argonne-lcf/Megatron-DeepSpeed/blob/main/ALCF/launch.sh)  
@@ -80,6 +81,8 @@ strategies and various optimizations that are supported.
 
 
 <dl>
+  <dt><a href=https://github.com/argonne-lcf/Megatron-DeepSpeed/blob/main/pretrain_gpt_alcf.py><code>pretrain_gpt_alcf.py</code></a>
+  <dd>Python module to be launched. Running `./ALCF/train-gpt3.sh` will automaticall build an `mpiexec` command and launch this module.</dd>
   <dt><a href=https://github.com/argonne-lcf/Megatron-DeepSpeed/blob/main/ALCF/train-gpt3.sh><code>ALCF/train-gpt3.sh</code></a>
   <dd>Main entry point for training. This script will automatically source the rest of the required ALCF/*.sh scripts below</dd>
   <dt><a href=https://github.com/saforem2/Megatron-DeepSpeed/blob/main/ALCF/model.sh><code>ALCF/model.sh</code></a></dt>
