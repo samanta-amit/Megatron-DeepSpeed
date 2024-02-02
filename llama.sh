@@ -1,4 +1,4 @@
-#!/bin/bashOA
+#!/bin/bash
 #PBS -l walltime=0:30:00
 #PBS -A datascience
 #PBS -q debug-scaling
