@@ -3,14 +3,12 @@
 """Pretrain GPT"""
 
 import os
+from rich import print
 import torch
 import math
-# import logging
-
 from functools import partial
 from megatron import get_args
 from megatron import print_rank_0
-from rich import print
 from megatron import get_timers
 from megatron import get_tokenizer
 from megatron.core import mpu, tensor_parallel
@@ -66,98 +64,26 @@ if RANK == 0 and not DISABLE_WANDB:
     print('--------------------------------------------------')
     setup_wandb(project_name=project_name)
 
-
-# os.environ['']
-# wblogger = logging.getLogger("wandb")
-# wblogger.setLevel(logging.DEBUG)
-
-# log = get_logger(__name__, level=LEVEL)
-#
-# log.critical(f"Hello from rank: {RANK} / {WORLD_SIZE} !")
-
-import socket
-from typing import Optional
-# log.critical(f"Setting up W&B from rank: {RANK} with {wb_project_name}")
-
-
-# def setup_wandb(project_name: Optional[str] = None):
-#     print(f"Setting up W&B from: {RANK}")
-#     project_name = (
-#         os.environ.get('WB_PROJECT', 'GenSLM-Megatron-DS')
-#         if project_name is None else project_name
-#     )
-#     print(f"Setting up wandb from rank: {RANK}")
-#     print(f"Using: WB PROJECT: {project_name}")
-#     # if get_rank() == 0:
-#     # tensorboard_dir = args.tensorboard_dir
-#     tensorboard_dir = None
-#     # if config is None:
-#     tensorboard_dir = os.environ.get('TENSORBOARD_DIR', None)
-#     # else:
-#     #     tensorboard_dir = (
-#     #         config.get(
-#     #             'tensorboard_dir',
-#     #             None,  # os.getcwd()
-#     #         )
-#     #     )
-#     if tensorboard_dir is not None:
-#         print(f'Patching tensorboard from {tensorboard_dir}')
-#         wandb.tensorboard.patch(root_logdir=tensorboard_dir)
-#     # wbrun_id = wandb.util.generate_id()
-#     current_time = time.time()
-#     # local_time = time.localtime(current_time)
-#     # if wandb.run is None:
-#     wandb.init(
-#         resume='allow',
-#         sync_tensorboard=(tensorboard_dir is not None),  # True,
-#         project=(project_name if project_name is not None else None),
-#         # dir=(tensorboard_dir if tensorboard_dir is not None else None),
-#     )
-#     assert wandb.run is not None
-#     print(f"W&B RUN: [{wandb.run.name}]({wandb.run.url})")
-#     wandb.run.config.update({'current_time': current_time})
-#     model_size = os.environ.get('MODEL_SIZE', None)
-#     wandb.run.config.update({'world_size': get_world_size()})
-#     # if config is not None:
-#     #     wandb.run.config.update(config)
-#     env = {
-#         k: v for k, v in dict(os.environ).items()
-#         if not k.startswith('_ModuleTable')
-#     }
-#     _ = env.pop('LS_COLORS', None)
-#     _ = env.pop('PS1', None)
-#     wandb.run.config.update({'env': env})
-#     hostname = socket.gethostbyaddr(socket.gethostname())[0]
-#     if hostname.startswith('theta'):
-#         wandb.run.config.update({'machine': 'ThetaGPU'})
-#     elif hostname.startswith('x3'):
-#         wandb.run.config.update({'machine': 'Polaris'})
-#     elif hostname.startswith('x1'):
-#         wandb.run.config.update({'machine': 'Sunspot'})
-#     elif hostname.startswith('nid'):
-#         wandb.run.config.update({'machine': 'Perlmutter'})
-#     elif hostname.startswith('login'):
-#         wandb.run.config.update({'machine': 'NERSC'})
-#     else:
-#         wandb.run.config.update({'machine': hostname})
-#     if model_size is not None:
-#         wandb.run.config.update({'MODEL_SIZE': model_size})
-
 def model_provider(pre_process=True, post_process=True):
     """Build the model."""
+
     print_rank_0('building GPT model ...')
-    see_memory_usage("Before Building Model", force=True)
+    see_memory_usage(f"Before Building Model", force=True)
+
     args = get_args()
     config = core_transformer_config_from_args(args)
-    # args = get_args()
-    # timers = get_timers()
     if wandb.run is not None:
         print(f"Updating WandB run: [{wandb.run.name}]({wandb.run.url})")
         wandb.run.config.update({"args": vars(args)})
     if RANK == 0:
         git_ds_info()
-
-    with deepspeed.zero.Init(sequence_data_parallel_group=mpu.get_sequence_data_parallel_group(),
+    if hasattr(mpu, 'get_sequence_parallel_group'):
+        dpg = mpu.get_sequence_parallel_group()
+    elif hasattr(mpu, 'get_data_parallel_group'):
+        dpg = mpu.get_data_parallel_group()
+    else:
+        dpg = None
+    with deepspeed.zero.Init(data_parallel_group=dpg,
                              remote_device=None if args.remote_device == 'none' else args.remote_device,
                              config_dict_or_path=args.deepspeed_config_dict,
                              enabled=args.zero_stage == 3,
@@ -240,8 +166,7 @@ def get_batch(data_iterator):
     tokens = tokens_[:, :-1].contiguous()
 
     # Get the masks and postition ids.
-    skip_mask = hasattr(args, 'use_flash_attn') or hasattr(args, 'flash_attn_triton')
-    # skip_mask = args.use_flash_attn or args.use_flash_attn_triton
+    skip_mask = args.use_flash_attn or args.use_flash_attn_triton
     attention_mask, loss_mask, position_ids = get_ltor_masks_and_position_ids(
         tokens,
         tokenizer.eod,
@@ -273,7 +198,6 @@ def get_batch(data_iterator):
 
     return tokens, labels, loss_mask, attention_mask, position_ids
 
-
 def data_post_process(data, data_sampler_state_dict):
     args = get_args()
     if args.data_efficiency_curriculum_learning:
@@ -298,7 +222,6 @@ def data_post_process(data, data_sampler_state_dict):
         else:
             args.data_efficiency_curriculum_learning_seqlen_type = None
     return data
-
 
 def get_batch_pipe(data):
     """Modification of `get_batch` to work on `next(data_iterator)` instead of `data_iterator`"""
@@ -384,7 +307,6 @@ def calculate_mos_loss(args, stu_output, teacher_model, tokens, position_ids, at
 
         mos_loss = mos_loss.div(args.seq_length) * beta
     return mos_loss
-
 
 def forward_step(data_iterator, model):
     """Forward step."""
@@ -478,6 +400,8 @@ def command_exists(cmd):
 
 
 def git_ds_info():
+    if RANK != 0:
+        return
     from deepspeed.env_report import main as ds_report
     ds_report()
 

@@ -2,15 +2,11 @@
 
 """Pretrain GPT"""
 
-import os
 import torch
 import math
-# import logging
-
 from functools import partial
 from megatron import get_args
 from megatron import print_rank_0
-from rich import print
 from megatron import get_timers
 from megatron import get_tokenizer
 from megatron.core import mpu, tensor_parallel
@@ -21,23 +17,17 @@ from megatron.training import pretrain
 from megatron.utils import get_ltor_masks_and_position_ids
 from megatron.utils import average_losses_across_data_parallel_group, update_rotary_pos_emb
 from megatron.arguments import core_transformer_config_from_args
-from megatron.utils import (
-    report_memory,
-    throughput_calculator,
-    checkpoint_throughput_calculator
-)
-from pathlib import Path
 
 import deepspeed
 from deepspeed.runtime.utils import see_memory_usage
 from deepspeed.accelerator.real_accelerator import get_accelerator
+import os
 import subprocess
-import wandb
 
-import time
 from torch import nn
 import torch.nn.functional as F
 
+<<<<<<< HEAD
 # from ezpz import get_logger
 from ezpz.dist import setup_torch, get_world_size, setup_wandb
 
@@ -142,22 +132,24 @@ from typing import Optional
 #         wandb.run.config.update({'machine': hostname})
 #     if model_size is not None:
 #         wandb.run.config.update({'MODEL_SIZE': model_size})
+=======
+>>>>>>> 9c3a73dfebb812e7a494eaaa0a0dc1138dd0f922
 
 def model_provider(pre_process=True, post_process=True):
     """Build the model."""
+
     print_rank_0('building GPT model ...')
-    see_memory_usage("Before Building Model", force=True)
+    see_memory_usage(f"Before Building Model", force=True)
+
     args = get_args()
     config = core_transformer_config_from_args(args)
-    # args = get_args()
-    # timers = get_timers()
-    if wandb.run is not None:
-        print(f"Updating WandB run: [{wandb.run.name}]({wandb.run.url})")
-        wandb.run.config.update({"args": vars(args)})
-    if RANK == 0:
-        git_ds_info()
-
-    with deepspeed.zero.Init(sequence_data_parallel_group=mpu.get_sequence_data_parallel_group(),
+    if hasattr(mpu, 'get_sequence_parallel_group'):
+        dpg = mpu.get_sequence_parallel_group()
+    elif hasattr(mpu, 'get_data_parallel_group'):
+        dpg = mpu.get_data_parallel_group()
+    else:
+        dpg = None
+    with deepspeed.zero.Init(data_parallel_group=dpg,
                              remote_device=None if args.remote_device == 'none' else args.remote_device,
                              config_dict_or_path=args.deepspeed_config_dict,
                              enabled=args.zero_stage == 3,
@@ -201,21 +193,7 @@ def model_provider(pre_process=True, post_process=True):
                 pre_process=pre_process,
                 post_process=post_process
             )
-    num_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    # print_rank_0('\n ------------------------ ')
-    # print_rank_0(f'num of parameters {num_params}')
-    # print_rank_0('------------------------\n ')
-    print_rank_0(80 * '-')
-    print_rank_0(f"Number of parameters in model: {num_params}")
-    print_rank_0(80 * '-')
-    see_memory_usage("After Building Model", force=True)
-    if wandb.run is not None:
-        wandb.run.watch(
-            model,
-            log='all',
-            log_graph=True,
-        )
-        wandb.run.config.update({'num_params': num_params})
+    see_memory_usage(f"After Building Model", force=True)
     return model
 
 def get_batch(data_iterator):
@@ -240,8 +218,7 @@ def get_batch(data_iterator):
     tokens = tokens_[:, :-1].contiguous()
 
     # Get the masks and postition ids.
-    skip_mask = hasattr(args, 'use_flash_attn') or hasattr(args, 'flash_attn_triton')
-    # skip_mask = args.use_flash_attn or args.use_flash_attn_triton
+    skip_mask = args.use_flash_attn or args.use_flash_attn_triton
     attention_mask, loss_mask, position_ids = get_ltor_masks_and_position_ids(
         tokens,
         tokenizer.eod,
@@ -499,6 +476,7 @@ def git_ds_info():
     print(f'**** Git info for Megatron: git_hash={git_hash} git_branch={git_branch} ****')
 
 
+<<<<<<< HEAD
 def main():
     # if RANK == 0:
     #     setup_wandb()
@@ -574,20 +552,13 @@ def main():
 
 
 
+=======
+>>>>>>> 9c3a73dfebb812e7a494eaaa0a0dc1138dd0f922
 if __name__ == "__main__":
-    # git_ds_info()
-    # pretrain(train_valid_test_datasets_provider,
-    #          model_provider,
-    #          ModelType.encoder_or_decoder,
-    #          forward_step,
-    #          args_defaults={'tokenizer_type': 'GPT2BPETokenizer'},
-    #          data_post_process=data_post_process)
-    import sys
-    import deepspeed.comm as dist
-    model = main()
-    dist.log_summary()
-    if wandb.run is not None:
-        print(f"wandb.run.name: {wandb.run.name}")
-        print(f"wandb.run.url: {wandb.run.url}")
-        wandb.finish()
-    sys.exit()
+    git_ds_info()
+    pretrain(train_valid_test_datasets_provider,
+             model_provider,
+             ModelType.encoder_or_decoder,
+             forward_step,
+             args_defaults={'tokenizer_type': 'GPT2BPETokenizer'},
+             data_post_process=data_post_process)
