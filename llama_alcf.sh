@@ -31,7 +31,7 @@ TRAIN_ITERS=10
 ZERO_STAGE=2
 MODEL=LLAMA_7B
 OUTPUT_PREFIX=${MODEL}_z${ZERO_STAGE}_seqlen_mp${MP}_pp${PP}_sp${SP}_nl${NUM_LAYERS}_hs${HIDDEN_SIZE}_gb${BS}_mb${MBS}
-MASTER_ADDR=localhost MASTER_PORT=6543 mpiexec -n $((PBS_JOBSIZE*PPN)) -ppn $PPN --hostfile $PBS_NODEFILE python3 ./pretrain_gpt.py \
+MASTER_ADDR=localhost MASTER_PORT=6543 mpiexec -n $((PBS_JOBSIZE*PPN)) -ppn $PPN --hostfile $PBS_NODEFILE python3 ./pretrain_gpt_alcf.py \
 	   --tensor-model-parallel-size ${TP} \
 	   --pipeline-model-parallel-size ${PP} \
 	   --num-layers 32 \
@@ -74,4 +74,4 @@ MASTER_ADDR=localhost MASTER_PORT=6543 mpiexec -n $((PBS_JOBSIZE*PPN)) -ppn $PPN
 	   --data-file-list ${DATA_FILE_LIST} \
 	   --data-path ${DATA_PATH} \
 	   --vocab-file ${MD}/dataset/gpt2-vocab.json --merge-file ${MD}/dataset/gpt2-merges.txt \
-	   --zero-stage=2 --deepspeed_config=${MD}/ds_config-gpt.json --deepspeed
+	   --zero-stage=${ZERO_STAGE} --deepspeed_config=${MD}/ds_config-gpt.json --deepspeed
