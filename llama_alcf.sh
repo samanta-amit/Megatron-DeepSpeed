@@ -15,10 +15,22 @@ export TP=1
 export PP=1
 export MBS=1
 export BS=$((MBS*PBS_JOBSIZE*PPN/PP/TP))
+export SP=$((PBS_JOBSIZE*PPN/PP/TP))
 #export DATA_PATH="/eagle/datasets//dolma/data_Llama2Tokenizer/common-crawl/cc_en_middle/"
+
+export export DATE_TAG=$(date +"%Y-%m-%d-%H-%M-%S")
 export DATA_PATH="/eagle/datasets//dolma/data_Llama2Tokenizer/wiki-en-simple/"
 export DATA_FILE_LIST="/eagle/datasets//dolma//data_file_list_small.txt"
 echo "BS: $BS\n PP:$PP \n TP: $TP, PBS_JOBSIZE: $PBS_JOBSIZE"
+
+HIDDEN_SIZE=4096
+NUM_LAYERS=32
+SEQ_LENGTH=2048
+EMBEDDINGS=2048
+TRAIN_ITERS=10
+ZERO_STAGE=2
+MODEL=LLAMA_7B
+OUTPUT_PREFIX=${MODEL}_z${ZERO_STAGE}_seqlen_mp${MP}_pp${PP}_sp${SP}_nl${NUM_LAYERS}_hs${HIDDEN_SIZE}_gb${BS}_mb${MBS}
 MASTER_ADDR=localhost MASTER_PORT=6543 mpiexec -n $((PBS_JOBSIZE*PPN)) -ppn $PPN --hostfile $PBS_NODEFILE python3 ./pretrain_gpt.py \
 	   --tensor-model-parallel-size ${TP} \
 	   --pipeline-model-parallel-size ${PP} \
@@ -31,8 +43,8 @@ MASTER_ADDR=localhost MASTER_PORT=6543 mpiexec -n $((PBS_JOBSIZE*PPN)) -ppn $PPN
 	   --seq-length 2048 \
 	   --max-position-embeddings 2048 \
 	   --train-iters 10 \
-	   --save ${MD}/checkpoints/LLAMA_7B_LLAMA_7B_z2_seqlen_mp1_pp1_sp24_nl32_hs4096_gb${BS}_mb1 \
-	   --load ${MD}/checkpoints/LLAMA_7B_LLAMA_7B_z2_seqlen_mp1_pp1_sp24_nl32_hs4096_gb${BS}_mb1 \
+	   --save ${MD}/checkpoints/${OUTPUT_PREFIX} \
+	   --load ${MD}/checkpoints/${OUTPUT_PREFIX} \
 	   --data-impl mmap \
 	   --tokenizer-type Llama2Tokenizer \
 	   --split 949,50,1 \
@@ -57,7 +69,8 @@ MASTER_ADDR=localhost MASTER_PORT=6543 mpiexec -n $((PBS_JOBSIZE*PPN)) -ppn $PPN
 	   --use-rotary-position-embeddings \
 	   --tokenizer-model /eagle/datasets/dolma/utils/tokenizer.model \
 	   --untie-embeddings-and-output-weights \
-	   --swiglu --normalization layernorm --disable-bias-linear --num-key-value-heads 4 --tensorboard-dir ${MD}/outputs/LLAMA_7B_LLAMA_7B_z3_seqlen_mp1_pp1_sp24_nl32_hs4096_gb24_mb1/tensorboard --log-timers-to-tensorboard --tensorboard-log-interval 1 \
+	   --swiglu --normalization layernorm --disable-bias-linear --num-key-value-heads 4 \
+	   --tensorboard-dir ${MD}/outputs/${OUTPUT_PREFIX}/tensorboard --log-timers-to-tensorboard --tensorboard-log-interval 1 \
 	   --data-file-list ${DATA_FILE_LIST} \
 	   --data-path ${DATA_PATH} \
 	   --vocab-file ${MD}/dataset/gpt2-vocab.json --merge-file ${MD}/dataset/gpt2-merges.txt \
