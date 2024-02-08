@@ -20,7 +20,7 @@ export SP=$((PBS_JOBSIZE*PPN/PP/TP))
 
 export export DATE_TAG=$(date +"%Y-%m-%d-%H-%M-%S")
 export DATA_PATH="/eagle/datasets//dolma/data_Llama2Tokenizer/wiki-en-simple/"
-export DATA_FILE_LIST="/eagle/datasets//dolma//data_file_list_small.txt"
+export DATA_FILE_LIST="/eagle/datasets//dolma//data_file_list_select.txt"
 echo "BS: $BS\n PP:$PP \n TP: $TP, PBS_JOBSIZE: $PBS_JOBSIZE"
 
 HIDDEN_SIZE=4096
@@ -34,18 +34,17 @@ OUTPUT_PREFIX=${MODEL}_z${ZERO_STAGE}_seqlen_mp${MP}_pp${PP}_sp${SP}_nl${NUM_LAY
 MASTER_ADDR=localhost MASTER_PORT=6543 mpiexec -n $((PBS_JOBSIZE*PPN)) -ppn $PPN --hostfile $PBS_NODEFILE python3 ./pretrain_gpt_alcf.py \
 	   --tensor-model-parallel-size ${TP} \
 	   --pipeline-model-parallel-size ${PP} \
-	   --num-layers 32 \
-	   --hidden-size 4096 \
+	   --num-layers ${NUM_LAYERS} \
+	   --hidden-size ${HIDDEN_SIZE} \
 	   --ffn-hidden-size 5504 \
 	   --num-attention-heads 32 \
 	   --micro-batch-size ${MBS} \
 	   --global-batch-size ${BS} \
-	   --seq-length 2048 \
-	   --max-position-embeddings 2048 \
+	   --seq-length ${SEQ_LENGTH} \
+	   --max-position-embeddings ${EMBEDDINGS} \
 	   --train-iters 10 \
 	   --save ${MD}/checkpoints/${OUTPUT_PREFIX} \
 	   --load ${MD}/checkpoints/${OUTPUT_PREFIX} \
-	   --data-impl mmap \
 	   --tokenizer-type Llama2Tokenizer \
 	   --split 949,50,1 \
 	   --distributed-backend nccl \
