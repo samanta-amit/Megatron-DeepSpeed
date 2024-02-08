@@ -426,6 +426,7 @@ def git_ds_info():
 def main():
     # if RANK == 0:
     #     setup_wandb()
+    import socket
     from mpi4py import MPI
     rank = MPI.COMM_WORLD.rank
 
