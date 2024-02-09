@@ -21,9 +21,12 @@ common="\
     \"steps_per_print\": 1,
     \"gradient_accumulation_steps\": $GRAD_ACC_STEPS,
     \"optimizer\": {
-      \"type\": \"Adam\",
+      \"type\": \"AdamW\",
       \"params\": {
-        \"lr\": 0.00015,
+        \"lr\": ${LR},
+        \"beta1\": 0.9,
+        \"beta2\": 0.95,
+        \"eps\": 1e-5,
         \"weight_decay\": 1e-2
       }
     },
