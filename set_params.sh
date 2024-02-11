@@ -7,13 +7,13 @@ export HIDDEN=${HIDDEN:-12288}
 export HEADS=${HEADS:-96}
 export LR=${LR:-0.0003}
 export SEQ=${SEQ:-4096}
-export TRAIN_ITER=${TRAIN_ITER:-20}
-export EVAL_ITERS=${EVAL_ITERS:-100}
-export SAVE_INTERVAL=${SAVE_INTERVAL:-50}
-export EVAL_INTERVAL=${EVAL_INTERVAL:-50}
-export ZERO_STAGE=${ZERO_STAGE:-3}
+export TRAIN_ITER=${TRAIN_ITER:-300000}
+export EVAL_ITERS=${EVAL_ITERS:-50}
+export SAVE_INTERVAL=${SAVE_INTERVAL:-1000}
+export EVAL_INTERVAL=${EVAL_INTERVAL:-50000}
+export ZERO_STAGE=${ZERO_STAGE:-2}
 export DTYPE=${DTYPE:-fp16}
-export TP=${TP:-1}
+export TP=${TP:-2}
 export PP=${PP:-1}
 export GRAD_ACC_STEPS=${GRAD_ACC_STEPS:-1}
 export GLOBAL_BATCH=$(( $WORLD_SIZE * $MICRO_BATCH * $GRAD_ACC_STEPS / $TP / $PP ))
@@ -36,8 +36,9 @@ PP=${PP:-1}
 # export MERGE_FILE="${DATA_DIR}/gpt2-merges.txt"
 
 export DATA_PATH="/eagle/datasets/dolma/data_Llama2Tokenizer/wiki-en-simple/"
+export DATA_FILE_LIST="/eagle/datasets/dolma/data_file_list_select_3280.txt"
 # export DATA_FILE_LIST="/eagle/datasets/dolma/data_file_list_select.txt"
-export DATA_FILE_LIST="/eagle/datasets/dolma/data_file_list_select_only_rust.txt"
+# export DATA_FILE_LIST="/eagle/datasets/dolma/data_file_list_select_only_rust.txt"
 # export DATA_FILE_LIST="/eagle/datasets/dolma/data_file_list_select_modified.txt"
 # export DATA_FILE_LIST="/eagle/datasets/dolma/data_file_list_small.txt"
 
@@ -118,10 +119,11 @@ run_cmd="
     --global-batch-size $GLOBAL_BATCH \
     --train-iters $TRAIN_ITER \
     --lr ${LR} \
-    --min-lr 1.0e-5 \
-    --lr-warmup-fraction .01 \
-    --lr-decay-iters 320000 \
+    --lr-warmup-iters 5000 \
+    --lr-decay-iters 10000 \
+    --ffn-hidden-size 11008 \
     --lr-decay-style cosine \
+    --data-impl mmap \
     --log-interval 1 \
     --eval-iters ${EVAL_ITERS} \
     --eval-interval ${EVAL_INTERVAL} \
@@ -139,6 +141,7 @@ run_cmd="
     --save checkpoints/${OUTPUT_PREFIX} \
     --load checkpoints/${OUTPUT_PREFIX} \
     --use-checkpoint-opt_param-scheduler \
+    --accumulate-allreduce-grads-in-fp32 \
     --tokenizer-model /eagle/datasets/dolma/utils/tokenizer.model \
     --data-file-list ${DATA_FILE_LIST} \
     --data-path $DATA_PATH \

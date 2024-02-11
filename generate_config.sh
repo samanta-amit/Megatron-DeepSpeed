@@ -27,7 +27,15 @@ common="\
         \"beta1\": 0.9,
         \"beta2\": 0.95,
         \"eps\": 1e-5,
-        \"weight_decay\": 1e-2
+        \"weight_decay\": 1e-1
+      }
+    },
+    \"scheduler\": {
+      \"type\": \"WarmupLR\",
+      \"params\": {
+          \"warmup_min_lr\": 0.00003,
+          \"warmup_max_lr\": 0.0003,
+          \"warmup_num_steps\": 5000
       }
     },
     \"zero_allow_untested_optimizer\": true,
