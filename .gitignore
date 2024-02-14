@@ -1,3 +1,8 @@
+outputs/
+venvs/
+wandb/
+llama-logs/
+checkpoints/
 *.gz
 *.txt
 *.idx

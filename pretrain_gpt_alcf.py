@@ -37,17 +37,20 @@ from torch import nn
 import torch.nn.functional as F
 
 # from ezpz import get_logger
-from ezpz.dist import setup_torch, get_world_size, setup_wandb
+from ezpz.dist import get_world_size, setup_wandb, get_rank
 
-RANK = setup_torch(
-    backend='deepspeed',
-    port='5432',
-)
+# RANK = setup_torch(
+#     backend='deepspeed',
+#     port='5432',
+# )
+RANK = get_rank()
 WORLD_SIZE = get_world_size()
 LEVEL = "DEBUG" if RANK == 0 else "CRITICAL"
 
 WANDB_MODE = os.environ.get('WANDB_MODE', None)
-DISABLE_WANDB = WANDB_MODE is not None and str(WANDB_MODE).lower() == 'disabled'
+DISABLE_WANDB = (
+    WANDB_MODE is not None and str(WANDB_MODE).lower() == 'disabled'
+)
 
 if RANK == 0 and not DISABLE_WANDB:
     project_name = (
@@ -63,6 +66,7 @@ if RANK == 0 and not DISABLE_WANDB:
     print(f"Setting up W&B from: {RANK} with {project_name}")
     print('--------------------------------------------------')
     setup_wandb(project_name=project_name)
+
 
 def model_provider(pre_process=True, post_process=True):
     """Build the model."""
@@ -83,6 +87,10 @@ def model_provider(pre_process=True, post_process=True):
         dpg = mpu.get_data_parallel_group()
     else:
         dpg = None
+    if wandb is not None and wandb.run is not None:
+        assert wandb is not None and wandb.run is not None
+        print(f'Updating {wandb.run.name=} at {wandb.run.url=}')
+        wandb.run.config.update({'args': vars(args)})
     with deepspeed.zero.Init(data_parallel_group=dpg,
                              remote_device=None if args.remote_device == 'none' else args.remote_device,
                              config_dict_or_path=args.deepspeed_config_dict,
