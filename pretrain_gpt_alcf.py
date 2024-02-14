@@ -438,9 +438,22 @@ def main():
         master_addr = MPI.COMM_WORLD.bcast(master_addr, root=0)
     os.environ["MASTER_ADDR"] = master_addr
     os.environ["MASTER_PORT"] = str(2345)
-    
-    from torch.profiler import profile, record_function, ProfilerActivity
-    with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA]) as prof:
+    args = get_args()
+
+    if (args.profile):
+        from torch.profiler import profile, record_function, ProfilerActivity
+        with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA]) as prof:
+            model = pretrain(
+                train_valid_test_datasets_provider,
+                model_provider,
+                ModelType.encoder_or_decoder,
+                forward_step,
+                args_defaults={'tokenizer_type': 'GPT2BPETokenizer'},
+                data_post_process=data_post_process
+            )
+
+        prof.export_chrome_trace(f"{args.tensorboard_dir}/torch-trace-{RANK}-of-{WORLD_SIZE}.json")
+    else:
         model = pretrain(
             train_valid_test_datasets_provider,
             model_provider,
@@ -449,9 +462,6 @@ def main():
             args_defaults={'tokenizer_type': 'GPT2BPETokenizer'},
             data_post_process=data_post_process
         )
-    args = get_args()        
-    prof.export_chrome_trace(f"{args.tensorboard_dir}/torch-trace-{RANK}-of-{WORLD_SIZE}.json")
-    
     # # from megatron.training import get_model
     # if wandb.run is not None:
     #     args = get_args()
