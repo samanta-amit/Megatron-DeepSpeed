@@ -26,25 +26,8 @@ export USE_ACTIVATION_CHECKPOINTING=${USE_ACTIVATION_CHECKPOINTING:-0}
 TP=${TP:-1}
 PP=${PP:-1}
 
-# export DATA_PARENT="/home/foremans/polaris/projects/saforem2/Megatron-DeepSpeed"
-# export DATA_TYPE="BookCorpusDataset_text_document"
-# export DATA_PARENT="/lus/eagle/projects/datasets/Megatron-DeepSpeed/GenSLMSubSample200k" 
-# export DATA_TYPE="genslm_subsample_200k_sequence_document" 
-# export DATA_DIR="${DATA_PARENT}/dataset" 
-# export DATA_PATH="${DATA_DIR}/${DATA_TYPE}"
-# export VOCAB_FILE="${DATA_DIR}/gpt2-vocab.json" 
-# export MERGE_FILE="${DATA_DIR}/gpt2-merges.txt"
-
-export DATA_PATH="/eagle/datasets/dolma/data_Llama2Tokenizer/wiki-en-simple/"
-export DATA_FILE_LIST="/eagle/datasets/dolma/data_file_list_select_3280.txt"
-# export DATA_FILE_LIST="/eagle/datasets/dolma/data_file_list_select.txt"
-# export DATA_FILE_LIST="/eagle/datasets/dolma/data_file_list_select_only_rust.txt"
-# export DATA_FILE_LIST="/eagle/datasets/dolma/data_file_list_select_modified.txt"
-# export DATA_FILE_LIST="/eagle/datasets/dolma/data_file_list_small.txt"
-
-
 DS_CONFIG="ds_stage${ZERO_STAGE}_mb${MICRO_BATCH}_gb${GLOBAL_BATCH}_pp${PP}_${DTYPE}.json"
-bash ./generate_config.sh ${DS_CONFIG} || exit 1
+bash ./generate_config.sh "${DS_CONFIG}" || exit 1
 
 OUTPUT_PREFIX="logs/ds_stage${ZERO_STAGE}_nl${NLAYERS}_hs${HIDDEN}_mb${MICRO_BATCH}_seq${SEQ}_gb${GLOBAL_BATCH}_pp${PP}_tp${TP}_${DTYPE}"
 # OUTPUT_DIR=logs/ds_stage${ZERO_STAGE}_nl${NLAYERS}_hs${HIDDEN}_mb${MICRO_BATCH}_seq${SEQ}_gb${GLOBAL_BATCH}_pp${PP}_tp${TP}_${DTYPE}_`date +%m%d%H%M%S`_${HOSTNAME}
@@ -55,12 +38,12 @@ echo "!!!Please see logs at ${OUTPUT_DIR}"
 # Hostfile path
 hostfile_deepspeed=./hostfile_deepspeed
 hostfile_mpich=./hostfile_mpich
-cat $PBS_NODEFILE > hostfile_mpich
-cat $PBS_NODEFILE > hostfile_deepspeed ; sed -e 's/$/ slots=4/' -i hostfile_deepspeed
+cat "$PBS_NODEFILE" > hostfile_mpich
+cat "$PBS_NODEFILE" > hostfile_deepspeed ; sed -e 's/$/ slots=4/' -i hostfile_deepspeed
 
 ds_args=" "
 ds_args=" --deepspeed ${ds_args}"
-if [ $PP == 1 ]; then
+if [ "$PP" == 1 ]; then
    ds_args=" --no-pipeline-parallel ${ds_args}" 
 fi
 ds_args=" --deepspeed_config=$DS_CONFIG ${ds_args}"
