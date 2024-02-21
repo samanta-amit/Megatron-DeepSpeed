@@ -58,7 +58,7 @@ if RANK == 0 and not DISABLE_WANDB:
             'WB_PROJECT',
             os.environ.get(
                 'WANDB_PROJECT',
-                'GenSLM-Megatron-DS'
+                'AuroraGPT'
             ),
         )
     )
