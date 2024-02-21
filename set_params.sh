@@ -19,6 +19,8 @@ export GRAD_ACC_STEPS=${GRAD_ACC_STEPS:-1}
 export GLOBAL_BATCH=$(( $WORLD_SIZE * $MICRO_BATCH * $GRAD_ACC_STEPS / $TP / $PP ))
 export USE_ACTIVATION_CHECKPOINTING=${USE_ACTIVATION_CHECKPOINTING:-0}
 
+# echo "USING DATA_FILE_LIST: ${DATA_FILE_LIST}" || exit
+
 
 # bash $LLM_DK_DIR/intel-extension-for-deepspeed/examples/gpt.sh $@
 
@@ -127,7 +129,6 @@ run_cmd="
     --accumulate-allreduce-grads-in-fp32 \
     --tokenizer-model /eagle/datasets/dolma/utils/tokenizer.model \
     --data-file-list ${DATA_FILE_LIST} \
-    --data-path $DATA_PATH \
     ${gpt_args[*]} \
     $custom_args \
     |& tee $OUTPUT_DIR/output.log
