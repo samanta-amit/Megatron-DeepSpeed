@@ -26,6 +26,39 @@ import subprocess
 
 from torch import nn
 import torch.nn.functional as F
+try:
+    import wandb
+except Exception:
+    wandb = None
+
+# from ezpz import get_logger
+from ezpz.dist import setup_torch, get_rank, get_world_size, setup_wandb
+
+# RANK = setup_torch(
+#     backend='deepspeed',
+#     port='5432',
+# )
+RANK = get_rank()
+WORLD_SIZE = get_world_size()
+LEVEL = "DEBUG" if RANK == 0 else "CRITICAL"
+
+WANDB_MODE = os.environ.get('WANDB_MODE', None)
+DISABLE_WANDB = WANDB_MODE is not None and str(WANDB_MODE).lower() == 'disabled'
+
+if RANK == 0 and not DISABLE_WANDB:
+    project_name = (
+        os.environ.get(
+            'WB_PROJECT',
+            os.environ.get(
+                'WANDB_PROJECT',
+                'AuroraGPT'
+            ),
+        )
+    )
+    print('--------------------------------------------------')
+    print(f"Setting up W&B from: {RANK} with {project_name}")
+    print('--------------------------------------------------')
+    setup_wandb(project_name=project_name)
 
 
 def model_provider(pre_process=True, post_process=True):
@@ -35,16 +68,13 @@ def model_provider(pre_process=True, post_process=True):
     see_memory_usage(f"Before Building Model", force=True)
 
     args = get_args()
+    if wandb is not None and wandb.run is not None:
+        print(f"Updating WandB run: [{wandb.run.name}]({wandb.run.url})")
+        wandb.run.config.update({'args': vars(args)})
     config = core_transformer_config_from_args(args)
-    if hasattr(mpu, 'get_sequence_parallel_group'):
-        dpg = mpu.get_sequence_parallel_group()
-    elif hasattr(mpu, 'get_data_parallel_group'):
-        dpg = mpu.get_data_parallel_group()
-    else:
-        dpg = None
-    with deepspeed.zero.Init(data_parallel_group=dpg,
+    with deepspeed.zero.Init(sequence_data_parallel_group=mpu.get_sequence_data_parallel_group(),
                              remote_device=None if args.remote_device == 'none' else args.remote_device,
-                             config_dict_or_path=args.deepspeed_config_dict,
+                             config_dict_or_path=args.deepspeed_config,
                              enabled=args.zero_stage == 3,
                              mpu=mpu):
         if args.deepspeed and not args.no_pipeline_parallel:
@@ -86,6 +116,13 @@ def model_provider(pre_process=True, post_process=True):
                 pre_process=pre_process,
                 post_process=post_process
             )
+    # if wandb is not None and wandb.run is not None:
+    #     wandb.run.watch(
+    #         model,
+    #         log='all',
+    #         log_graph=True,
+    #     )
+    #     wandb.run.config.update({'num_params': num_params})
     see_memory_usage(f"After Building Model", force=True)
     return model
 
@@ -307,8 +344,24 @@ def train_valid_test_datasets_provider(train_val_test_num_samples):
 
     print_rank_0('> building train, validation, and test datasets '
                  'for GPT ...')
+    files = []
+    if args.data_file_list is not None:
+        with open(args.data_file_list, 'r') as flist:
+            for f in flist.readlines():
+                w, fname = f.split()
+                files.append(float(w))
+                files.append(fname)
+    elif len(args.data_path)==1 and os.path.isdir(args.data_path[0]):
+        path=args.data_path[0] + "/"
+        for f in os.listdir(path):
+            if (os.path.isfile(path + f) and f.find(".bin")!=-1):
+                files.append(1)
+                files.append(path + f.split(".bin")[0])
+    else:
+        files = args.data_path
+    print_rank_0(f"file list {files}")
     train_ds, valid_ds, test_ds = build_train_valid_test_datasets(
-        data_prefix=args.data_path,
+        data_prefix=files,
         data_impl=args.data_impl,
         splits_string=args.split,
         train_valid_test_num_samples=train_val_test_num_samples,
@@ -348,14 +401,15 @@ def git_ds_info():
     else:
         git_hash = "unknown"
         git_branch = "unknown"
-    print(f'**** Git info for Megatron: git_hash={git_hash} git_branch={git_branch} ****')
+    print_rank_0(f'**** Git info for Megatron: git_hash={git_hash} git_branch={git_branch} ****')
 
 
 if __name__ == "__main__":
-    git_ds_info()
+    if RANK == 0:
+        git_ds_info()
     pretrain(train_valid_test_datasets_provider,
              model_provider,
              ModelType.encoder_or_decoder,
              forward_step,
-             args_defaults={'tokenizer_type': 'GPT2BPETokenizer'},
+             args_defaults={'tokenizer_type': 'Llama2Tokenizer'},
              data_post_process=data_post_process)
