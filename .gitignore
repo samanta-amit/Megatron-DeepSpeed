@@ -1,13 +1,3 @@
-outputs/
-venvs/
-wandb/
-llama-logs/
-checkpoints/
-*.gz
-*.txt
-*.idx
-*.bin
-*.log
 __pycache__
 
 # Distribution / packaging
