@@ -35,6 +35,7 @@ class BlendableDataset(torch.utils.data.Dataset):
         def _build_indices():
             start_time = time.time()
             # assert num_datasets < 255
+            # dataset_index = np.zeros(self.size, dtype=np.uint8)
             dataset_index = np.zeros(self.size, dtype=np.int64)
             dataset_sample_index = np.zeros(self.size, dtype=np.int64)
 
@@ -81,6 +82,8 @@ class BlendableDataset(torch.utils.data.Dataset):
 
 
             counts = get_accelerator().LongTensor([cache_success])
+            # counts = torch.LongTensor([cache_success])
+            #counts = torch.cuda.LongTensor([cache_success])
             torch.distributed.all_reduce(counts, group=mpu.get_data_parallel_group())
             torch.distributed.all_reduce(counts, group=mpu.get_pipeline_model_parallel_group())
             if counts[0].item() != (

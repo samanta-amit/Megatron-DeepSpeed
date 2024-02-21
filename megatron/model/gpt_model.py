@@ -14,11 +14,15 @@ from .language_model import get_language_model
 from .utils import init_method_normal
 from .utils import scaled_init_method_normal
 
-from megatron.model import LayerNorm, RMSNorm
+from megatron.model import LayerNorm
 from .language_model import EmbeddingPipe
 from .transformer import ParallelTransformerLayerPipe, LMHeadPipe
 from deepspeed.pipe import PipelineModule, LayerSpec, TiedLayerSpec
 
+try:
+    from apex.normalization import MixedFusedRMSNorm
+except ImportError:
+    MixedFusedRMSNorm = None
 
 try:         
     from deepspeed.checkpoint import (
@@ -177,33 +181,32 @@ class GPTModel(MegatronModule):
             state_dict["moe_state_dict"] = moe_state_dict
         self.language_model.load_state_dict(state_dict, strict=strict)
 
-    def _get_vocab_param_patterns(self):
-        args = get_args()
-        if args.untie_embeddings_and_output_weights:
-            patterns = [
-                r"\d+.word_embeddings.weight",
-                r"\d+.lm_head.weight"
-            ]
-        else:
-            patterns = [
-                r"tied_modules.embed.word_embeddings.weight"
-            ]
-        return patterns
-
     def universal_checkpoint_info(self):
         info = dict()
-        args = get_args()
-
         if DS_UNIVERSAL_CHECKPOINT_INFO:
             # Vocabulary parameters (embeddings) that require special handling due to padding.
-            info[VOCABULARY_PARAMETER_PATTERNS] = self._get_vocab_param_patterns()
-            
-            if args.tensor_model_parallel_size > 1:
-                # Parameter slices that should be averaged not concatenated.
-                info[TP_REPLICATED_PARAMETER_PATTERNS] = self._get_tp_replicated_param_patterns()
+            info[VOCABULARY_PARAMETER_PATTERNS] = [
+                r"tied_modules.embed.word_embeddings.weight"
+            ]
 
-                # Parameter that are sliced on the row dimension
-                info[PARAMETER_WITH_ROW_PARALLELISM_PATTERNS] = self._get_row_parallel_param_patterns()
+            # Parameter slices that should be averaged not concatenated.
+            info[TP_REPLICATED_PARAMETER_PATTERNS] = [
+                r"tied_modules.embed.position_embeddings.weight",
+                r"\d+.input_layernorm.weight",
+                r"\d+.input_layernorm.bias",
+                r"\d+.post_attention_layernorm.weight",
+                r"\d+.post_attention_layernorm.bias",
+                r"\d+.self_attention.dense.bias",
+                r"\d+.mlp.dense_4h_to_h.bias",
+                r"\d+.weight",
+                r"\d+.bias",
+            ]
+
+            # Parameter that are sliced on the row dimension
+            info[PARAMETER_WITH_ROW_PARALLELISM_PATTERNS] = [
+                r"\d+.mlp.dense_4h_to_h.weight",
+                r"\d+.self_attention.dense.weight",
+            ]
 
         return info
     
@@ -286,7 +289,7 @@ class GPTModelPipe(PipelineModule,MegatronModule):
                           args.hidden_size,
                           eps=args.layernorm_epsilon))
         else:
-            self.specs.append(LayerSpec(RMSNorm, args.hidden_size, args.layernorm_epsilon))
+            self.specs.append(LayerSpec(MixedFusedRMSNorm, args.hidden_size, args.layernorm_epsilon))
 
         def _logits_helper(embedding, lm_output):
             """A wrapper to massage inputs/outputs from pipeline. """

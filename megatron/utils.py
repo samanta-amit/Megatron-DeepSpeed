@@ -9,7 +9,10 @@ import torch
 from torch.nn.parallel import DistributedDataParallel as torchDDP
 
 from deepspeed.accelerator import get_accelerator
-if get_accelerator().device_name() == 'cuda':
+print(f'ACCELERATOR: {get_accelerator().device_name()=}')
+
+# if get_accelerator().device_name() == 'cuda':
+if torch.cuda.is_available():
     from apex.multi_tensor_apply import multi_tensor_applier
     import amp_C
 

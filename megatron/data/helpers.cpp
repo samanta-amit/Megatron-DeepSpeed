@@ -17,7 +17,7 @@ using namespace std;
 const int32_t LONG_SENTENCE_LEN = 512;
 
 
-void build_blending_indices(py::array_t<uint8_t>& dataset_index,
+void build_blending_indices(py::array_t<int64_t>& dataset_index,
 			    py::array_t<int64_t>& dataset_sample_index,
 			    const py::array_t<double>& weights,
 			    const int32_t num_datasets,

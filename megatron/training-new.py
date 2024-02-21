@@ -91,7 +91,8 @@ def pretrain(train_valid_test_dataset_provider,
              process_non_loss_data_func=None,
              extra_args_provider=None,
              args_defaults={},
-             data_post_process=None):
+             data_post_process=None,
+             external_args={}):
     """Main training program.
 
     This function will run the followings in the order provided:
@@ -123,7 +124,7 @@ def pretrain(train_valid_test_dataset_provider,
 
     # Initalize and get arguments, timers, and Tensorboard writer.
     initialize_megatron(extra_args_provider=extra_args_provider,
-                        args_defaults=args_defaults)
+                        args_defaults=args_defaults, external_args=external_args)
     # Set pytorch JIT layer fusion options and warmup JIT functions.
     if get_accelerator().device_name() == 'cuda':
         set_jit_fusion_options()
@@ -1053,10 +1054,10 @@ def training_log(loss_dict, total_loss_dict, learning_rate, iteration,
                 'throughput/iteration': iteration,
             }
             if loss_dict is not None:
-                wandb_metrics.update({
+                wandb_metrics |= {
                     f'loss/{k}': v for k, v in loss_dict.items()
-                })
-                wandb_metrics.update({'loss/iteration': iteration})
+                }
+                wandb_metrics |= {'loss/iteration': iteration}
         if writer:
             if args.log_timers_to_tensorboard:
                 writer.add_scalar('iteration-time/iteration-time',
@@ -1076,7 +1077,7 @@ def training_log(loss_dict, total_loss_dict, learning_rate, iteration,
         log_string += ' learning rate: {:.3E} |'.format(learning_rate)
         log_string += ' global batch size: {:5d} |'.format(batch_size)
         if wandb is not None and getattr(wandb, 'run', None) is not None:
-            wandb_metrics.update({
+            wandb_metrics |= {
                 'training/iteration': iteration,
                 'training/iteration_time': elapsed_time_per_iteration,
                 'training/iteration_time_vs_tokens': (
@@ -1089,7 +1090,7 @@ def training_log(loss_dict, total_loss_dict, learning_rate, iteration,
                 ),
                 'training/consumed_samples': args.consumed_train_samples,
                 'training/consumed_tokens': args.consumed_train_tokens,
-            })
+            }
         for key in total_loss_dict:
             if key not in [advanced_iters_key, skipped_iters_key,
                            nan_iters_key]:
