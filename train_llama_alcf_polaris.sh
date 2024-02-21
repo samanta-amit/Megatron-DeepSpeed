@@ -5,21 +5,59 @@
 #PBS -l select=48
 #PBS -l filesystems=eagle:home
 
+ezpz() {
+    if [[ ! -d ezpz ]]; then
+        git clone https://github.com/saforem2/ezpz
+    else
+        echo "Found ezpz!"
+    fi
+    echo "Using :snake: $(which python3) to install \`ezpz\`:"
+    mkdir -p logs
+    python3 -m pip install -e ezpz > ezpz-install.log 2>&1
+    source ezpz/src/ezpz/bin/savejobenv > /tmp/savejobenv.log 2>&1 || exit
+    source ezpz/src/ezpz/bin/getjobenv || exit
+}
+
+makeHostfiles() {
+    GPUS_PER_NODE=$(python3 -Wignore -c 'import ezpz; print(ezpz.get_gpus_per_node())')
+    export GPUS_PER_NODE="${GPUS_PER_NODE}"
+    # ---- Make MPICH hostfile ----------------
+    export hostfile_mpich=hostfile_mpich
+    cat "$PBS_NODEFILE" > "${hostfile_mpich}"
+    # ---- Make DeepSpeed hostfile -------------------
+    export hostfile_deepspeed=hostfile_deepspeed
+    cat "$PBS_NODEFILE" > "${hostfile_deepspeed}"
+    sed -e "s/$/ slots=${GPUS_PER_NODE}/" -i "${hostfile_deepspeed}"
+    {
+        echo "PATH=${PATH}" ;
+        echo "LD_LIBRARY_PATH=${LD_LIBRARY_PATH}" ;
+        echo "http_proxy=${http_proxy}" ;
+        echo "https_pro]xy=${https_proxy}" ;
+        echo "CFLAGS=${CFLAGS}" ;
+        echo "PYTHONUSERBASE=$PYTHONUSERBASE" ;
+    } > .deepspeed_env
+    # echo "PATH=${PATH}" > .deepspeed_env
+    # echo "LD_LIBRARY_PATH=${LD_LIBRARY_PATH}" >> .deepspeed_env
+    # echo "http_proxy=${http_proxy}" >> .deepspeed_env
+    # echo "https_proxy=${https_proxy}" >> .deepspeed_env
+    # echo "CFLAGS=${CFLAGS}" >> .d eepspeed_env
+    # echo "PYTHONUSERBASE=$PYTHONUSERBASE" >> .deepspeed_env
+    # -------------------------------------------------
+}
+
+
+# ==== SCRIPT START ========================================================
 cd "${PBS_O_WORKDIR}" || exit
 module load conda/2023-10-04; conda activate base
-if [[ ! -d ezpz ]]; then
-  git clone https://github.com/saforem2/ezpz
-else
-  echo "Found ezpz!"
-fi
-source ezpz/src/ezpz/bin/savejobenv > /tmp/savejobenv.log 2>&1 || exit
-source ezpz/src/ezpz/bin/getjobenv || exit
+ezpz
+makeHostfiles
 
 # ---- Parallelism Settings ----
 export PP=${PP:-1}
 export TP=${TP:-2}
 # ------------------------------
 
+export HERE=$(python3 -c 'import os; print(os.getcwd())')
 HOSTFILE="${HOSTFILE:-${PBS_NODEFILE}}"
 export WORLD_SIZE=${WORLD_SIZE:-$(wc -l < "${HOSTFILE}")}
 
@@ -34,7 +72,7 @@ export NUM_KV_HEAD=${NUM_KV_HEAD:-8}
 export LR=${LR:-0.00015}
 export SEQ=${SEQ:-4096}                       # SEQ_LEN: 4096
 export DTYPE=${DTYPE:-fp16}                   # DTYPE: FP16
-export ZERO_STAGE=${ZERO_STAGE:-2}
+export ZERO_STAGE=${ZERO_STAGE:-1}
 export MICRO_BATCH=${MICRO_BATCH:-8}
 export GRAD_ACC_STEPS=${GRAD_ACC_STEPS:-1}
 export GLOBAL_BATCH=$(( $WORLD_SIZE * $MICRO_BATCH * $GRAD_ACC_STEPS / $TP / $PP ))
@@ -47,23 +85,75 @@ export EVAL_INTERVAL=${EVAL_INTERVAL:-50000}
 export USE_ACTIVATION_CHECKPOINTING=${USE_ACTIVATION_CHECKPOINTING:-1}
 # export USE_ACTIVATION_CHECKPOINTING=${USE_ACTIVATION_CHECKPOINTING:-0}
 
+export MODEL_TYPE="llama-seq${SEQ}-pp${PP}-tp${TP}-${NLAYERS}layers-${HEADS}heads-${HIDDEN}hidden"
+export LLAMA_ARGS="--no-query-key-layer-scaling --use-rotary-position-embeddings --untie-embeddings-and-output-weights --swiglu --normalization rmsnorm --disable-bias-linear"
 # export DATA_FILE_LIST="/lus/eagle/projects/datasets/dolma/chunks/40/data_file_list_chunk_0_of_40.txt"
 # export DATA_FILE_LIST="/lus/eagle/projects/datasets/dolma/chunks/10/data_file_list_chunk_0_of_10.txt"
-export DATA_FILE_LIST="./dolma_data_file_list-00-of-04.txt"
+#
+
+# export DOLMA_CHUNK_00_of_10="./chunks/10/data_file_list_chunk_00_of_10.txt"  # 762 documents (lines)
+# export DOLMA_CHUNK_01_of_10="./chunks/10/data_file_list_chunk_01_of_10.txt"  # 722
+# export DOLMA_CHUNK_02_of_10="./chunks/10/data_file_list_chunk_02_of_10.txt"  # 727
+# export DOLMA_CHUNK_03_of_10="./chunks/10/data_file_list_chunk_03_of_10.txt"  # 707
+# export DOLMA_CHUNK_04_of_10="./chunks/10/data_file_list_chunk_04_of_10.txt"  # 744
+# export DOLMA_CHUNK_05_of_10="./chunks/10/data_file_list_chunk_05_of_10.txt"  # 766
+# export DOLMA_CHUNK_06_of_10="./chunks/10/data_file_list_chunk_06_of_10.txt"  # 730
+# export DOLMA_CHUNK_07_of_10="./chunks/10/data_file_list_chunk_07_of_10.txt"  # 759
+# export DOLMA_CHUNK_08_of_10="./chunks/10/data_file_list_chunk_08_of_10.txt"  # 777
+# export DOLMA_CHUNK_09_of_10="./chunks/10/data_file_list_chunk_09_of_10.txt"  # 752
+
+#
+# export DOLMA_CHUNK_00_of_04="./dolma_data_file_list-00-of-04.txt"  # 1860 documents (lines)
+# export DOLMA_CHUNK_01_of_04="./dolma_data_file_list-01-of-04.txt"  # 1860 documents (lines)
+# export DOLMA_CHUNK_02_of_04="./dolma_data_file_list-02-of-04.txt"  # 1860 documents (lines)
+# export DOLMA_CHUNK_03_of_04="./dolma_data_file_list-03-of-04.txt"  # 1860 documents (lines)
+# export DOLMA_CHUNK_04_of_04="./dolma_data_file_list-04-of-04.txt"  # 6 documents (lines)
+
+
+
+# if [[ -n "$DEBUG_RUN" ]]; then
+#     # echo "Using LAST DOLMA CHUNK {09 / 10} with ${NDOCS} documents..."
+#     export DATA_FILE_LIST=${DATA_FILE_LIST:-${DOLMA_CHUNK_09_of_10}}
+#     # export ndocs=$(wc -l < "${DATA_FILE_LIST}")
+# else
+#     # export fname="./chunks/10/data_file_list_chunk_${DOLMA_CHUNK_IDX}_of_10.txt"
+#     # export fname="${DOLMA_CHUNK_!{DOLMA_CHUNK_IDX}_of_10}"
+#     # export DATA_FILE_LIST="${DATA_FILE_LIST:-${DOLMA_CHUNK_00_of_10}}"
+# fi
+# export ndocs
+# export DATA_FILE_LIST="${DATA_FILE_LIST}"
+# export DATA_FILE_LIST="./dolma_data_file_list-00-of-04.txt"
 # export DATA_FILE_LIST="./dolma-chunk-00-of-40.txt"
-
-export MODEL_TYPE="llama-seq${SEQ}-pp${PP}-tp${TP}-${NLAYERS}layers-${HEADS}heads-${HIDDEN}hidden"
-
-export LLAMA_ARGS="--no-query-key-layer-scaling --use-rotary-position-embeddings --untie-embeddings-and-output-weights --swiglu --normalization rmsnorm --disable-bias-linear"
-export EXTRA_ARGS="--use-flash-attn-v2 --num-key-value-heads ${NUM_KV_HEAD}"
+#
+# bash "${HERE}/generate_config.sh" "${DS_CONFIG}" || exit
 
 # export DATA_CACHE_PATH="${DATA_CACHE_PATH}"
-if [[ -n "$DATA_CACHE_PATH" ]]; then
-    echo "Using DATA_CACHE_PATH: ${DATA_CACHE_PATH}"
-    EXTRA_ARGS="${EXTRA_ARGS} --data-cache-path ${DATA_CACHE_PATH}"
+# if [[ -z "$DATA_CACHE_PATH" ]]; then
+#     echo "Not using DATA_CACHE_PATH !!"
+# else
+#     echo "Using DATA_CACHE_PATH: ${DATA_CACHE_PATH}"
+# fi
+
+export EXTRA_ARGS="--use-flash-attn-v2 --num-key-value-heads ${NUM_KV_HEAD}"
+
+# export DATA_FILE_LIST="./chunks/10/data_file_list_chunk_${DOLMA_CHUNK_IDX}_of_10.txt"
+export DOLMA_CHUNK_IDX="${DOLMA_CHUNK_IDX:-0}"
+export DATA_FILE_LIST="/lus/eagle/projects/datasets/dolma/chunks/data_file_list_chunk_${DOLMA_CHUNK_IDX}_of_20.txt"
+# export DATA_FILE_LIST="./dolma_data_file_list-${DOLMA_CHUNK_IDX}-of-04.txt"
+
+NDOCS=$(wc -l < "${DATA_FILE_LIST}")
+echo "Using DOLMA CHUNK ${DOLMA_CHUNK_IDX} from ${DATA_FILE_LIST} with ${NDOCS} documents..."
+export NDOCS="${NDOCS}"
+
+if [[ -z "${DATA_CACHE_PATH}" ]]; then
+    data_file_list_stem=$(echo "$DATA_FILE_LIST" | tr "\/" "\t" | awk '{print $NF}' | sed "s/\.txt//g")
+    export DATA_CACHE_PATH="${HERE}/.cache/${data_file_list_stem}-index-cache"
 else
-    echo "Not using DATA_CACHE_PATH !!"
+    export DATA_CACHE_PATH="${DATA_CACHE_PATH}"
+    echo "CAUGHT DATA_CACHE_PATH: ${DATA_CACHE_PATH} from env !!"
 fi
+
+mkdir -p "${DATA_CACHE_PATH}"
 
 echo "++++++++++++++++++++++++++++++++++++++++++++++++++"
 echo "- WORLD_SIZE:${WORLD_SIZE}"
@@ -71,7 +161,6 @@ echo "- NCCL: ${NCCL:-nccl}"
 echo "- MODEL_TYPE: ${MODEL_TYPE}"
 echo "- Using DATA_FILE_LIST: ${DATA_FILE_LIST}"
 echo "++++++++++++++++++++++++++++++++++++++++++++++++++"
-
 
 # bash $LLM_DK_DIR/intel-extension-for-deepspeed/examples/gpt.sh $@
 
@@ -177,6 +266,7 @@ run_cmd="
     --accumulate-allreduce-grads-in-fp32 \
     --tokenizer-model /eagle/datasets/dolma/utils/tokenizer.model \
     --data-file-list ${DATA_FILE_LIST} \
+    --data-cache-path ${DATA_CACHE_PATH} \
     --num-workers 4 \
     ${LLAMA_ARGS} \
     ${EXTRA_ARGS} \
