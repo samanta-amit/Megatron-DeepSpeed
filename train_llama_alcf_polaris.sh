@@ -11,7 +11,7 @@ ezpz() {
     else
         echo "Found ezpz!"
     fi
-    echo "Using :snake: $(which python3) to install \`ezpz\`:"
+    echo "Using $(which python3) to install \`ezpz\`:"
     mkdir -p logs
     python3 -m pip install -e ezpz > ezpz-install.log 2>&1
     source ezpz/src/ezpz/bin/savejobenv > /tmp/savejobenv.log 2>&1 || exit
@@ -45,19 +45,39 @@ makeHostfiles() {
     # -------------------------------------------------
 }
 
+setupData() {
+    local cidx=$1
+    # export DOLMA_CHUNK_IDX="${DOLMA_CHUNK_IDX:-0}"
+    # HERE=$(python3 -c 'import os; print(os.getcwd())')
+    export DATA_FILE_LIST="/eagle/datasets/dolma/chunks/4/data_file_list_chunk_${cidx}_of_4.txt"
+    NDOCS=$(wc -l < "${DATA_FILE_LIST}")
+    export NDOCS="${NDOCS}"
+    if [[ -z "${DATA_CACHE_PATH}" ]]; then
+        data_file_list_stem=$(echo "$DATA_FILE_LIST" | tr "\/" "\t" | awk '{print $NF}' | sed "s/\.txt//g")
+        export DATA_CACHE_PATH=".cache/${data_file_list_stem}-index-cache"
+    else
+        export DATA_CACHE_PATH="${DATA_CACHE_PATH}"
+        echo "CAUGHT DATA_CACHE_PATH: ${DATA_CACHE_PATH} from env !!"
+    fi
+    export DOLMA_CHUNK_IDX="${cidx}"
+    mkdir -p "${DATA_CACHE_PATH}"
+}
+
 
 # ==== SCRIPT START ========================================================
 cd "${PBS_O_WORKDIR}" || exit
 module load conda/2023-10-04; conda activate base
 ezpz
 makeHostfiles
+setupData "${DOLMA_CHUNK_IDX:-0}"
+echo "Using DOLMA CHUNK ${DOLMA_CHUNK_IDX} from ${DATA_FILE_LIST} with ${NDOCS} documents..."
 
 # ---- Parallelism Settings ----
 export PP=${PP:-1}
 export TP=${TP:-2}
 # ------------------------------
 
-export HERE=$(python3 -c 'import os; print(os.getcwd())')
+HERE=$(python3 -c 'import os; print(os.getcwd())')
 HOSTFILE="${HOSTFILE:-${PBS_NODEFILE}}"
 export WORLD_SIZE=${WORLD_SIZE:-$(wc -l < "${HOSTFILE}")}
 
@@ -78,10 +98,21 @@ export GRAD_ACC_STEPS=${GRAD_ACC_STEPS:-1}
 export GLOBAL_BATCH=$(( $WORLD_SIZE * $MICRO_BATCH * $GRAD_ACC_STEPS / $TP / $PP ))
 # ---------------------------------------------
 
-export EVAL_ITERS=${EVAL_ITERS:-20}
-export TRAIN_ITER=${TRAIN_ITER:-317892}
+if [[ "${DOLMA_CHUNK_IDX}" == 0 ]]; then
+    TRAIN_ITER=78739
+elif [[ "${DOLMA_CHUNK_IDX}" == 1 ]]; then
+    TRAIN_ITER=81008
+elif [[ "${DOLMA_CHUNK_IDX}" == 2 ]]; then
+    TRAIN_ITER=79591
+elif [[ "${DOLMA_CHUNK_IDX}" == 3 ]]; then
+    TRAIN_ITER=78552
+else
+    echo "Unknown DOLMA_CHUNK_IDX: ${DOLMA_CHUNK_IDX}"
+    exit
+fi
+# export TRAIN_ITER=${TRAIN_ITER:-317892}
+
 export SAVE_INTERVAL=${SAVE_INTERVAL:-200}
-export EVAL_INTERVAL=${EVAL_INTERVAL:-50000}
 export USE_ACTIVATION_CHECKPOINTING=${USE_ACTIVATION_CHECKPOINTING:-1}
 # export USE_ACTIVATION_CHECKPOINTING=${USE_ACTIVATION_CHECKPOINTING:-0}
 
@@ -134,26 +165,12 @@ export LLAMA_ARGS="--no-query-key-layer-scaling --use-rotary-position-embeddings
 #     echo "Using DATA_CACHE_PATH: ${DATA_CACHE_PATH}"
 # fi
 
+
 export EXTRA_ARGS="--use-flash-attn-v2 --num-key-value-heads ${NUM_KV_HEAD}"
 
 # export DATA_FILE_LIST="./chunks/10/data_file_list_chunk_${DOLMA_CHUNK_IDX}_of_10.txt"
-export DOLMA_CHUNK_IDX="${DOLMA_CHUNK_IDX:-0}"
-export DATA_FILE_LIST="/lus/eagle/projects/datasets/dolma/chunks/data_file_list_chunk_${DOLMA_CHUNK_IDX}_of_20.txt"
+# export DATA_FILE_LIST="/lus/eagle/projects/datasets/dolma/chunks/data_file_list_chunk_${DOLMA_CHUNK_IDX}_of_20.txt"
 # export DATA_FILE_LIST="./dolma_data_file_list-${DOLMA_CHUNK_IDX}-of-04.txt"
-
-NDOCS=$(wc -l < "${DATA_FILE_LIST}")
-echo "Using DOLMA CHUNK ${DOLMA_CHUNK_IDX} from ${DATA_FILE_LIST} with ${NDOCS} documents..."
-export NDOCS="${NDOCS}"
-
-if [[ -z "${DATA_CACHE_PATH}" ]]; then
-    data_file_list_stem=$(echo "$DATA_FILE_LIST" | tr "\/" "\t" | awk '{print $NF}' | sed "s/\.txt//g")
-    export DATA_CACHE_PATH="${HERE}/.cache/${data_file_list_stem}-index-cache"
-else
-    export DATA_CACHE_PATH="${DATA_CACHE_PATH}"
-    echo "CAUGHT DATA_CACHE_PATH: ${DATA_CACHE_PATH} from env !!"
-fi
-
-mkdir -p "${DATA_CACHE_PATH}"
 
 echo "++++++++++++++++++++++++++++++++++++++++++++++++++"
 echo "- WORLD_SIZE:${WORLD_SIZE}"
@@ -229,12 +246,17 @@ EXEC="./pretrain_gpt_alcf.py"
 # --merge-file $MERGE_FILE \
 # --lr-decay-iters 320000 \
     # --num-workers 0 \
+    # --eval-iters ${EVAL_ITERS} \
+    # --eval-interval ${EVAL_INTERVAL} \
+    # --lr-warmup-iters 5000 \
+    # --lr-decay-iters 10000 \
 run_cmd="
     deepspeed $launcher ${EXEC} \
     --tensor-model-parallel-size $TP \
     --pipeline-model-parallel-size $PP \
     --num-layers $NLAYERS \
     --hidden-size $HIDDEN \
+    --ffn-hidden-size 11008 \
     --num-attention-heads $HEADS \
     --seq-length $SEQ \
     --max-position-embeddings $SEQ \
@@ -242,14 +264,9 @@ run_cmd="
     --global-batch-size $GLOBAL_BATCH \
     --train-iters $TRAIN_ITER \
     --lr ${LR} \
-    --lr-warmup-iters 5000 \
-    --lr-decay-iters 10000 \
-    --ffn-hidden-size 11008 \
     --lr-decay-style cosine \
     --data-impl mmap \
     --log-interval 1 \
-    --eval-iters ${EVAL_ITERS} \
-    --eval-interval ${EVAL_INTERVAL} \
     --save-interval ${SAVE_INTERVAL} \
     --split 90,5,5 \
     --$DTYPE \
