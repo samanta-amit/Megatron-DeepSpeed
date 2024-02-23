@@ -4,249 +4,85 @@
 #PBS -q prod
 #PBS -l select=48
 #PBS -l filesystems=eagle:home
-#
-set +x
-loadCondaEnv() {
-    if [[ "${CONDA_EXE}" ]]; then
-        echo "Already inside ${CONDA_EXE}, exiting!"
+
+function sourceFile() {
+    fp="$1"
+    echo "source-ing ${fp}"
+    if [[ -f "${fp}" ]]; then
+        # shellcheck source="${fp}"
+        source "${fp}"
     else
-        MODULE_STR="$1"
-        module load "conda/${MODULE_STR}"
-        conda activate base
+        echo "ERROR: UNABLE TO SOURCE ${fp}"
     fi
 }
 
-setupVenv() {
-    VENV_DIR="$1"
-    if [[ -d "${VENV_DIR}" ]]; then
-        echo "Found venv at: ${VENV_DIR}"
-        source "${VENV_DIR}/bin/activate"
-    else
-        echo "Skipping setupVenv() on $(hostname)"
-    fi
-}
-
-setupPython() {
-    local conda_date=$1
-    local venv_path=$2
-    if [[ "${CONDA_EXE}" ]]; then
-        echo "Caught CONDA_EXE: ${CONDA_EXE}"
-    else
-        loadCondaEnv "${conda_date}"
-    fi
-    if [[ "${VIRTUAL_ENV}" ]]; then
-        echo "Caught VIRTUAL_ENV: ${VIRTUAL_ENV}"
-    else
-        setupVenv "${venv_path}"
-    fi
-}
-
-ezpz() {
-    if [[ ! -d ezpz ]]; then
-        git clone https://github.com/saforem2/ezpz
-    else
-        echo "Found ezpz!"
-    fi
-    if python3 -c 'import ezpz; print(ezpz.__file__)' 2> '/dev/null'; then
-        echo "Has ezpz installed. Nothing to do."
-    else
-        echo "Does not have ezpz installed. Installing..."
-        echo "Using $(which python3) to install \`ezpz\`:"
-        python3 -m pip install -e ezpz > ezpz-install.log 2>&1
-    fi
-    source ezpz/src/ezpz/bin/savejobenv > /tmp/savejobenv.log 2>&1 || exit
-    source ezpz/src/ezpz/bin/getjobenv || exit
-}
-
-makeHostfiles() {
-    GPUS_PER_NODE=$(python3 -Wignore -c 'import ezpz; print(ezpz.get_gpus_per_node())')
-    export GPUS_PER_NODE="${GPUS_PER_NODE}"
-    # ---- Make MPICH hostfile ----------------
-    export hostfile_mpich=hostfile_mpich
-    cat "$PBS_NODEFILE" > "${hostfile_mpich}"
-    # ---- Make DeepSpeed hostfile -------------------
-    export hostfile_deepspeed=hostfile_deepspeed
-    cat "$PBS_NODEFILE" > "${hostfile_deepspeed}"
-    sed -e "s/$/ slots=${GPUS_PER_NODE}/" -i "${hostfile_deepspeed}"
-    {
-        echo "PATH=${PATH}" ;
-        echo "LD_LIBRARY_PATH=${LD_LIBRARY_PATH}" ;
-        echo "http_proxy=${http_proxy}" ;
-        echo "https_pro]xy=${https_proxy}" ;
-        echo "CFLAGS=${CFLAGS}" ;
-        echo "PYTHONUSERBASE=$PYTHONUSERBASE" ;
-    } > .deepspeed_env
-    # echo "PATH=${PATH}" > .deepspeed_env
-    # echo "LD_LIBRARY_PATH=${LD_LIBRARY_PATH}" >> .deepspeed_env
-    # echo "http_proxy=${http_proxy}" >> .deepspeed_env
-    # echo "https_proxy=${https_proxy}" >> .deepspeed_env
-    # echo "CFLAGS=${CFLAGS}" >> .d eepspeed_env
-    # echo "PYTHONUSERBASE=$PYTHONUSERBASE" >> .deepspeed_env
-    # -------------------------------------------------
-}
-
-setupData() {
-    cidx=$1
-    echo "Caught DOLMA_CHUNK_IDX: ${cidx} !!"
-    # export DOLMA_CHUNK_IDX="${DOLMA_CHUNK_IDX:-0}"
-    # HERE=$(python3 -c 'import os; print(os.getcwd())')
-    # export DATA_FILE_LIST="/eagle/projects/datascience/foremans/locations/polaris/projects/argonne-lcf/Megatron-DeepSpeed/chunks/4/data_file_list_chunk_${cidx}_of_4.txt"
-    # export DATA_FILE_LIST="/eagle/datasets/dolma/data_file_list_select.txt"
-    # export DATA_FILE_LIST="/eagle/datasets/dolma/chunks/4/data_file_list_chunk_${cidx}_of_4.txt"
-    # export DATA_FILE_LIST="./chunks/4/data_file_list_chunk_${cidx}_of_4.txt"
-    # export DATA_FILE_LIST="./chunks/4/data_file_list_chunk_${cidx}_of_4.txt"
-    # export DATA_FILE_LIST="./dolma_data_file_list-${cidx}-of-4.txt"
-    export DATA_FILE_LIST="${DATA_FILE_LIST:-"./dolma-shuf-chunk-${cidx}-of-4.txt"}"
-    echo "Using DATA_FILE_LIST: ${DATA_FILE_LIST}"
-    # [ -f "$DATA_FILE_LIST" ] || exit
-    NDOCS=$(wc -l < "${DATA_FILE_LIST}") && export NDOCS="${NDOCS}"
-    export NDOCS="${NDOCS}"
-    # if [[ -z "${DATA_CACHE_PATH}" ]]; then
-    # else
-    #     echo "CAUGHT DATA_CACHE_PATH: ${DATA_CACHE_PATH} from env !!"
-    #     DATA_CACHE_PATH="${DATA_CACHE_PATH}"
-    # fi
-    data_file_list_stem=$(echo "$DATA_FILE_LIST" | tr "\/" "\t" | awk '{print $NF}' | sed "s/\.txt//g")
-    export DOLMA_CHUNK_IDX="${cidx}"
-    export DATA_FILE_LIST_STEM="${data_file_list_stem}"
-    export DATA_CACHE_PATH=".cache/${data_file_list_stem}/index-cache"
-    mkdir -p "${DATA_CACHE_PATH}"
-}
-
-
-# ==== SCRIPT START ========================================================
-# cd "${PBS_O_WORKDIR}" || exit
+# +++++++++++++++ SCRIPT START +++++++++++++++++++++++
+# ---- source ./helpers_alcf.sh ---------------------
 HERE=$(python3 -c 'import os; print(os.getcwd())')
-# if [[ -z "${CONDA_EXE}" ]]; then
-module load conda/2023-10-04; conda activate base
-# else
-#     echo "Caught CONDA_EXE = ${CONDA_EXE} from env"
-# fi
+sourceFile "${HERE}/helpers_alcf.sh" || exit
 
-# if [[ -z "${VIRTUAL_ENV}" ]]; then
-# source /home/foremans/polaris/projects/argonne-lcf/Megatron-DeepSpeed/venvs/polaris/2023-10-04/bin/activate || exit
-# source ~/venvs/polaris/2023-10-04/bin/activate || exit
-# else
-#     echo "Caught VIRTUAL_ENV = ${VIRTUAL_ENV} from env"
-# fi
-# if [[ "${VIRTUAL_ENV}" ]]; then
-#     echo "Caught virtual env from environment, using ${VIRTUAL_ENV}"
-# else
+# ---- load conda -----------------------------------
+module load conda/2023-10-04; conda activate base
 echo "Using $(which python3)"
 
+# ---- fns from ./helpers_alcf.sh -------------------
 ezpz
 makeHostfiles
-setupData "${DOLMA_CHUNK_IDX:-0}"
-# NDOCS=$(wc -l < "${DATA_FILE_LIST}") && export NDOCS="${NDOCS}"
-# export NDOCS="${NDOCS}"
-echo "Using DOLMA CHUNK ${DOLMA_CHUNK_IDX} from ${DATA_FILE_LIST} with ${NDOCS} documents..."
+saveDSenv
+# setupData "${DOLMA_CHUNK_IDX:-00}"
+# export DOLMA_CHUNK_IDX="${DOLMA_CHUNK_IDX:-0}"
+#
+# ---- DATA SETUP ------------------------------------
+DATA_FILE_LIST="./data_file_list_shuf_debug.txt" && export DATA_FILE_LIST="${DATA_FILE_LIST}"
+NDOCS=$(wc -l < "${DATA_FILE_LIST}") && export NDOCS="${NDOCS}"
+WEIGHT_SUM="$(sumWeights "${DATA_FILE_LIST}")" && export WEIGHT_SUM="${WEIGHT_SUM}"
+DFL_STEM=$(echo "$DATA_FILE_LIST" | tr "\/" "\t" | awk '{print $NF}' | sed "s/\.txt//g") && export DFL_STEM="${DFL_STEM}"
+dcp="${HERE}/.cache/${DFL_STEM}-index-cache"
+DATA_CACHE_PATH="${DATA_CACHE_PATH:-${dcp}}" && export DATA_CACHE_PATH="${DATA_CACHE_PATH}"
+mkdir -p "${DATA_CACHE_PATH}"
+if [[ -n "${DOLMA_CHUNK_IDX}" ]]; then
+    echo "Using DOLMA CHUNK ${DOLMA_CHUNK_IDX} from ${DATA_FILE_LIST} with ${NDOCS} documents..."
+else
+    echo "Using NDOCS=${NDOCS} documents from DATA_FILE_LIST=${DATA_FILE_LIST}"
+fi
+echo "DOCUMENT WEIGHT_SUM: ${WEIGHT_SUM}"
+# ----------------------------------------------------
 
-# ---- Parallelism Settings ----
+# ---- Parallelism Settings --------------------------
 PP=${PP:-1}
 TP=${TP:-2}
 export PP="${PP}"
 export TP="${TP}"
-# ------------------------------
-
-HOSTFILE="${HOSTFILE:-${PBS_NODEFILE}}"
+export HOSTFILE="${HOSTFILE:-${PBS_NODEFILE}}"
 export WORLD_SIZE=${WORLD_SIZE:-$(wc -l < "${HOSTFILE}")}
+# ----------------------------------------------------
 
-# ---- Llama2 7B Config -----------------------
+# ---- Llama2 7B Config ------------------------------
 export HEADS=${HEADS:-32}
 export NLAYERS=${NLAYERS:-32}
 export HIDDEN=${HIDDEN:-4096}
 export NUM_KV_HEAD=${NUM_KV_HEAD:-8}
-# ---------------------------------------------
+# ----------------------------------------------------
 
-# ---- Run Settings ------------------------------------------
+# ---- Run Settings ----------------------------------
 export LR=${LR:-0.00015}
 export SEQ=${SEQ:-4096}                       # SEQ_LEN: 4096
 export DTYPE=${DTYPE:-fp16}                   # DTYPE: FP16
 export ZERO_STAGE=${ZERO_STAGE:-2}
 export MICRO_BATCH=${MICRO_BATCH:-8}
 export GRAD_ACC_STEPS=${GRAD_ACC_STEPS:-1}
-export GLOBAL_BATCH=$(( $WORLD_SIZE * $MICRO_BATCH * $GRAD_ACC_STEPS / $TP / $PP ))
-# ---------------------------------------------
 export TOKENIZER_MODEL="${TOKENIZER_MODEL:-"/eagle/datasets/dolma/utils/tokenizer.model"}"
-
-if [[ "${DOLMA_CHUNK_IDX}" == 0 ]]; then
-    TRAIN_ITER=78739
-elif [[ "${DOLMA_CHUNK_IDX}" == 1 ]]; then
-    TRAIN_ITER=81008
-elif [[ "${DOLMA_CHUNK_IDX}" == 2 ]]; then
-    TRAIN_ITER=79591
-elif [[ "${DOLMA_CHUNK_IDX}" == 3 ]]; then
-    TRAIN_ITER=78552
-else
-    echo "caught DOLMA_CHUNK_IDX=${DOLMA_CHUNK_IDX}"
-    TRAIN_ITER="${TRAIN_ITER:-320000}"
-    echo "Setting TRAIN_ITER=${TRAIN_ITER}"
-    # echo "Unknown DOLMA_CHUNK_IDX: ${DOLMA_CHUNK_IDX}"
-fi
-
+export TRAIN_ITER=${TRAIN_ITER:-317892}
+# export TRAIN_ITER="${TRAIN_ITER:-320000}"
 export EVAL_ITERS="${EVAL_ITERS:-10}"
 export EVAL_INTERVAL="${EVAL_INTERVAL:-50000}"
-# export TRAIN_ITER=${TRAIN_ITER:-317892}
-
 export SAVE_INTERVAL=${SAVE_INTERVAL:-200}
 export USE_ACTIVATION_CHECKPOINTING=${USE_ACTIVATION_CHECKPOINTING:-1}
 # export USE_ACTIVATION_CHECKPOINTING=${USE_ACTIVATION_CHECKPOINTING:-0}
-
+export GLOBAL_BATCH=$(( $WORLD_SIZE * $MICRO_BATCH * $GRAD_ACC_STEPS / $TP / $PP ))
 export MODEL_TYPE="llama-seq${SEQ}-pp${PP}-tp${TP}-${NLAYERS}layers-${HEADS}heads-${HIDDEN}hidden"
 export LLAMA_ARGS="--no-query-key-layer-scaling --use-rotary-position-embeddings --untie-embeddings-and-output-weights --swiglu --normalization rmsnorm --disable-bias-linear"
-# export DATA_FILE_LIST="/lus/eagle/projects/datasets/dolma/chunks/40/data_file_list_chunk_0_of_40.txt"
-# export DATA_FILE_LIST="/lus/eagle/projects/datasets/dolma/chunks/10/data_file_list_chunk_0_of_10.txt"
-#
-
-# export DOLMA_CHUNK_00_of_10="./chunks/10/data_file_list_chunk_00_of_10.txt"  # 762 documents (lines)
-# export DOLMA_CHUNK_01_of_10="./chunks/10/data_file_list_chunk_01_of_10.txt"  # 722
-# export DOLMA_CHUNK_02_of_10="./chunks/10/data_file_list_chunk_02_of_10.txt"  # 727
-# export DOLMA_CHUNK_03_of_10="./chunks/10/data_file_list_chunk_03_of_10.txt"  # 707
-# export DOLMA_CHUNK_04_of_10="./chunks/10/data_file_list_chunk_04_of_10.txt"  # 744
-# export DOLMA_CHUNK_05_of_10="./chunks/10/data_file_list_chunk_05_of_10.txt"  # 766
-# export DOLMA_CHUNK_06_of_10="./chunks/10/data_file_list_chunk_06_of_10.txt"  # 730
-# export DOLMA_CHUNK_07_of_10="./chunks/10/data_file_list_chunk_07_of_10.txt"  # 759
-# export DOLMA_CHUNK_08_of_10="./chunks/10/data_file_list_chunk_08_of_10.txt"  # 777
-# export DOLMA_CHUNK_09_of_10="./chunks/10/data_file_list_chunk_09_of_10.txt"  # 752
-
-#
-# export DOLMA_CHUNK_00_of_04="./dolma_data_file_list-00-of-04.txt"  # 1860 documents (lines)
-# export DOLMA_CHUNK_01_of_04="./dolma_data_file_list-01-of-04.txt"  # 1860 documents (lines)
-# export DOLMA_CHUNK_02_of_04="./dolma_data_file_list-02-of-04.txt"  # 1860 documents (lines)
-# export DOLMA_CHUNK_03_of_04="./dolma_data_file_list-03-of-04.txt"  # 1860 documents (lines)
-# export DOLMA_CHUNK_04_of_04="./dolma_data_file_list-04-of-04.txt"  # 6 documents (lines)
-
-
-
-# if [[ -n "$DEBUG_RUN" ]]; then
-#     # echo "Using LAST DOLMA CHUNK {09 / 10} with ${NDOCS} documents..."
-#     export DATA_FILE_LIST=${DATA_FILE_LIST:-${DOLMA_CHUNK_09_of_10}}
-#     # export ndocs=$(wc -l < "${DATA_FILE_LIST}")
-# else
-#     # export fname="./chunks/10/data_file_list_chunk_${DOLMA_CHUNK_IDX}_of_10.txt"
-#     # export fname="${DOLMA_CHUNK_!{DOLMA_CHUNK_IDX}_of_10}"
-#     # export DATA_FILE_LIST="${DATA_FILE_LIST:-${DOLMA_CHUNK_00_of_10}}"
-# fi
-# export ndocs
-# export DATA_FILE_LIST="${DATA_FILE_LIST}"
-# export DATA_FILE_LIST="./dolma_data_file_list-00-of-04.txt"
-# export DATA_FILE_LIST="./dolma-chunk-00-of-40.txt"
-#
-# bash "${HERE}/generate_config.sh" "${DS_CONFIG}" || exit
-
-# export DATA_CACHE_PATH="${DATA_CACHE_PATH}"
-# if [[ -z "$DATA_CACHE_PATH" ]]; then
-#     echo "Not using DATA_CACHE_PATH !!"
-# else
-#     echo "Using DATA_CACHE_PATH: ${DATA_CACHE_PATH}"
-# fi
-
-
-# export EXTRA_ARGS="--use-flash-attn-v2 --num-key-value-heads ${NUM_KV_HEAD}"
-
-# export DATA_FILE_LIST="./chunks/10/data_file_list_chunk_${DOLMA_CHUNK_IDX}_of_10.txt"
-# export DATA_FILE_LIST="/lus/eagle/projects/datasets/dolma/chunks/data_file_list_chunk_${DOLMA_CHUNK_IDX}_of_20.txt"
-# export DATA_FILE_LIST="./dolma_data_file_list-${DOLMA_CHUNK_IDX}-of-04.txt"
+# ----------------------------------------------------
 
 echo "++++++++++++++++++++++++++++++++++++++++++++++++++"
 echo "- WORLD_SIZE:${WORLD_SIZE}"
@@ -255,17 +91,65 @@ echo "- MODEL_TYPE: ${MODEL_TYPE}"
 echo "- Using DATA_FILE_LIST: ${DATA_FILE_LIST}"
 echo "++++++++++++++++++++++++++++++++++++++++++++++++++"
 
-# bash $LLM_DK_DIR/intel-extension-for-deepspeed/examples/gpt.sh $@
+# if [[ "${DOLMA_CHUNK_IDX}" == 0 ]]; then
+#     TRAIN_ITER=78739
+# elif [[ "${DOLMA_CHUNK_IDX}" == 1 ]]; then
+#     TRAIN_ITER=81008
+# elif [[ "${DOLMA_CHUNK_IDX}" == 2 ]]; then
+#     TRAIN_ITER=79591
+# elif [[ "${DOLMA_CHUNK_IDX}" == 3 ]]; then
+#     TRAIN_ITER=78552
+# else
+#     echo "caught DOLMA_CHUNK_IDX=${DOLMA_CHUNK_IDX}"
+#     TRAIN_ITER="${TRAIN_ITER:-320000}"
+#     echo "Setting TRAIN_ITER=${TRAIN_ITER}"
+#     # echo "Unknown DOLMA_CHUNK_IDX: ${DOLMA_CHUNK_IDX}"
+# fi
 
+# +++++NOTES ++++++++++++++++++++++++++++++++++++++++++++++++++
+# XXX:
+# - need to merge *.json files
+# - Can we create indices on a per-dataset basis?
+#   (i.e. one for common-crawl, one for stack-code, etc.)
+# - Aggregate `stack-code/**/{*.bin,*.idx}`
+#
+# - Given: {f1.bin,f2.bin,...,fn.bin}
+#   - tot_tokens = 0
+#   - agg = []
+#   - Start:
+#     - read: f1.bin
+#     - tot_tokens += sum(tokens(f1.bin))
+#     - if tot_tokens < needed_tokens:
+#         - agg.append(f1.bin)
+#     - else:
+#
+
+# TODO:
+# - StackExchange ~ 500B total, using 80% ~ 400B tokens
+# - figure out how to deal with MANY small files (e.g. stack-code)
+# - Add logic for determining `train_iters` dynamically from `data-file-list` 
+#   (which specifies a single _chunk_)
+# - get script from Varuni
+# - should:
+#   - take in a `data_file_list.txt`
+#   - return number of training iterations
+#
+# ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+# ---- Build DeepSpeed Config ---------------------------------
 DS_CONFIG="ds_stage${ZERO_STAGE}_mb${MICRO_BATCH}_gb${GLOBAL_BATCH}_pp${PP}_${DTYPE}.json"
 bash "${HERE}/generate_config.sh" "${DS_CONFIG}" || exit 1
+# -------------------------------------------------------------
 
+# ---- Specify output location --------------------------------
 OUTPUT_PREFIX="${HERE}/logs/ds_stage${ZERO_STAGE}_nl${NLAYERS}_hs${HIDDEN}_mb${MICRO_BATCH}_seq${SEQ}_gb${GLOBAL_BATCH}_pp${PP}_tp${TP}_${DTYPE}"
 # OUTPUT_DIR=logs/ds_stage${ZERO_STAGE}_nl${NLAYERS}_hs${HIDDEN}_mb${MICRO_BATCH}_seq${SEQ}_gb${GLOBAL_BATCH}_pp${PP}_tp${TP}_${DTYPE}_`date +%m%d%H%M%S`_${HOSTNAME}
 OUTPUT_DIR="${OUTPUT_PREFIX}/$(date +%m%d%H%M%S)_${HOSTNAME}"
 mkdir -p "${OUTPUT_DIR}"
 echo "!!!Please see logs at ${OUTPUT_DIR}"
 
+
+# ---- Setup DeepSpeed arguments --------------------------------
 ds_args=" "
 ds_args=" --deepspeed ${ds_args}"
 if [[ $PP == 1 ]]; then
@@ -280,9 +164,12 @@ if [[ "$USE_ACTIVATION_CHECKPOINTING" == 1 ]]; then
     # --checkpoint-activations \
     # --deepspeed-activation-checkpointing
 fi
+# ---------------------------------------------------------------
 
 gpt_args=()
 
+# we are now using activation checkpoint provided by megatron, see below.
+# ds_args=" --deepspeed-activation-checkpointing ${ds_args}"
 if [[ "$USE_ACTIVATION_CHECKPOINTING" == 1 ]]; then
     echo "!! Caught USE_ACTIVATION_CHECKPOINTING=${USE_ACTIVATION_CHECKPOINTING} !!"
     gpt_args+=(
@@ -290,27 +177,25 @@ if [[ "$USE_ACTIVATION_CHECKPOINTING" == 1 ]]; then
         "--checkpoint-num-layers 1"
     )
 fi
-# we are now using activation checkpoint provided by megatron, see below.
-# ds_args=" --deepspeed-activation-checkpointing ${ds_args}"
-# NUM_KV_HEADS="${NUM_KV_HEADS:-0}"
-# if [[ $NUM_KV_HEADS -]]
 
 # take custom args
 custom_args=" $@"
 
 # launcher setting
+hfds="${HERE}/hostfile_deepspeed"
+hfmpi="${HERE}/hostfile_mpich"
+[ -f "$hfds" ] || exit
+[ -f "$hfmpi" ] || exit
+
 LAUNCHER=${LAUNCHER:-MPICH}
 if [[ $LAUNCHER == "deepspeed" ]]; then
     launcher=""
 else
-    launcher="--force_multi --hostfile $hostfile_deepspeed --launcher=${LAUNCHER} --launcher_args='-hostfile ${hostfile_mpich}'"
+    launcher="--force_multi --hostfile $hfds --launcher=${LAUNCHER} --launcher_args='-hostfile ${hfmpi}'"
 fi
 
 NCCL=${NCCL:-nccl}
 EXEC="pretrain_gpt_alcf.py"
-
-# MODEL=LLAMA_7B
-# OUTPUT_PREFIX=${MODEL}_z${ZERO_STAGE}_seqlen_tp${TP}_pp${PP}_sp${SP}_nl${NUM_LAYERS}_hs${HIDDEN_SIZE}_gb${BS}_mb${MBS}
 
 # --vocab-file $VOCAB_FILE \
 # --merge-file $MERGE_FILE \
