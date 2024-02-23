@@ -4,6 +4,42 @@
 #PBS -q prod
 #PBS -l select=48
 #PBS -l filesystems=eagle:home
+#
+set +x
+loadCondaEnv() {
+    if [[ "${CONDA_EXE}" ]]; then
+        echo "Already inside ${CONDA_EXE}, exiting!"
+    else
+        MODULE_STR="$1"
+        module load "conda/${MODULE_STR}"
+        conda activate base
+    fi
+}
+
+setupVenv() {
+    VENV_DIR="$1"
+    if [[ -d "${VENV_DIR}" ]]; then
+        echo "Found venv at: ${VENV_DIR}"
+        source "${VENV_DIR}/bin/activate"
+    else
+        echo "Skipping setupVenv() on $(hostname)"
+    fi
+}
+
+setupPython() {
+    local conda_date=$1
+    local venv_path=$2
+    if [[ "${CONDA_EXE}" ]]; then
+        echo "Caught CONDA_EXE: ${CONDA_EXE}"
+    else
+        loadCondaEnv "${conda_date}"
+    fi
+    if [[ "${VIRTUAL_ENV}" ]]; then
+        echo "Caught VIRTUAL_ENV: ${VIRTUAL_ENV}"
+    else
+        setupVenv "${venv_path}"
+    fi
+}
 
 ezpz() {
     if [[ ! -d ezpz ]]; then
@@ -11,9 +47,13 @@ ezpz() {
     else
         echo "Found ezpz!"
     fi
-    echo "Using $(which python3) to install \`ezpz\`:"
-    mkdir -p logs
-    python3 -m pip install -e ezpz > ezpz-install.log 2>&1
+    if python3 -c 'import ezpz; print(ezpz.__file__)' 2> '/dev/null'; then
+        echo "Has ezpz installed. Nothing to do."
+    else
+        echo "Does not have ezpz installed. Installing..."
+        echo "Using $(which python3) to install \`ezpz\`:"
+        python3 -m pip install -e ezpz > ezpz-install.log 2>&1
+    fi
     source ezpz/src/ezpz/bin/savejobenv > /tmp/savejobenv.log 2>&1 || exit
     source ezpz/src/ezpz/bin/getjobenv || exit
 }
@@ -46,38 +86,68 @@ makeHostfiles() {
 }
 
 setupData() {
-    local cidx=$1
+    cidx=$1
+    echo "Caught DOLMA_CHUNK_IDX: ${cidx} !!"
     # export DOLMA_CHUNK_IDX="${DOLMA_CHUNK_IDX:-0}"
     # HERE=$(python3 -c 'import os; print(os.getcwd())')
-    export DATA_FILE_LIST="/eagle/datasets/dolma/chunks/4/data_file_list_chunk_${cidx}_of_4.txt"
-    NDOCS=$(wc -l < "${DATA_FILE_LIST}")
+    # export DATA_FILE_LIST="/eagle/projects/datascience/foremans/locations/polaris/projects/argonne-lcf/Megatron-DeepSpeed/chunks/4/data_file_list_chunk_${cidx}_of_4.txt"
+    # export DATA_FILE_LIST="/eagle/datasets/dolma/data_file_list_select.txt"
+    # export DATA_FILE_LIST="/eagle/datasets/dolma/chunks/4/data_file_list_chunk_${cidx}_of_4.txt"
+    # export DATA_FILE_LIST="./chunks/4/data_file_list_chunk_${cidx}_of_4.txt"
+    # export DATA_FILE_LIST="./chunks/4/data_file_list_chunk_${cidx}_of_4.txt"
+    # export DATA_FILE_LIST="./dolma_data_file_list-${cidx}-of-4.txt"
+    export DATA_FILE_LIST="${DATA_FILE_LIST:-"./dolma-shuf-chunk-${cidx}-of-4.txt"}"
+    echo "Using DATA_FILE_LIST: ${DATA_FILE_LIST}"
+    # [ -f "$DATA_FILE_LIST" ] || exit
+    NDOCS=$(wc -l < "${DATA_FILE_LIST}") && export NDOCS="${NDOCS}"
     export NDOCS="${NDOCS}"
-    if [[ -z "${DATA_CACHE_PATH}" ]]; then
-        data_file_list_stem=$(echo "$DATA_FILE_LIST" | tr "\/" "\t" | awk '{print $NF}' | sed "s/\.txt//g")
-        export DATA_CACHE_PATH=".cache/${data_file_list_stem}-index-cache"
-    else
-        export DATA_CACHE_PATH="${DATA_CACHE_PATH}"
-        echo "CAUGHT DATA_CACHE_PATH: ${DATA_CACHE_PATH} from env !!"
-    fi
+    # if [[ -z "${DATA_CACHE_PATH}" ]]; then
+    # else
+    #     echo "CAUGHT DATA_CACHE_PATH: ${DATA_CACHE_PATH} from env !!"
+    #     DATA_CACHE_PATH="${DATA_CACHE_PATH}"
+    # fi
+    data_file_list_stem=$(echo "$DATA_FILE_LIST" | tr "\/" "\t" | awk '{print $NF}' | sed "s/\.txt//g")
     export DOLMA_CHUNK_IDX="${cidx}"
+    export DATA_FILE_LIST_STEM="${data_file_list_stem}"
+    export DATA_CACHE_PATH=".cache/${data_file_list_stem}/index-cache"
     mkdir -p "${DATA_CACHE_PATH}"
 }
 
 
 # ==== SCRIPT START ========================================================
-cd "${PBS_O_WORKDIR}" || exit
+# cd "${PBS_O_WORKDIR}" || exit
+HERE=$(python3 -c 'import os; print(os.getcwd())')
+# if [[ -z "${CONDA_EXE}" ]]; then
 module load conda/2023-10-04; conda activate base
+# else
+#     echo "Caught CONDA_EXE = ${CONDA_EXE} from env"
+# fi
+
+# if [[ -z "${VIRTUAL_ENV}" ]]; then
+# source /home/foremans/polaris/projects/argonne-lcf/Megatron-DeepSpeed/venvs/polaris/2023-10-04/bin/activate || exit
+# source ~/venvs/polaris/2023-10-04/bin/activate || exit
+# else
+#     echo "Caught VIRTUAL_ENV = ${VIRTUAL_ENV} from env"
+# fi
+# if [[ "${VIRTUAL_ENV}" ]]; then
+#     echo "Caught virtual env from environment, using ${VIRTUAL_ENV}"
+# else
+echo "Using $(which python3)"
+
 ezpz
 makeHostfiles
 setupData "${DOLMA_CHUNK_IDX:-0}"
+# NDOCS=$(wc -l < "${DATA_FILE_LIST}") && export NDOCS="${NDOCS}"
+# export NDOCS="${NDOCS}"
 echo "Using DOLMA CHUNK ${DOLMA_CHUNK_IDX} from ${DATA_FILE_LIST} with ${NDOCS} documents..."
 
 # ---- Parallelism Settings ----
-export PP=${PP:-1}
-export TP=${TP:-2}
+PP=${PP:-1}
+TP=${TP:-2}
+export PP="${PP}"
+export TP="${TP}"
 # ------------------------------
 
-HERE=$(python3 -c 'import os; print(os.getcwd())')
 HOSTFILE="${HOSTFILE:-${PBS_NODEFILE}}"
 export WORLD_SIZE=${WORLD_SIZE:-$(wc -l < "${HOSTFILE}")}
 
@@ -92,11 +162,12 @@ export NUM_KV_HEAD=${NUM_KV_HEAD:-8}
 export LR=${LR:-0.00015}
 export SEQ=${SEQ:-4096}                       # SEQ_LEN: 4096
 export DTYPE=${DTYPE:-fp16}                   # DTYPE: FP16
-export ZERO_STAGE=${ZERO_STAGE:-1}
+export ZERO_STAGE=${ZERO_STAGE:-2}
 export MICRO_BATCH=${MICRO_BATCH:-8}
 export GRAD_ACC_STEPS=${GRAD_ACC_STEPS:-1}
 export GLOBAL_BATCH=$(( $WORLD_SIZE * $MICRO_BATCH * $GRAD_ACC_STEPS / $TP / $PP ))
 # ---------------------------------------------
+export TOKENIZER_MODEL="${TOKENIZER_MODEL:-"/eagle/datasets/dolma/utils/tokenizer.model"}"
 
 if [[ "${DOLMA_CHUNK_IDX}" == 0 ]]; then
     TRAIN_ITER=78739
@@ -107,9 +178,14 @@ elif [[ "${DOLMA_CHUNK_IDX}" == 2 ]]; then
 elif [[ "${DOLMA_CHUNK_IDX}" == 3 ]]; then
     TRAIN_ITER=78552
 else
-    echo "Unknown DOLMA_CHUNK_IDX: ${DOLMA_CHUNK_IDX}"
-    exit
+    echo "caught DOLMA_CHUNK_IDX=${DOLMA_CHUNK_IDX}"
+    TRAIN_ITER="${TRAIN_ITER:-320000}"
+    echo "Setting TRAIN_ITER=${TRAIN_ITER}"
+    # echo "Unknown DOLMA_CHUNK_IDX: ${DOLMA_CHUNK_IDX}"
 fi
+
+export EVAL_ITERS="${EVAL_ITERS:-10}"
+export EVAL_INTERVAL="${EVAL_INTERVAL:-50000}"
 # export TRAIN_ITER=${TRAIN_ITER:-317892}
 
 export SAVE_INTERVAL=${SAVE_INTERVAL:-200}
@@ -166,7 +242,7 @@ export LLAMA_ARGS="--no-query-key-layer-scaling --use-rotary-position-embeddings
 # fi
 
 
-export EXTRA_ARGS="--use-flash-attn-v2 --num-key-value-heads ${NUM_KV_HEAD}"
+# export EXTRA_ARGS="--use-flash-attn-v2 --num-key-value-heads ${NUM_KV_HEAD}"
 
 # export DATA_FILE_LIST="./chunks/10/data_file_list_chunk_${DOLMA_CHUNK_IDX}_of_10.txt"
 # export DATA_FILE_LIST="/lus/eagle/projects/datasets/dolma/chunks/data_file_list_chunk_${DOLMA_CHUNK_IDX}_of_20.txt"
@@ -182,23 +258,17 @@ echo "++++++++++++++++++++++++++++++++++++++++++++++++++"
 # bash $LLM_DK_DIR/intel-extension-for-deepspeed/examples/gpt.sh $@
 
 DS_CONFIG="ds_stage${ZERO_STAGE}_mb${MICRO_BATCH}_gb${GLOBAL_BATCH}_pp${PP}_${DTYPE}.json"
-bash ./generate_config.sh "${DS_CONFIG}" || exit 1
+bash "${HERE}/generate_config.sh" "${DS_CONFIG}" || exit 1
 
-OUTPUT_PREFIX="logs/ds_stage${ZERO_STAGE}_nl${NLAYERS}_hs${HIDDEN}_mb${MICRO_BATCH}_seq${SEQ}_gb${GLOBAL_BATCH}_pp${PP}_tp${TP}_${DTYPE}"
+OUTPUT_PREFIX="${HERE}/logs/ds_stage${ZERO_STAGE}_nl${NLAYERS}_hs${HIDDEN}_mb${MICRO_BATCH}_seq${SEQ}_gb${GLOBAL_BATCH}_pp${PP}_tp${TP}_${DTYPE}"
 # OUTPUT_DIR=logs/ds_stage${ZERO_STAGE}_nl${NLAYERS}_hs${HIDDEN}_mb${MICRO_BATCH}_seq${SEQ}_gb${GLOBAL_BATCH}_pp${PP}_tp${TP}_${DTYPE}_`date +%m%d%H%M%S`_${HOSTNAME}
 OUTPUT_DIR="${OUTPUT_PREFIX}/$(date +%m%d%H%M%S)_${HOSTNAME}"
 mkdir -p "${OUTPUT_DIR}"
 echo "!!!Please see logs at ${OUTPUT_DIR}"
 
-# Hostfile path
-hostfile_deepspeed=./hostfile_deepspeed
-hostfile_mpich=./hostfile_mpich
-cat "$PBS_NODEFILE" > hostfile_mpich
-cat "$PBS_NODEFILE" > hostfile_deepspeed ; sed -e 's/$/ slots=4/' -i hostfile_deepspeed
-
 ds_args=" "
 ds_args=" --deepspeed ${ds_args}"
-if [ "$PP" == 1 ]; then
+if [[ $PP == 1 ]]; then
    ds_args=" --no-pipeline-parallel ${ds_args}" 
 fi
 ds_args=" --deepspeed_config=$DS_CONFIG ${ds_args}"
@@ -237,7 +307,7 @@ else
 fi
 
 NCCL=${NCCL:-nccl}
-EXEC="./pretrain_gpt_alcf.py"
+EXEC="pretrain_gpt_alcf.py"
 
 # MODEL=LLAMA_7B
 # OUTPUT_PREFIX=${MODEL}_z${ZERO_STAGE}_seqlen_tp${TP}_pp${PP}_sp${SP}_nl${NUM_LAYERS}_hs${HIDDEN_SIZE}_gb${BS}_mb${MBS}
@@ -246,51 +316,54 @@ EXEC="./pretrain_gpt_alcf.py"
 # --merge-file $MERGE_FILE \
 # --lr-decay-iters 320000 \
     # --num-workers 0 \
-    # --eval-iters ${EVAL_ITERS} \
-    # --eval-interval ${EVAL_INTERVAL} \
     # --lr-warmup-iters 5000 \
     # --lr-decay-iters 10000 \
+    # --num-workers 4 \
+    # launch python3 ${EXEC} \
 run_cmd="
     deepspeed $launcher ${EXEC} \
-    --tensor-model-parallel-size $TP \
-    --pipeline-model-parallel-size $PP \
+    --$DTYPE \
+    --lr ${LR} \
+    --log-interval 1 \
+    --seq-length $SEQ \
     --num-layers $NLAYERS \
     --hidden-size $HIDDEN \
     --ffn-hidden-size 11008 \
+    --train-iters $TRAIN_ITER \
+    --eval-iters ${EVAL_ITERS} \
+    --distributed-backend $NCCL \
     --num-attention-heads $HEADS \
-    --seq-length $SEQ \
     --max-position-embeddings $SEQ \
     --micro-batch-size $MICRO_BATCH \
-    --global-batch-size $GLOBAL_BATCH \
-    --train-iters $TRAIN_ITER \
-    --lr ${LR} \
-    --lr-decay-style cosine \
-    --data-impl mmap \
-    --log-interval 1 \
     --save-interval ${SAVE_INTERVAL} \
+    --eval-interval ${EVAL_INTERVAL} \
+    --tensor-model-parallel-size $TP \
+    --global-batch-size $GLOBAL_BATCH \
+    --pipeline-model-parallel-size $PP \
+    --data-file-list ${DATA_FILE_LIST} \
+    --load checkpoints/${OUTPUT_PREFIX} \
+    --save checkpoints/${OUTPUT_PREFIX} \
+    --data-cache-path ${DATA_CACHE_PATH} \
+    --num-key-value-heads ${NUM_KV_HEAD} \
+    --tokenizer-model ${TOKENIZER_MODEL} \
     --split 90,5,5 \
-    --$DTYPE \
-    $ds_args \
+    --data-impl mmap \
     --no-masked-softmax-fusion \
     --no-bias-gelu-fusion \
     --no-bias-dropout-fusion \
     --no-gradient-accumulation-fusion \
-    --distributed-backend $NCCL \
+    --use-flash-attn-v2 \
+    --lr-decay-style cosine \
     --tokenizer-type Llama2Tokenizer \
-    --save checkpoints/${OUTPUT_PREFIX} \
-    --load checkpoints/${OUTPUT_PREFIX} \
     --use-checkpoint-opt_param-scheduler \
     --accumulate-allreduce-grads-in-fp32 \
-    --tokenizer-model /eagle/datasets/dolma/utils/tokenizer.model \
-    --data-file-list ${DATA_FILE_LIST} \
-    --data-cache-path ${DATA_CACHE_PATH} \
-    --num-workers 4 \
+    $ds_args \
     ${LLAMA_ARGS} \
-    ${EXTRA_ARGS} \
     ${gpt_args[*]} \
     $custom_args \
     |& tee $OUTPUT_DIR/output.log
     "
+    # ${EXTRA_ARGS} \
 
 echo "Using $(which deepspeed)"
 ds_report
