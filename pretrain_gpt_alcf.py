@@ -434,6 +434,7 @@ def git_ds_info():
 def main():
     # if RANK == 0:
     #     setup_wandb()
+    ''' the following is 
     import socket
     from mpi4py import MPI
     rank = MPI.COMM_WORLD.rank
@@ -446,9 +447,8 @@ def main():
         master_addr = MPI.COMM_WORLD.bcast(master_addr, root=0)
     os.environ["MASTER_ADDR"] = master_addr
     os.environ["MASTER_PORT"] = str(2345)
-    args = get_args()
-
-    if (args.profile):
+    '''
+    if os.getenv('TORCH_PROFILER_ENABLED') == '1':
         from torch.profiler import profile, record_function, ProfilerActivity
         with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA]) as prof:
             model = pretrain(
