@@ -29,17 +29,6 @@ saveDSenv() {
     } > .deepspeed_env
 }
 
-makeHostfiles() {
-    GPUS_PER_NODE=$(python3 -Wignore -c 'import ezpz; print(ezpz.get_gpus_per_node())')
-    export GPUS_PER_NODE="${GPUS_PER_NODE}"
-    # ---- Make MPICH hostfile ----------------
-    export hostfile_mpich=hostfile_mpich
-    cat "$PBS_NODEFILE" > "${hostfile_mpich}"
-    # ---- Make DeepSpeed hostfile -------------------
-    export hostfile_deepspeed=hostfile_deepspeed
-    cat "$PBS_NODEFILE" > "${hostfile_deepspeed}"
-    sed -e "s/$/ slots=${GPUS_PER_NODE}/" -i "${hostfile_deepspeed}"
-}
 
 sumWeights() {
     local file_list=$1
@@ -77,4 +66,53 @@ setupData() {
     export DATA_FILE_LIST_STEM="${data_file_list_stem}"
     export DATA_CACHE_PATH=".cache/${data_file_list_stem}/index-cache"
     mkdir -p "${DATA_CACHE_PATH}"
+}
+
+
+
+setEnv() {
+    if [[ $(hostname) == x4* ]]; then
+        SETENV_FILE="${HOME}/anl_24_release_q4/llm.devkit/setenv.sh"
+        if [[ "${SETENV_FILE}" ]]; then
+            # shellcheck source=/home/foremans/anl_24_release_q4/llm.devkit/setenv.sh
+            source "${HOME}/anl_24_release_q4/llm.devkit/setenv.sh"
+        else
+            echo "Unable to source ${SETENV_FILE}, exiting!"
+            exit
+        fi
+    elif [[ $(hostname) == x3* ]]; then
+        # ---- load conda -----------------------------------
+        module load conda/2023-10-04; conda activate base
+        if [[ "${VIRTUAL_ENV}" ]]; then
+            echo "Caught VIRTUAL_ENV = ${VIRTUAL_ENV} from environment!!"
+        else
+            echo "Not using VIRTUAL_ENV"
+            # sourceFile "${HERE}/venvs/polaris/2023-10-04/bin/activate" || exit
+        fi
+    else
+        echo "Unknown hostname $(hostname)"
+        exit 1
+    fi
+}
+
+makeHostfiles() {
+    GPUS_PER_NODE=$(python3 -Wignore -c 'import ezpz; print(ezpz.get_gpus_per_node())')
+    export GPUS_PER_NODE="${GPUS_PER_NODE}"
+    # ---- Make MPICH hostfile ----------------
+    export hostfile_mpich=hostfile_mpich
+    cat "$PBS_NODEFILE" > "${hostfile_mpich}"
+    # ---- Make DeepSpeed hostfile -------------------
+    export hostfile_deepspeed=hostfile_deepspeed
+    cat "$PBS_NODEFILE" > "${hostfile_deepspeed}"
+    sed -e "s/$/ slots=${GPUS_PER_NODE}/" -i "${hostfile_deepspeed}"
+}
+
+
+makeDSenv() {
+    echo "PATH=${PATH}" > .deepspeed_env
+    echo "LD_LIBRARY_PATH=${LD_LIBRARY_PATH}" >> .deepspeed_env
+    echo "http_proxy=${http_proxy}" >> .deepspeed_env
+    echo "https_proxy=${https_proxy}" >> .deepspeed_env
+    echo "CFLAGS=${CFLAGS}" >> .deepspeed_env
+    echo "PYTHONUSERBASE=$PYTHONUSERBASE" >> .deepspeed_env
 }
