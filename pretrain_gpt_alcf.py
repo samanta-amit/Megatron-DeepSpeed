@@ -143,13 +143,14 @@ def model_provider(pre_process=True, post_process=True):
     print_rank_0(f"Number of parameters in model: {num_params}")
     print_rank_0(80 * '-')
     see_memory_usage("After Building Model", force=True)
-    if wandb.run is not None:
-        wandb.run.watch(
-            model,
-            log='all',
-            log_graph=True,
-        )
-        wandb.run.config.update({'num_params': num_params})
+    # if wandb.run is not None:
+    #     if torch.cuda.is_available()
+    #     wandb.run.watch(
+    #         model,
+    #         log='all',
+    #         log_graph=True,
+    #     )
+    #     wandb.run.config.update({'num_params': num_params})
     return model
 
 def get_batch(data_iterator):
@@ -446,30 +447,30 @@ def main():
         master_addr = MPI.COMM_WORLD.bcast(master_addr, root=0)
     os.environ["MASTER_ADDR"] = master_addr
     os.environ["MASTER_PORT"] = str(2345)
-    args = get_args()
-
-    if (args.profile):
-        from torch.profiler import profile, record_function, ProfilerActivity
-        with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA]) as prof:
-            model = pretrain(
-                train_valid_test_datasets_provider,
-                model_provider,
-                ModelType.encoder_or_decoder,
-                forward_step,
-                args_defaults={'tokenizer_type': 'GPT2BPETokenizer'},
-                data_post_process=data_post_process
-            )
-
-        prof.export_chrome_trace(f"{args.tensorboard_dir}/torch-trace-{RANK}-of-{WORLD_SIZE}.json")
-    else:
-        model = pretrain(
-            train_valid_test_datasets_provider,
-            model_provider,
-            ModelType.encoder_or_decoder,
-            forward_step,
-            args_defaults={'tokenizer_type': 'GPT2BPETokenizer'},
-            data_post_process=data_post_process
-        )
+    # args = get_args()
+    #
+    # if (args.profile):
+    #     from torch.profiler import profile, record_function, ProfilerActivity
+    #     with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA]) as prof:
+    #         model = pretrain(
+    #             train_valid_test_datasets_provider,
+    #             model_provider,
+    #             ModelType.encoder_or_decoder,
+    #             forward_step,
+    #             args_defaults={'tokenizer_type': 'GPT2BPETokenizer'},
+    #             data_post_process=data_post_process
+    #         )
+    #
+    #     prof.export_chrome_trace(f"{args.tensorboard_dir}/torch-trace-{RANK}-of-{WORLD_SIZE}.json")
+    # else:
+    model = pretrain(
+        train_valid_test_datasets_provider,
+        model_provider,
+        ModelType.encoder_or_decoder,
+        forward_step,
+        args_defaults={'tokenizer_type': 'GPT2BPETokenizer'},
+        data_post_process=data_post_process
+    )
     # # from megatron.training import get_model
     # if wandb.run is not None:
     #     args = get_args()
