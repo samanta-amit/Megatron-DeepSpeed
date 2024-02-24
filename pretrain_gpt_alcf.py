@@ -434,18 +434,42 @@ def git_ds_info():
 def main():
     # if RANK == 0:
     #     setup_wandb()
-    from torch.profiler import profile, record_function, ProfilerActivity
-    # with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA]) as prof:
-    model = pretrain(
-        train_valid_test_datasets_provider,
-        model_provider,
-        ModelType.encoder_or_decoder,
-        forward_step,
-        args_defaults={'tokenizer_type': 'GPT2BPETokenizer'},
-        data_post_process=data_post_process
-    )
-    # args = get_args()
-    # prof.export_chrome_trace(f"{args.tensorboard_dir}/torch-trace-{RANK}-of-{WORLD_SIZE}.json")
+    import socket
+    from mpi4py import MPI
+    rank = MPI.COMM_WORLD.rank
+
+    if rank == 0:
+        master_addr = socket.gethostname()
+    else:
+        master_addr = None
+
+        master_addr = MPI.COMM_WORLD.bcast(master_addr, root=0)
+    os.environ["MASTER_ADDR"] = master_addr
+    os.environ["MASTER_PORT"] = str(2345)
+    args = get_args()
+
+    if (args.profile):
+        from torch.profiler import profile, record_function, ProfilerActivity
+        with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA]) as prof:
+            model = pretrain(
+                train_valid_test_datasets_provider,
+                model_provider,
+                ModelType.encoder_or_decoder,
+                forward_step,
+                args_defaults={'tokenizer_type': 'GPT2BPETokenizer'},
+                data_post_process=data_post_process
+            )
+
+        prof.export_chrome_trace(f"{args.tensorboard_dir}/torch-trace-{RANK}-of-{WORLD_SIZE}.json")
+    else:
+        model = pretrain(
+            train_valid_test_datasets_provider,
+            model_provider,
+            ModelType.encoder_or_decoder,
+            forward_step,
+            args_defaults={'tokenizer_type': 'GPT2BPETokenizer'},
+            data_post_process=data_post_process
+        )
     # # from megatron.training import get_model
     # if wandb.run is not None:
     #     args = get_args()
