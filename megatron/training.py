@@ -1021,6 +1021,7 @@ def training_log(loss_dict, total_loss_dict, learning_rate, iteration,
                 writer.add_scalar('optimizer/momentum_abs_max', opt_stats_2[2], iteration)
                 writer.add_scalar('optimizer/weight_abs_max', opt_stats_2[3], iteration)
 
+    assert args is not None
     if iteration % args.log_interval == 0:
         elapsed_time = timers('interval-time').elapsed(barrier=True)
         elapsed_time_per_iteration = elapsed_time / total_iterations
@@ -1038,6 +1039,7 @@ def training_log(loss_dict, total_loss_dict, learning_rate, iteration,
         tokens_per_sec_per_replica = tokens_per_sec / args.data_parallel_size
         tokens_per_gpu_per_second = tokens_per_sec / args.world_size
         tokens_per_gpu_per_second_per_replica = tokens_per_gpu_per_second / args.data_parallel_size
+        wandb_metrics = {}
         if wandb is not None and getattr(wandb, 'run', None) is not None:
             assert wandb.run is not None
             wandb_metrics = {
@@ -1055,17 +1057,16 @@ def training_log(loss_dict, total_loss_dict, learning_rate, iteration,
             }
             if loss_dict is not None:
                 wandb_metrics |= {
-                    f'loss/{k}': v for k, v in loss_dict.items()
+                    'loss/iteration': iteration,
+                    **{f'loss/{k}': v for k, v in loss_dict.items()}
                 }
-                wandb_metrics |= {'loss/iteration': iteration}
-        if writer:
-            if args.log_timers_to_tensorboard:
-                writer.add_scalar('iteration-time/iteration-time',
-                                  elapsed_time_per_iteration, iteration)
-                writer.add_scalar('iteration-time/iteration-time vs samples',
-                                  elapsed_time_per_iteration, args.consumed_train_samples)
-                writer.add_scalar('iteration-time/iteration-time vs tokens',
-                                  elapsed_time_per_iteration, args.consumed_train_tokens)
+        if writer and args.log_timers_to_tensorboard:
+            writer.add_scalar('iteration-time/iteration-time',
+                              elapsed_time_per_iteration, iteration)
+            writer.add_scalar('iteration-time/iteration-time vs samples',
+                              elapsed_time_per_iteration, args.consumed_train_samples)
+            writer.add_scalar('iteration-time/iteration-time vs tokens',
+                              elapsed_time_per_iteration, args.consumed_train_tokens)
         log_string = ' iteration {:8d}/{:8d} |'.format(
             iteration, args.train_iters)
         log_string += ' consumed samples: {:12d} |'.format(
@@ -1099,16 +1100,18 @@ def training_log(loss_dict, total_loss_dict, learning_rate, iteration,
                 if avg > 0.0:
                     log_string += ' {}: {:.6E} |'.format(key, avg)
                 total_loss_dict[key] = get_accelerator().FloatTensor([0.0])
-        if wandb is not None and getattr(wandb, 'run', None) is not None:
-            wandb.log(wandb_metrics)
         if loss_scale is not None:
             log_string += ' loss scale: {:.1f} |'.format(loss_scale)
+            wandb_metrics |= {'loss/loss_scale': loss_scale}
         if grad_norm is not None:
             log_string += ' grad norm: {:.3f} |'.format(grad_norm)
+            wandb_metrics |= {'loss/grad_norm': grad_norm}
         if num_zeros_in_grad is not None:
             log_string += ' num zeros: {:.1f} |'.format(num_zeros_in_grad)
+            wandb_metrics |= {'loss/num_zeros_in_grad': num_zeros_in_grad}
         if params_norm is not None:
             log_string += ' params norm: {:.3f} |'.format(params_norm)
+            wandb_metrics |= {'loss/params_norm': params_norm}
         if args.curriculum_learning_legacy or args.data_efficiency_curriculum_learning:
             log_string += ' curriculum seqlen: {:5d} |'.format(args.curriculum_seqlen)
         if args.random_ltd:
@@ -1129,7 +1132,12 @@ def training_log(loss_dict, total_loss_dict, learning_rate, iteration,
             # Report memory after optimizer state has been initialized.
             report_memory('(after {} iterations)'.format(iteration))
             report_memory_flag = False
-        timers.log(timers_to_log, normalizer=args.log_interval)
+        if wandb is not None and getattr(wandb, 'run', None) is not None:
+            wandb_metrics |= {'training/skiped_iterations': total_loss_dict[skipped_iters_key]}
+            wandb_metrics |= {'training/nan_iterations': total_loss_dict[nan_iters_key]}
+            wandb.log(wandb_metrics)
+        if timers is not None:
+            timers.log(timers_to_log, normalizer=args.log_interval)
 
     return report_memory_flag
 
@@ -1138,6 +1146,7 @@ def save_checkpoint_and_time(iteration, model, optimizer, opt_param_scheduler):
     timers = get_timers()
     # Extra barrier is added to make sure
     # all ranks report the max time.
+    # assert timers is not None
     timers('save-checkpoint', log_level=0).start(barrier=True)
     save_checkpoint(iteration, model, optimizer, opt_param_scheduler)
     timers('save-checkpoint').stop(barrier=True)
