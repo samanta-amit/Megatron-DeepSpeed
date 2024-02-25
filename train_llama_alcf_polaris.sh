@@ -16,13 +16,19 @@ function sourceFile() {
     fi
 }
 
-# +++++++++++++++ SCRIPT START +++++++++++++++++++++++
+# +++++++++++++++ SCRIPT START ++++++++++++++++++++++
 # ---- source ./helpers_alcf.sh ---------------------
 HERE=$(python3 -c 'import os; print(os.getcwd())')
 sourceFile "${HERE}/helpers_alcf.sh" || exit
 
 # ---- load conda -----------------------------------
 module load conda/2023-10-04; conda activate base
+if [[ "${VIRTUAL_ENV}" ]]; then
+    echo "Caught VIRTUAL_ENV = ${VIRTUAL_ENV} from environment!!"
+else
+    echo "Not using VIRTUAL_ENV"
+    # sourceFile "${HERE}/venvs/polaris/2023-10-04/bin/activate" || exit
+fi
 echo "Using $(which python3)"
 
 # ---- fns from ./helpers_alcf.sh -------------------
@@ -33,17 +39,18 @@ saveDSenv
 # export DOLMA_CHUNK_IDX="${DOLMA_CHUNK_IDX:-0}"
 #
 # ---- DATA SETUP ------------------------------------
-DATA_FILE_LIST="./data_file_list_shuf_debug.txt" && export DATA_FILE_LIST="${DATA_FILE_LIST}"
-NDOCS=$(wc -l < "${DATA_FILE_LIST}") && export NDOCS="${NDOCS}"
+dfl_debug="./data_file_list_shuf_debug.txt"
+DATA_FILE_LIST="${DATA_FILE_LIST:-${dfl_debug}}" && export DATA_FILE_LIST="${DATA_FILE_LIST}"
+NUM_DOCS=$(wc -l < "${DATA_FILE_LIST}") && export NUM_DOCS="${NUM_DOCS}"
 WEIGHT_SUM="$(sumWeights "${DATA_FILE_LIST}")" && export WEIGHT_SUM="${WEIGHT_SUM}"
 DFL_STEM=$(echo "$DATA_FILE_LIST" | tr "\/" "\t" | awk '{print $NF}' | sed "s/\.txt//g") && export DFL_STEM="${DFL_STEM}"
 dcp="${HERE}/.cache/${DFL_STEM}-index-cache"
 DATA_CACHE_PATH="${DATA_CACHE_PATH:-${dcp}}" && export DATA_CACHE_PATH="${DATA_CACHE_PATH}"
 mkdir -p "${DATA_CACHE_PATH}"
 if [[ -n "${DOLMA_CHUNK_IDX}" ]]; then
-    echo "Using DOLMA CHUNK ${DOLMA_CHUNK_IDX} from ${DATA_FILE_LIST} with ${NDOCS} documents..."
+    echo "Using DOLMA CHUNK ${DOLMA_CHUNK_IDX} from ${DATA_FILE_LIST} with ${NUM_DOCS} documents..."
 else
-    echo "Using NDOCS=${NDOCS} documents from DATA_FILE_LIST=${DATA_FILE_LIST}"
+    echo "Using NUM_DOCS=${NUM_DOCS} documents from DATA_FILE_LIST=${DATA_FILE_LIST}"
 fi
 echo "DOCUMENT WEIGHT_SUM: ${WEIGHT_SUM}"
 # ----------------------------------------------------
@@ -62,6 +69,7 @@ export HEADS=${HEADS:-32}
 export NLAYERS=${NLAYERS:-32}
 export HIDDEN=${HIDDEN:-4096}
 export NUM_KV_HEAD=${NUM_KV_HEAD:-8}
+export FFN_HIDDEN_SIZE=${FFN_HIDDEN_SIZE:-11008}
 # ----------------------------------------------------
 
 # ---- Run Settings ----------------------------------
@@ -71,15 +79,16 @@ export DTYPE=${DTYPE:-fp16}                   # DTYPE: FP16
 export ZERO_STAGE=${ZERO_STAGE:-2}
 export MICRO_BATCH=${MICRO_BATCH:-8}
 export GRAD_ACC_STEPS=${GRAD_ACC_STEPS:-1}
-export TOKENIZER_MODEL="${TOKENIZER_MODEL:-"/eagle/datasets/dolma/utils/tokenizer.model"}"
-export TRAIN_ITER=${TRAIN_ITER:-317892}
-# export TRAIN_ITER="${TRAIN_ITER:-320000}"
 export EVAL_ITERS="${EVAL_ITERS:-10}"
+# export TRAIN_ITER="${TRAIN_ITER:-320000}"
+export TRAIN_ITER=${TRAIN_ITER:-317892}
 export EVAL_INTERVAL="${EVAL_INTERVAL:-50000}"
 export SAVE_INTERVAL=${SAVE_INTERVAL:-200}
+export CKPT_DIR="checkpoints/${OUTPUT_PREFIX}"
 export USE_ACTIVATION_CHECKPOINTING=${USE_ACTIVATION_CHECKPOINTING:-1}
 # export USE_ACTIVATION_CHECKPOINTING=${USE_ACTIVATION_CHECKPOINTING:-0}
 export GLOBAL_BATCH=$(( $WORLD_SIZE * $MICRO_BATCH * $GRAD_ACC_STEPS / $TP / $PP ))
+export TOKENIZER_MODEL="${TOKENIZER_MODEL:-"/eagle/datasets/dolma/utils/tokenizer.model"}"
 export MODEL_TYPE="llama-seq${SEQ}-pp${PP}-tp${TP}-${NLAYERS}layers-${HEADS}heads-${HIDDEN}hidden"
 export LLAMA_ARGS="--no-query-key-layer-scaling --use-rotary-position-embeddings --untie-embeddings-and-output-weights --swiglu --normalization rmsnorm --disable-bias-linear"
 # ----------------------------------------------------
@@ -137,14 +146,17 @@ echo "++++++++++++++++++++++++++++++++++++++++++++++++++"
 # ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
 # ---- Build DeepSpeed Config ---------------------------------
-DS_CONFIG="ds_stage${ZERO_STAGE}_mb${MICRO_BATCH}_gb${GLOBAL_BATCH}_pp${PP}_${DTYPE}.json"
+export DS_CONFIG="ds_stage${ZERO_STAGE}_mb${MICRO_BATCH}_gb${GLOBAL_BATCH}_pp${PP}_${DTYPE}.json"
 bash "${HERE}/generate_config.sh" "${DS_CONFIG}" || exit 1
 # -------------------------------------------------------------
 
 # ---- Specify output location --------------------------------
-OUTPUT_PREFIX="${HERE}/logs/ds_stage${ZERO_STAGE}_nl${NLAYERS}_hs${HIDDEN}_mb${MICRO_BATCH}_seq${SEQ}_gb${GLOBAL_BATCH}_pp${PP}_tp${TP}_${DTYPE}"
+export OUTPUT_PREFIX="ds_stage${ZERO_STAGE}_nl${NLAYERS}_hs${HIDDEN}_mb${MICRO_BATCH}_seq${SEQ}_gb${GLOBAL_BATCH}_pp${PP}_tp${TP}_${DTYPE}"
 # OUTPUT_DIR=logs/ds_stage${ZERO_STAGE}_nl${NLAYERS}_hs${HIDDEN}_mb${MICRO_BATCH}_seq${SEQ}_gb${GLOBAL_BATCH}_pp${PP}_tp${TP}_${DTYPE}_`date +%m%d%H%M%S`_${HOSTNAME}
-OUTPUT_DIR="${OUTPUT_PREFIX}/$(date +%m%d%H%M%S)_${HOSTNAME}"
+OUTPUT_DIR="logs/${OUTPUT_PREFIX}/$(date +%m%d%H%M%S)_${HOSTNAME}"
+export OUTPUT_DIR="${OUTPUT_DIR}"
+export OUTPUT_LOG="${OUTPUT_DIR}/output.log"
+echo "${OUTPUT_LOG}" >> "logs/latest"
 mkdir -p "${OUTPUT_DIR}"
 echo "!!!Please see logs at ${OUTPUT_DIR}"
 
@@ -205,54 +217,60 @@ EXEC="pretrain_gpt_alcf.py"
     # --lr-decay-iters 10000 \
     # --num-workers 4 \
     # launch python3 ${EXEC} \
+    # --data-impl mmap \
 run_cmd="
     deepspeed $launcher ${EXEC} \
     --$DTYPE \
+    --split 90,5,5 \
+    --use-flash-attn-v2 \
+    --no-bias-gelu-fusion \
+    --lr-decay-style cosine \
+    --no-bias-dropout-fusion \
+    --no-masked-softmax-fusion \
+    --tokenizer-type Llama2Tokenizer \
+    --no-gradient-accumulation-fusion \
+    --accumulate-allreduce-grads-in-fp32 \
+    --use-checkpoint-opt_param-scheduler \
     --lr ${LR} \
     --log-interval 1 \
     --seq-length $SEQ \
-    --num-layers $NLAYERS \
-    --hidden-size $HIDDEN \
-    --ffn-hidden-size 11008 \
-    --train-iters $TRAIN_ITER \
+    --save ${CKPT_DIR} \
+    --load ${CKPT_DIR} \
+    --num-layers ${NLAYERS} \
+    --hidden-size ${HIDDEN} \
+    --train-iters ${TRAIN_ITER} \
     --eval-iters ${EVAL_ITERS} \
-    --distributed-backend $NCCL \
-    --num-attention-heads $HEADS \
-    --max-position-embeddings $SEQ \
-    --micro-batch-size $MICRO_BATCH \
+    --distributed-backend ${NCCL} \
+    --num-attention-heads ${HEADS} \
     --save-interval ${SAVE_INTERVAL} \
     --eval-interval ${EVAL_INTERVAL} \
-    --tensor-model-parallel-size $TP \
-    --global-batch-size $GLOBAL_BATCH \
-    --pipeline-model-parallel-size $PP \
+    --max-position-embeddings ${SEQ} \
+    --micro-batch-size ${MICRO_BATCH} \
     --data-file-list ${DATA_FILE_LIST} \
-    --load checkpoints/${OUTPUT_PREFIX} \
-    --save checkpoints/${OUTPUT_PREFIX} \
-    --data-cache-path ${DATA_CACHE_PATH} \
+    --tensor-model-parallel-size ${TP} \
+    --global-batch-size ${GLOBAL_BATCH} \
+    --pipeline-model-parallel-size ${PP} \
     --num-key-value-heads ${NUM_KV_HEAD} \
+    --data-cache-path ${DATA_CACHE_PATH} \
+    --ffn-hidden-size ${FFN_HIDDEN_SIZE} \
     --tokenizer-model ${TOKENIZER_MODEL} \
-    --split 90,5,5 \
-    --data-impl mmap \
-    --no-masked-softmax-fusion \
-    --no-bias-gelu-fusion \
-    --no-bias-dropout-fusion \
-    --no-gradient-accumulation-fusion \
-    --use-flash-attn-v2 \
-    --lr-decay-style cosine \
-    --tokenizer-type Llama2Tokenizer \
-    --use-checkpoint-opt_param-scheduler \
-    --accumulate-allreduce-grads-in-fp32 \
     $ds_args \
     ${LLAMA_ARGS} \
     ${gpt_args[*]} \
     $custom_args \
-    |& tee $OUTPUT_DIR/output.log
+    >> ${OUTPUT_LOG} 2>&1 &
     "
+    # |& tee $OUTPUT_DIR/output.log
     # ${EXTRA_ARGS} \
 
+echo "All DeepSpeed(s): $(which -a deepspeed)"
 echo "Using $(which deepspeed)"
 ds_report
 
-echo ${run_cmd}
-eval ${run_cmd}
+echo "${run_cmd}"
+
+echo "[!! NOTE] View output at:"
+printf "\e[1;34m%s\e[0m\n" "${OUTPUT_LOG}"
+# echo "${OUTPUT_LOG}"
+eval "${run_cmd}"
 set +x
