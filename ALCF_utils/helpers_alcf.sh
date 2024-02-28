@@ -59,28 +59,28 @@ sumFiles() {
     done
 }
 
-setupData() {
-    cidx=$1
-    echo "Caught DOLMA_CHUNK_IDX: ${cidx} !!"
-    dfl="./chunks-reweighted/10/data_file_list_chunk_${cidx}_of_10.txt"
-    if [[ -z "${DATA_FILE_LIST}" ]]; then
-        DATA_FILE_LIST="${dfl}"
-    else
-        echo "Caught DATA_FILE_LIST: ${DATA_FILE_LIST} from ENV!!"
-    fi
-    NDOCS=$(wc -l < "${DATA_FILE_LIST}") && export NDOCS="${NDOCS}"
-    WEIGHT_SUM="$(sumWeights "${DATA_FILE_LIST}")"
-    export WEIGHT_SUM="${WEIGHT_SUM}"
-    export NDOCS="${NDOCS}"
-    echo "Using DATA_FILE_LIST: ${DATA_FILE_LIST} with ${NDOCS} documents"
-    echo "WEIGHT SUM: ${WEIGHT_SUM}"
-    data_file_list_stem=$(echo "$DATA_FILE_LIST" | tr "\/" "\t" | awk '{print $NF}' | sed "s/\.txt//g")
-    export DOLMA_CHUNK_IDX="${cidx}"
-    export DATA_FILE_LIST_STEM="${data_file_list_stem}"
-    export DATA_CACHE_PATH=".cache/${data_file_list_stem}/index-cache"
-    mkdir -p "${DATA_CACHE_PATH}"
-}
-
+# setupData() {
+#     cidx=$1
+#     echo "Caught DOLMA_CHUNK_IDX: ${cidx} !!"
+#     dfl="./chunks-reweighted/10/data_file_list_chunk_${cidx}_of_10.txt"
+#     if [[ -z "${DATA_FILE_LIST}" ]]; then
+#         DATA_FILE_LIST="${dfl}"
+#     else
+#         echo "Caught DATA_FILE_LIST: ${DATA_FILE_LIST} from ENV!!"
+#     fi
+#     NDOCS=$(wc -l < "${DATA_FILE_LIST}") && export NDOCS="${NDOCS}"
+#     WEIGHT_SUM="$(sumWeights "${DATA_FILE_LIST}")"
+#     export WEIGHT_SUM="${WEIGHT_SUM}"
+#     export NDOCS="${NDOCS}"
+#     echo "Using DATA_FILE_LIST: ${DATA_FILE_LIST} with ${NDOCS} documents"
+#     echo "WEIGHT SUM: ${WEIGHT_SUM}"
+#     data_file_list_stem=$(echo "$DATA_FILE_LIST" | tr "\/" "\t" | awk '{print $NF}' | sed "s/\.txt//g")
+#     export DOLMA_CHUNK_IDX="${cidx}"
+#     export DATA_FILE_LIST_STEM="${data_file_list_stem}"
+#     export DATA_CACHE_PATH=".cache/${data_file_list_stem}/index-cache"
+#     mkdir -p "${DATA_CACHE_PATH}"
+# }
+#
 
 
 setEnv() {
