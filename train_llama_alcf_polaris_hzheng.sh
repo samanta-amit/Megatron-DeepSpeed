@@ -2,7 +2,7 @@
 #PBS -l walltime=0:30:00
 #PBS -A datascience
 #PBS -q debug-scaling
-#PBS -l select=6
+#PBS -l select=2
 #PBS -l filesystems=eagle:grand:home
 export PPN=4
 export MD=/home/hzheng/ALCF-Megatron-DeepSpeed
@@ -20,7 +20,8 @@ export SP=$((PBS_JOBSIZE*PPN/PP/TP))
 
 export export DATE_TAG=$(date +"%Y-%m-%d-%H-%M-%S")
 export DATA_PATH="/eagle/datasets//dolma/data_Llama2Tokenizer/wiki-en-simple/"
-export DATA_FILE_LIST="/eagle/datasets//dolma//data_file_list_select.txt"
+#export DATA_FILE_LIST="/eagle/datasets//dolma//data_file_list_select.txt"
+DATA_FILE_LIST=$PWD/test.txt
 echo "BS: $BS\n PP:$PP \n TP: $TP, PBS_JOBSIZE: $PBS_JOBSIZE"
 
 HIDDEN_SIZE=4096
@@ -31,7 +32,7 @@ TRAIN_ITERS=10
 ZERO_STAGE=2
 MODEL=LLAMA_7B
 OUTPUT_PREFIX=${MODEL}_z${ZERO_STAGE}_seqlen_mp${MP}_pp${PP}_sp${SP}_nl${NUM_LAYERS}_hs${HIDDEN_SIZE}_gb${BS}_mb${MBS}
-MASTER_ADDR=localhost MASTER_PORT=6543 mpiexec -n $((PBS_JOBSIZE*PPN)) -ppn $PPN --hostfile $PBS_NODEFILE python3 ./pretrain_gpt_alcf.py \
+MASTER_ADDR=localhost MASTER_PORT=6543 mpiexec -n $((PBS_JOBSIZE*PPN)) -ppn $PPN --cpu-bind depth -d 16 --hostfile $PBS_NODEFILE python3 ./pretrain_gpt_alcf.py \
 	   --tensor-model-parallel-size ${TP} \
 	   --pipeline-model-parallel-size ${PP} \
 	   --num-layers ${NUM_LAYERS} \

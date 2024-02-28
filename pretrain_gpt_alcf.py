@@ -534,30 +534,30 @@ def git_ds_info():
 
 
 def main():
-    # args = get_args()
-    #
-    # if (args.profile):
-    #     from torch.profiler import profile, record_function, ProfilerActivity
-    #     with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA]) as prof:
-    #         model = pretrain(
-    #             train_valid_test_datasets_provider,
-    #             model_provider,
-    #             ModelType.encoder_or_decoder,
-    #             forward_step,
-    #             args_defaults={'tokenizer_type': 'GPT2BPETokenizer'},
-    #             data_post_process=data_post_process
-    #         )
-    #
-    #     prof.export_chrome_trace(f"{args.tensorboard_dir}/torch-trace-{RANK}-of-{WORLD_SIZE}.json")
-    # else:
-    model = pretrain(
-        train_valid_test_datasets_provider,
-        model_provider,
-        ModelType.encoder_or_decoder,
-        forward_step,
-        args_defaults={'tokenizer_type': 'GPT2BPETokenizer'},
-        data_post_process=data_post_process
-    )
+    # if RANK == 0:
+    #     setup_wandb()
+    if os.getenv('TORCH_PROFILER_ENABLED') == '1':
+        from torch.profiler import profile, record_function, ProfilerActivity
+        with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA]) as prof:
+            model = pretrain(
+                train_valid_test_datasets_provider,
+                model_provider,
+                ModelType.encoder_or_decoder,
+                forward_step,
+                args_defaults={'tokenizer_type': 'GPT2BPETokenizer'},
+                data_post_process=data_post_process
+            )
+
+        prof.export_chrome_trace(f"{args.tensorboard_dir}/torch-trace-{RANK}-of-{WORLD_SIZE}.json")
+    else:
+        model = pretrain(
+            train_valid_test_datasets_provider,
+            model_provider,
+            ModelType.encoder_or_decoder,
+            forward_step,
+            args_defaults={'tokenizer_type': 'GPT2BPETokenizer'},
+            data_post_process=data_post_process
+        )
     return model
 
 
