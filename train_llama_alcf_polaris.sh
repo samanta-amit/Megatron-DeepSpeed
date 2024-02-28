@@ -84,7 +84,6 @@ export EVAL_ITERS="${EVAL_ITERS:-10}"
 export TRAIN_ITER=${TRAIN_ITER:-317892}
 export EVAL_INTERVAL="${EVAL_INTERVAL:-50000}"
 export SAVE_INTERVAL=${SAVE_INTERVAL:-200}
-export CKPT_DIR="checkpoints/${OUTPUT_PREFIX}"
 export USE_ACTIVATION_CHECKPOINTING=${USE_ACTIVATION_CHECKPOINTING:-1}
 # export USE_ACTIVATION_CHECKPOINTING=${USE_ACTIVATION_CHECKPOINTING:-0}
 export GLOBAL_BATCH=$(( $WORLD_SIZE * $MICRO_BATCH * $GRAD_ACC_STEPS / $TP / $PP ))
@@ -156,10 +155,10 @@ export OUTPUT_PREFIX="ds_stage${ZERO_STAGE}_nl${NLAYERS}_hs${HIDDEN}_mb${MICRO_B
 OUTPUT_DIR="logs/${OUTPUT_PREFIX}/$(date +%m%d%H%M%S)_${HOSTNAME}"
 export OUTPUT_DIR="${OUTPUT_DIR}"
 export OUTPUT_LOG="${OUTPUT_DIR}/output.log"
+export CKPT_DIR="checkpoints/${OUTPUT_PREFIX}"
 echo "${OUTPUT_LOG}" >> "logs/latest"
 mkdir -p "${OUTPUT_DIR}"
 echo "!!!Please see logs at ${OUTPUT_DIR}"
-
 
 # ---- Setup DeepSpeed arguments --------------------------------
 ds_args=" "
