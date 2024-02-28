@@ -29,6 +29,19 @@ saveDSenv() {
     } > .deepspeed_env
 }
 
+# makeDSenv() {
+#     saveDSenv
+# }
+
+
+# makeDSenv() {
+#     echo "PATH=${PATH}" > .deepspeed_env
+#     echo "LD_LIBRARY_PATH=${LD_LIBRARY_PATH}" >> .deepspeed_env
+#     echo "http_proxy=${http_proxy}" >> .deepspeed_env
+#     echo "https_proxy=${https_proxy}" >> .deepspeed_env
+#     echo "CFLAGS=${CFLAGS}" >> .deepspeed_env
+#     echo "PYTHONUSERBASE=$PYTHONUSERBASE" >> .deepspeed_env
+# }
 
 sumWeights() {
     local file_list=$1
@@ -108,11 +121,56 @@ makeHostfiles() {
 }
 
 
-makeDSenv() {
-    echo "PATH=${PATH}" > .deepspeed_env
-    echo "LD_LIBRARY_PATH=${LD_LIBRARY_PATH}" >> .deepspeed_env
-    echo "http_proxy=${http_proxy}" >> .deepspeed_env
-    echo "https_proxy=${https_proxy}" >> .deepspeed_env
-    echo "CFLAGS=${CFLAGS}" >> .deepspeed_env
-    echo "PYTHONUSERBASE=$PYTHONUSERBASE" >> .deepspeed_env
+setupData() {  # dfl: abbrv. for DATA_FILE_LIST
+    dfl=$1
+    printf "Calling:  \`setupData()\` with %s\n" "${dfl}"
+    ndocs=$(wc -l < "${dfl}")
+    ws=$(sumWeights "${dfl}")
+    dfl_stem=$(echo "${dfl}" | tr "\/" "\t" | awk '{print $NF}' | sed "s/\.txt//g")
+    dcp="${HERE}/.cache/${dfl_stem}/index-cache"
+    mkdir -p dcp
+    export DATA_FILE_LIST="${dfl}"
+    export NUM_DOCS="${ndocs}"
+    export WEIGHT_SUM="${ws}"
+    export DFL_STEM="${dfl_stem}"
+    export DATA_CACHE_PATH="${dcp}"
+    echo "--------------------"
+    echo "Updated environment:"
+    printf "DATA_FILE_LIST: %s\n" "${DATA_FILE_LIST}"
+    printf "NUM_DOCS: %s\n " "${NUM_DOCS}"
+    printf "WEIGHT_SUM: %s\n" "${WEIGHT_SUM}"
+    printf "DFL_STEM: %s\n" "${DFL_STEM}"
+    printf "DATA_CACHE_PATH: %s\n" "${DATA_CACHE_PATH}"
+    echo "--------------------"
+}
+
+printBlack() {
+    printf "\e[1;30m%s\e[0m\n" "$@"
+}
+
+printRed() {
+    printf "\e[1;31m%s\e[0m\n" "$@"
+}
+
+printGreen() {
+    printf "\e[1;32m%s\e[0m\n" "$@"
+}
+
+printYellow() {
+    printf "\e[1;33m%s\e[0m\n" "$@"
+}
+
+printBlue() {
+    printf "\e[1;34m%s\e[0m\n" "$@"
+}
+
+printMagenta() {
+    printf "\e[1;35m%s\e[0m\n" "$@"
+}
+
+printCyan() {
+    printf "\e[1;36m%s\e[0m\n" "$@"
+}
+printWhite() {
+    printf "\e[1;37m%s\e[0m\n" "$@"
 }
