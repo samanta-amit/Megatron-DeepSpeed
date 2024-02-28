@@ -8,8 +8,8 @@
 
 function sourceFile() {
     fp="$1"
-    echo "source-ing ${fp}"
     if [[ -f "${fp}" ]]; then
+        echo "Found ${fp}, \`source\`-ing"
         # shellcheck source="${fp}"
         source "${fp}"
     else
@@ -21,29 +21,29 @@ function sourceFile() {
 # ---- source ./helpers_alcf.sh ---------------------
 HERE=$(python3 -c 'import os; print(os.getcwd())')
 sourceFile "${HERE}/helpers_alcf.sh" || exit
-
 # cd ~/anl_24_release_q4/llm.devkit/Megatron-DeepSpeed || exit
 # eval "$(/home/foremans/miniconda3/bin/conda shell.zsh hook)" && conda activate anl_release_q4v2
-ezpz
-setEnv
-makeDSenv
-makeHostfiles
+ezpz || exit
+setEnv || exit
+saveDSenv || exit
+makeHostfiles || exit
+setupData "${DATA_FILE_LIST:-${HERE}/data_file_list_shuf_debug.txt}" || exit
+# dfl_fallback="${HERE}/data_file_list_shuf_debug.txt"
 
-# ---- DATA SETUP ------------------------------------
-export DATA_FILE_LIST="./data_file_list_shuf_debug.txt"
-NUM_DOCS=$(wc -l < "${DATA_FILE_LIST}") && export NUM_DOCS="${NUM_DOCS}"
-WEIGHT_SUM="$(sumWeights "${DATA_FILE_LIST}")" && export WEIGHT_SUM="${WEIGHT_SUM}"
-DFL_STEM=$(echo "$DATA_FILE_LIST" | tr "\/" "\t" | awk '{print $NF}' | sed "s/\.txt//g") && export DFL_STEM="${DFL_STEM}"
-dcp="${HERE}/.cache/${DFL_STEM}-index-cache"
-DATA_CACHE_PATH="${DATA_CACHE_PATH:-${dcp}}" && export DATA_CACHE_PATH="${DATA_CACHE_PATH}"
-mkdir -p "${DATA_CACHE_PATH}"
-if [[ -n "${DOLMA_CHUNK_IDX}" ]]; then
-    echo "Using DOLMA CHUNK ${DOLMA_CHUNK_IDX} from ${DATA_FILE_LIST} with ${NUM_DOCS} documents..."
-else
-    echo "Using NUM_DOCS=${NUM_DOCS} documents from DATA_FILE_LIST=${DATA_FILE_LIST}"
-fi
-echo "DOCUMENT WEIGHT_SUM: ${WEIGHT_SUM}"
-# ----------------------------------------------------
+# # ---- DATA SETUP ------------------------------------
+# dfl_debug="./data_file_list_shuf_debug.txt"
+# DATA_FILE_LIST="${DATA_FILE_LIST:-${dfl_debug}}" && export DATA_FILE_LIST="${DATA_FILE_LIST}"
+# NUM_DOCS=$(wc -l < "${DATA_FILE_LIST}") && export NUM_DOCS="${NUM_DOCS}"
+# WEIGHT_SUM="$(sumWeights "${DATA_FILE_LIST}")" && export WEIGHT_SUM="${WEIGHT_SUM}"
+# DFL_STEM=$(echo "$DATA_FILE_LIST" | tr "\/" "\t" | awk '{print $NF}' | sed "s/\.txt//g") && export DFL_STEM="${DFL_STEM}"
+# dcp="${HERE}/.cache/${DFL_STEM}-index-cache"
+# DATA_CACHE_PATH="${DATA_CACHE_PATH:-${dcp}}" && export DATA_CACHE_PATH="${DATA_CACHE_PATH}"
+# mkdir -p "${DATA_CACHE_PATH}"
+# if [[ -n "${DOLMA_CHUNK_IDX}" ]]; then
+#     echo "Using DOLMA CHUNK ${DOLMA_CHUNK_IDX} from ${DATA_FILE_LIST} with ${NUM_DOCS} documents..."
+# else
+#     echo "Using NUM_DOCS=${NUM_DOCS} documents from DATA_FILE_LIST=${DATA_FILE_LIST}"
+# fi
 
 
 # ---- Parallelism Settings --------------------------
@@ -162,7 +162,9 @@ echo "++++++++++++++++++++++++++++++++++++++++++++++++++"
 echo "- WORLD_SIZE:${WORLD_SIZE}"
 echo "- BACKEND: ${BE}"
 echo "- MODEL_TYPE: ${MODEL_TYPE}"
+echo "- DOCUMENT WEIGHT_SUM: ${WEIGHT_SUM}"
 echo "- Using DATA_FILE_LIST: ${DATA_FILE_LIST}"
+echo "- Using NUM_DOCS=${NUM_DOCS} documents from DATA_FILE_LIST=${DATA_FILE_LIST}"
 echo "++++++++++++++++++++++++++++++++++++++++++++++++++"
 
 run_cmd="
@@ -223,7 +225,7 @@ ds_report
 
 echo "${run_cmd}"
 
-echo "[!! NOTE] View output at:"
+printf "[!! \e[1;31m%s\e[0m] View output at:\n" "NOTE"
 printf "\e[1;34m%s\e[0m\n" "${OUTPUT_LOG}"
 
 eval "${run_cmd}"
