@@ -58,7 +58,7 @@ if RANK == 0 and not DISABLE_WANDB:
             'WB_PROJECT',
             os.environ.get(
                 'WANDB_PROJECT',
-                'GenSLM-Megatron-DS'
+                'AuroraGPT'
             ),
         )
     )
@@ -70,10 +70,8 @@ if RANK == 0 and not DISABLE_WANDB:
 
 def model_provider(pre_process=True, post_process=True):
     """Build the model."""
-
     print_rank_0('building GPT model ...')
-    see_memory_usage(f"Before Building Model", force=True)
-
+    see_memory_usage("Before Building Model", force=True)
     args = get_args()
     config = core_transformer_config_from_args(args)
     if wandb.run is not None:
@@ -91,27 +89,36 @@ def model_provider(pre_process=True, post_process=True):
         assert wandb is not None and wandb.run is not None
         print(f'Updating {wandb.run.name=} at {wandb.run.url=}')
         wandb.run.config.update({'args': vars(args)})
-    with deepspeed.zero.Init(data_parallel_group=dpg,
-                             remote_device=None if args.remote_device == 'none' else args.remote_device,
-                             config_dict_or_path=args.deepspeed_config_dict,
-                             enabled=args.zero_stage == 3,
-                             mpu=mpu):
+    with deepspeed.zero.Init(
+            data_parallel_group=dpg,
+            remote_device=(
+                None if args.remote_device == 'none' else args.remote_device
+            ),
+            config_dict_or_path=args.deepspeed_config_dict,
+            enabled=args.zero_stage == 3,
+            mpu=mpu
+    ):
         if args.deepspeed and not args.no_pipeline_parallel:
             model = GPTModelPipe(
                 config=config,
                 num_tokentypes=0,
                 parallel_output=True
             )
-            # This is a hack to give us a reference to get_batch_pipe from within training.py
+            # This is a hack to give us a reference to
+            # get_batch_pipe from within training.py
             # We need to call model.set_batch_fn after deepspeed.initialize
             model._megatron_batch_fn = get_batch_pipe
 
-            # Predompute the attention mask and store it in args. This avoids having to
-            # pipeline it as an activation during training. The mask is constant, and thus
-            # we can reuse it.
-            attention_mask = torch.tril(torch.ones(
-                (1, args.seq_length, args.seq_length), device=get_accelerator().current_device_name())).view(
-                    1, 1, args.seq_length, args.seq_length)
+            # Predompute the attention mask and store it in args.
+            # This avoids having to pipeline it
+            # as an activation during training.
+            # The mask is constant, and thus we can reuse it.
+            attention_mask = torch.tril(
+                torch.ones(
+                    (1, args.seq_length, args.seq_length),
+                    device=get_accelerator().current_device_name()
+                )
+            ).view(1, 1, args.seq_length, args.seq_length)
 
             # Convert attention mask to binary:
             attention_mask = (attention_mask < 0.5)
@@ -123,7 +130,8 @@ def model_provider(pre_process=True, post_process=True):
             # Attention mask must be bool.
             args.attn_mask = attention_mask.to(torch.bool)
 
-            # For prertaining, since sequence length is fixed, cache rotary embedding in args, to avoid communicating around
+            # For prertaining, since sequence length is fixed,
+            # cache rotary embedding in args, to avoid communicating around
             if args.use_rotary_position_embeddings:
                 update_rotary_pos_emb(args.seq_length)
 
@@ -144,13 +152,15 @@ def model_provider(pre_process=True, post_process=True):
     print_rank_0(80 * '-')
     see_memory_usage("After Building Model", force=True)
     if wandb.run is not None:
-        wandb.run.watch(
-            model,
-            log='all',
-            log_graph=True,
-        )
         wandb.run.config.update({'num_params': num_params})
+    #     wandb.run.watch(
+    #         model,
+    #         log='all',
+    #         log_graph=True,
+    #     )
+    #     wandb.run.config.update({'num_params': num_params})
     return model
+
 
 def get_batch(data_iterator):
     """Generate a batch"""
@@ -161,11 +171,12 @@ def get_batch(data_iterator):
     keys = ['text']
     datatype = torch.int64
 
-    # Broadcast data.
-    if data_iterator is not None:
-        data = next(data_iterator)
-    else:
-        data = None
+    data = next(data_iterator) if data_iterator is not None else None
+    # # Broadcast data.
+    # if data_iterator is not None:
+    #     data = next(data_iterator)
+    # else:
+    #     data = None
     data_b = tensor_parallel.broadcast_data(keys, data, datatype)
 
     # Unpack.
@@ -206,6 +217,7 @@ def get_batch(data_iterator):
 
     return tokens, labels, loss_mask, attention_mask, position_ids
 
+
 def data_post_process(data, data_sampler_state_dict):
     args = get_args()
     if args.data_efficiency_curriculum_learning:
@@ -231,8 +243,12 @@ def data_post_process(data, data_sampler_state_dict):
             args.data_efficiency_curriculum_learning_seqlen_type = None
     return data
 
+
 def get_batch_pipe(data):
-    """Modification of `get_batch` to work on `next(data_iterator)` instead of `data_iterator`"""
+    """
+    Modification of `get_batch` to work on `next(data_iterator)`
+    instead of `data_iterator`
+    """
     args = get_args()
     tokenizer = get_tokenizer()
 
@@ -255,9 +271,13 @@ def get_batch_pipe(data):
         args.reset_position_ids,
         args.reset_attention_mask,
         args.eod_mask_loss)
-    if args.curriculum_learning_legacy and args.curriculum_seqlen < tokens.size()[1]:
+    if (
+                args.curriculum_learning_legacy
+                and args.curriculum_seqlen < tokens.size()[1]
+    ):
         # seqlen-based curriculum learning
-        # tokens, position_ids, labels, loss_mask have size [batch size, seqlen]
+        # tokens, position_ids, labels, loss_mask
+        # have size [batch size, seqlen]
         tokens = tokens[:, :args.curriculum_seqlen].contiguous()
         position_ids = position_ids[:, :args.curriculum_seqlen].contiguous()
         if labels is not None:
@@ -279,18 +299,39 @@ def loss_func(loss_mask, moe_loss, mos_loss, output_tensor):
         # assert max(args.num_experts) >= 1
         loss = loss + moe_loss + mos_loss
         if args.mos:
-            return loss, {'total loss': loss, 'lm loss': averaged_loss[0], 'moe loss': moe_loss, 'mos loss': mos_loss}
+            return loss, {
+                'total loss': loss,
+                'lm loss': averaged_loss[0],
+                'moe loss': moe_loss,
+                'mos loss': mos_loss
+            }
         elif args.kd:
-            return loss, {'total loss': loss, 'lm loss': averaged_loss[0], 'moe loss': moe_loss, 'kd loss': mos_loss}
-        print_rank_0('>>> total loss: {}, lm loss {}, kd loss {}'.format(loss, averaged_loss[0], mos_loss))
+            return loss, {
+                'total loss': loss,
+                'lm loss': averaged_loss[0],
+                'moe loss': moe_loss,
+                'kd loss': mos_loss
+            }
+        print_rank_0(
+            f'>>> total loss: {loss}, '
+            f'lm loss {averaged_loss[0]}, '
+            f'kd loss {mos_loss}'
+        )
     else:
         if max(args.num_experts) <= 1:
             return loss, {'lm loss': averaged_loss[0]}
-        else:
-            loss = loss + moe_loss
-            return loss, {'lm loss': averaged_loss[0], 'moe loss': moe_loss}
+        loss = loss + moe_loss
+        return loss, {'lm loss': averaged_loss[0], 'moe loss': moe_loss}
 
-def calculate_mos_loss(args, stu_output, teacher_model, tokens, position_ids, attention_mask):
+
+def calculate_mos_loss(
+        args,
+        stu_output,
+        teacher_model,
+        tokens,
+        position_ids,
+        attention_mask
+):
     mos_loss = 0
     alpha = args.kd_alpha_ce
     beta = args.kd_beta_ce
@@ -298,23 +339,47 @@ def calculate_mos_loss(args, stu_output, teacher_model, tokens, position_ids, at
 
     if teacher_model:
         with torch.no_grad():
-            if args.curriculum_learning_legacy and args.curriculum_seqlen < args.seq_length:
+            if (
+                        args.curriculum_learning_legacy and
+                        args.curriculum_seqlen < args.seq_length
+            ):
                 assert args.curriculum_seqlen is not None
                 curriculum_seqlen = args.curriculum_seqlen
                 tokens = tokens[:, :curriculum_seqlen].contiguous()
                 position_ids = position_ids[:, :curriculum_seqlen].contiguous()
-                attention_mask = attention_mask[:, :, :curriculum_seqlen, :curriculum_seqlen].contiguous()
-                # No need to truncate labels as we do not need it for the teacher logits
-            tea_output, tea_other_losses = teacher_model(tokens, position_ids, attention_mask)
-            assert stu_output.size() == tea_output.size(), 'teacher and student output should match in size. Student: {}, Teacher: {}, CL seq length {}'.format(stu_output.size(), tea_output.size(), args.curriculum_seqlen)
+                csl = curriculum_seqlen
+                attention_mask = (
+                        attention_mask[:, :, :csl, :csl].contiguous()
+                )
+                # No need to truncate labels
+                # as we do not need it for the teacher logits
+            tea_output, tea_other_losses = teacher_model(
+                tokens,
+                position_ids,
+                attention_mask
+            )
+            assert stu_output.size() == tea_output.size(), (
+                    'teacher and student output should match in size. '
+                    f'Student: {stu_output.size()}, '
+                    f'Teacher: {tea_output.size()}, '
+                    f'CL seq length {args.curriculum_seqlen}'
+            )
 
         student_logits = F.log_softmax(stu_output / kd_temp, dim=2)
-        tea_logits = F.softmax(tea_output / kd_temp, dim=2) # The target logits is expected to be probabilities. If we use log_softmax, then we need to set target_log to true when initializing the KLDivLoss.
+        # The target logits is expected to be probabilities.
+        # If we use log_softmax,
+        # then we need to set target_log to true
+        # when initializing the KLDivLoss.
+        tea_logits = F.softmax(tea_output / kd_temp, dim=2)
 
-        mos_loss = kd_temp * kd_temp * nn.KLDivLoss(reduction='batchmean')(student_logits, tea_logits)
+        mos_loss = kd_temp * kd_temp * nn.KLDivLoss(reduction='batchmean')(
+            student_logits,
+            tea_logits
+        )
 
         mos_loss = mos_loss.div(args.seq_length) * beta
     return mos_loss
+
 
 def forward_step(data_iterator, model):
     """Forward step."""
@@ -329,21 +394,44 @@ def forward_step(data_iterator, model):
 
     if args.data_efficiency_curriculum_learning:
         args.curriculum_seqlen = tokens.size()[1]
-        if hasattr(args, 'data_efficiency_curriculum_learning_seqlen_type') and \
-            args.data_efficiency_curriculum_learning_seqlen_type == 'seqlen_reshape':
-            args.data_efficiency_curriculum_learning_numel = torch.numel(tokens)
+        if (
+                hasattr(
+                    args,
+                    'data_efficiency_curriculum_learning_seqlen_type')
+                and (
+                    args.data_efficiency_curriculum_learning_seqlen_type
+                    == 'seqlen_reshape'
+                )
+        ):
+            args.data_efficiency_curriculum_learning_numel = (
+                    torch.numel(tokens)
+            )
 
     if args.mos or args.kd:
-        # The forward func can return either the loss or the logits, depending on whether passing in the labels or not.
+        # The forward func can return either the loss or the logits,
+        # depending on whether passing in the labels or not.
         stu_output, other_losses = model(tokens, position_ids, attention_mask)
-        if args.curriculum_learning_legacy and args.curriculum_seqlen < args.seq_length:
+        if (
+                    args.curriculum_learning_legacy
+                    and args.curriculum_seqlen < args.seq_length
+        ):
             assert args.curriculum_seqlen is not None
             labels = labels[:, :args.curriculum_seqlen].contiguous()
-        output_tensor = tensor_parallel.vocab_parallel_cross_entropy(stu_output.contiguous().float(), labels)
+        output_tensor = tensor_parallel.vocab_parallel_cross_entropy(
+            stu_output.contiguous().float(),
+            labels
+        )
     else:
-        output_tensor, other_losses = model(tokens, position_ids, attention_mask,
-                                            labels=labels)
-    if args.curriculum_learning_legacy and args.curriculum_seqlen < args.seq_length:
+        output_tensor, other_losses = model(
+            tokens,
+            position_ids,
+            attention_mask,
+            labels=labels
+        )
+    if (
+                args.curriculum_learning_legacy and
+                args.curriculum_seqlen < args.seq_length
+    ):
         loss_mask = loss_mask[:, :args.curriculum_seqlen].contiguous()
 
     moe_losses = []
@@ -356,10 +444,17 @@ def forward_step(data_iterator, model):
     if args.mos or args.kd:
         assert model.training
         if args.teacher_forward and args.teacher_model is not None:
-            mos_loss = calculate_mos_loss(args, stu_output,
-                args.teacher_model[0], tokens, position_ids, attention_mask)
+            mos_loss = calculate_mos_loss(
+                args,
+                stu_output,
+                args.teacher_model[0],
+                tokens,
+                position_ids,
+                attention_mask
+            )
 
-    # Output_tensor stores the standard loss, loos_func calculates the total loss.
+    # Output_tensor stores the standard loss,
+    # loss_func calculates the total loss.
     return output_tensor, partial(loss_func, loss_mask, moe_loss, mos_loss)
 
 
@@ -376,11 +471,11 @@ def train_valid_test_datasets_provider(train_val_test_num_samples):
                 w, fname = f.split()
                 files.append(float(w))
                 files.append(fname)
-    elif len(args.data_path)==1 and os.path.isdir(args.data_path[0]):
-        path=args.data_path[0] + "/"
+    elif len(args.data_path) == 1 and os.path.isdir(args.data_path[0]):
+        path = args.data_path[0] + "/"
         for f in os.listdir(path):
-            if (os.path.isfile(path + f) and f.find(".bin")!=-1):
-                files.append(1)                
+            if (os.path.isfile(path + f) and f.find(".bin") != -1):
+                files.append(1)
                 files.append(path + f.split(".bin")[0])
     else:
         files = args.data_path
@@ -403,7 +498,11 @@ def train_valid_test_datasets_provider(train_val_test_num_samples):
 
 
 def command_exists(cmd):
-    result = subprocess.Popen(f'type {cmd}', stdout=subprocess.PIPE, shell=True)
+    result = subprocess.Popen(
+        f'type {cmd}',
+        stdout=subprocess.PIPE,
+        shell=True
+    )
     return result.wait() == 0
 
 
@@ -428,26 +527,15 @@ def git_ds_info():
     else:
         git_hash = "unknown"
         git_branch = "unknown"
-    print(f'**** Git info for Megatron: git_hash={git_hash} git_branch={git_branch} ****')
+    print(
+        f'**** Git info for Megatron: '
+        f'git_hash={git_hash} git_branch={git_branch} ****'
+    )
 
 
 def main():
     # if RANK == 0:
     #     setup_wandb()
-    ''' the following is 
-    import socket
-    from mpi4py import MPI
-    rank = MPI.COMM_WORLD.rank
-
-    if rank == 0:
-        master_addr = socket.gethostname()
-    else:
-        master_addr = None
-
-        master_addr = MPI.COMM_WORLD.bcast(master_addr, root=0)
-    os.environ["MASTER_ADDR"] = master_addr
-    os.environ["MASTER_PORT"] = str(2345)
-    '''
     if os.getenv('TORCH_PROFILER_ENABLED') == '1':
         from torch.profiler import profile, record_function, ProfilerActivity
         with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA]) as prof:
@@ -470,63 +558,7 @@ def main():
             args_defaults={'tokenizer_type': 'GPT2BPETokenizer'},
             data_post_process=data_post_process
         )
-    # # from megatron.training import get_model
-    # if wandb.run is not None:
-    #     args = get_args()
-    #     timers = get_timers()
-    #     # model = get_model(model_provider, ModelType.encoder_or_decoder)
-    #     elapsed_time = timers('interval-time').elapsed(barrier=True)
-    #     total_iterations = os.environ.get(
-    #         "TOTAL_ITERATIONS",
-    #         (args.train_iters + args.eval_iters)
-    #     )
-    #     seq_len = args.seq_length
-    #     elapsed_time_per_iteration = elapsed_time / total_iterations
-    #     if model is not None:
-    #         samples_per_sec, tflops, approx_params_in_billions = throughput_calculator(
-    #             model,
-    #             args,
-    #             elapsed_time,
-    #             total_iterations,
-    #         )
-    #         # Compute throughput.
-    #         samples_per_sec_per_replica = samples_per_sec / args.data_parallel_size
-    #         tokens_per_sec = samples_per_sec * seq_len
-    #         tokens_per_sec_per_replica = tokens_per_sec / args.data_parallel_size
-    #         sample_consumption_rate = args.consumed_train_samples / elapsed_time
-    #         token_consumption_rate = args.consumed_train_tokens / elapsed_time
-    #         # Tensorboard values.
-    #         tdata = {
-    #             # 'iteration': iteration,
-    #             'consumed_train_samples': args.consumed_train_samples,
-    #             'consumed_train_tokens': args.consumed_train_tokens,
-    #             # 'learning_rate': learning_rate,
-    #             # 'batch_size': batch_size,
-    #             # 'loss_scale': loss_scale,
-    #             # 'grad_norm': grad_norm,
-    #         }
-    #         # for key in loss_dict:
-    #         #     tdata[f'lm-loss/{key}'] = loss_dict[key]
-    #
-    #         tdata = {f'train/{k}': v for k, v in tdata.items()}
-    #         # if wbrun is not None and wbrun is wandb.run:
-    #         if wandb.run is not None:
-    #             wandb.run.log(tdata, commit=False)
-    #             tput = {
-    #                 'throughput/iteration-time': elapsed_time_per_iteration,  # 1000 ms / s
-    #                 'throughput/samples_per_sec': samples_per_sec,
-    #                 'throughput/samples_per_sec_per_replica': samples_per_sec_per_replica,
-    #                 'throughput/tokens_per_sec': tokens_per_sec,
-    #                 'throughput/tokens_per_sec_per_replica': tokens_per_sec_per_replica,
-    #                 'throughput/tflops': tflops,
-    #                 'throughput/approx_params_in_billions': approx_params_in_billions,
-    #                 'throughput/sample_consumption_rate': sample_consumption_rate,
-    #                 'throughput/token_consumption_rate': token_consumption_rate,
-    #                 'throughput/elapsed_ms_per_iteration': elapsed_time_per_iteration,
-    #             }
-    #             wandb.run.log(tput)
     return model
-
 
 
 if __name__ == "__main__":
