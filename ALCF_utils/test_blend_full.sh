@@ -22,12 +22,11 @@ HIDDEN_SIZE=4096
 NUM_LAYERS=32
 SEQ_LENGTH=2048
 EMBEDDINGS=2048
-TRAIN_ITERS=10
+TRAIN_ITERS=80797
 ZERO_STAGE=2
 MODEL=LLAMA_7B
 OUTPUT_PREFIX=${MODEL}_z${ZERO_STAGE}_seqlen_mp${MP}_pp${PP}_sp${SP}_nl${NUM_LAYERS}_hs${HIDDEN_SIZE}_gb${BS}_mb${MBS}
-#MASTER_ADDR=localhost MASTER_PORT=6543 mpiexec -n $((PBS_JOBSIZE*PPN)) -ppn $PPN --cpu-bind depth -d 16 --hostfile $PBS_NODEFILE 
-python3 ./test_blendable_dataset.py \
+python3 ALCF_utils/test_blendable_dataset.py \
 	   --tensor-model-parallel-size ${TP} \
 	   --pipeline-model-parallel-size ${PP} \
 	   --num-layers ${NUM_LAYERS} \
@@ -38,7 +37,7 @@ python3 ./test_blendable_dataset.py \
 	   --global-batch-size ${BS} \
 	   --seq-length ${SEQ_LENGTH} \
 	   --max-position-embeddings ${EMBEDDINGS} \
-	   --train-iters 80797 \
+	   --train-iters ${TRAIN_ITERS} \
 	   --save ${MD}/checkpoints/${OUTPUT_PREFIX} \
 	   --load ${MD}/checkpoints/${OUTPUT_PREFIX} \
 	   --tokenizer-type Llama2Tokenizer \
@@ -52,6 +51,7 @@ python3 ./test_blendable_dataset.py \
 	   --lr-warmup-iters 2 \
 	   --optimizer adam \
 	   --adam-beta1 0.9 \
+	   --mmap_warmup False \
 	   --adam-beta2 0.95 \
 	   --log-interval 1 \
 	   --cpu-optimizer \
