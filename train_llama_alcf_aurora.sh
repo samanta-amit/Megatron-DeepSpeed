@@ -19,15 +19,16 @@ function sourceFile() {
 
 # +++++++++++++++ SCRIPT START ++++++++++++++++++++++
 # ---- source ./helpers_alcf.sh ---------------------
+cd "${PBS_O_WORKDIR}" || exit
 HERE=$(python3 -c 'import os; print(os.getcwd())')
-sourceFile "${HERE}/helpers_alcf.sh" || exit
+sourceFile "${HERE}/ALCF_utils/helpers_alcf.sh" || exit
 # cd ~/anl_24_release_q4/llm.devkit/Megatron-DeepSpeed || exit
 # eval "$(/home/foremans/miniconda3/bin/conda shell.zsh hook)" && conda activate anl_release_q4v2
 ezpz || exit
 setEnv || exit
 saveDSenv || exit
 makeHostfiles || exit
-setupData "${DATA_FILE_LIST:-${HERE}/data_file_list_shuf_debug.txt}" || exit
+setupData "${DATA_FILE_LIST:-${HERE}/data_file_list_reweighted.txt}" || exit
 # dfl_fallback="${HERE}/data_file_list_shuf_debug.txt"
 
 # # ---- DATA SETUP ------------------------------------
