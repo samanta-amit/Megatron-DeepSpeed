@@ -35,7 +35,7 @@ print(f"Training iterations: {args.train_iters}")
 train_valid_test_num_samples = [num_samples, 0, 0]
 seed=args.seed
 data_impl = args.data_impl
-skip_warmup = False
+skip_warmup = not args.mmap_warmup
 seq_length = args.seq_length
 splits_string = "1,0,0"
 
