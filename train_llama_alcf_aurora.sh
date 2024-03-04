@@ -204,8 +204,9 @@ run_cmd="
     ${LLAMA_ARGS} \
     ${gpt_args[*]} \
     $custom_args \
-    >> ${OUTPUT_LOG} 2>&1 &
+    |& tee ${OUTPUT_LOG}
     "
+    # >> ${OUTPUT_LOG} 2>&1 &
     # |& tee $OUTPUT_DIR/output.log
 
 # --ffn-hidden-size 11008 \
