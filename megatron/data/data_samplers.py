@@ -41,10 +41,13 @@ def build_pretraining_data_loader(dataset, consumed_samples):
                 args.dataloader_type))
 
     # Torch dataloader.
-    loader = torch.utils.data.DataLoader(dataset,
-                                       batch_sampler=batch_sampler,
-                                       num_workers=args.num_workers,
-                                         pin_memory=True, multiprocessing_context='spawn')
+    loader = torch.utils.data.DataLoader(
+        dataset,
+        batch_sampler=batch_sampler,
+        num_workers=args.num_workers,
+        pin_memory=True,
+        # multiprocessing_context='spawn'
+    )
     if args.repeated_dataloader:
         loader=RepeatingLoader(loader)
     return loader
