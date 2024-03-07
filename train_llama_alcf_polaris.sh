@@ -35,7 +35,7 @@ setParams || exit                   # 5. set command line arguments to pass to `
 buildDSconfig || exit               # 6. create `deepspeed_config.json` from runtime params from ^
 setOutput || exit                   # 7. specify output directory for {logs, checkpoints, etc.}
 setArgs || exit                     # 8. specify additional `deepspeed` arguments
-setData || exit                     # 9. specify `DATA_FILE_LIST` for dolma dataset
+setData "${DATA_FILE_LIST}"|| exit  # 9. specify `DATA_FILE_LIST` for dolma dataset
 setDSlauncher "${HERE}" || exit     # 10. set `launcher` args for `deepspeed ${launcher} ${EXEC} ${args}`
 printJobInfo || exit                # 11. print job info
 # +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
@@ -46,64 +46,64 @@ custom_args=" $@"
 # Assert `./hostfile_deepspeed` exists
 export hfds="${HERE}/hostfile_deepspeed" && [ -f "${hfds}" ] || exit
 
-# --vocab-file $VOCAB_FILE \
-# --merge-file $MERGE_FILE \
-# --lr-decay-iters 320000 \
-# --lr-warmup-iters 5000 \
-# --lr-decay-iters 10000 \
-# --num-workers 4 \
-# launch python3 ${EXEC} \
-# --data-impl mmap \
-# source ./ezpz/src/ezpz/bin/getjobenv || exit
+run_cmd="
+    deepspeed --hostfile $hfds --launcher ${LAUNCHER} ${EXEC} \
+    --$DTYPE \
+    --num-workers 0 \
+    --split 100,0,0 \
+    --log-interval 1 \
+    --use-flash-attn-v2 \
+    --no-bias-gelu-fusion \
+    --lr-decay-style cosine \
+    --no-bias-dropout-fusion \
+    --no-masked-softmax-fusion \
+    --tokenizer-type Llama2Tokenizer \
+    --no-gradient-accumulation-fusion \
+    --accumulate-allreduce-grads-in-fp32 \
+    --use-checkpoint-opt_param-scheduler \
+    --lr ${LR} \
+    --seq-length $SEQ \
+    --save ${CKPT_DIR} \
+    --load ${CKPT_DIR} \
+    --num-layers ${NLAYERS} \
+    --hidden-size ${HIDDEN} \
+    --train-iters ${TRAIN_ITER} \
+    --eval-iters ${EVAL_ITERS} \
+    --distributed-backend ${NCCL} \
+    --num-attention-heads ${HEADS} \
+    --save-interval ${SAVE_INTERVAL} \
+    --eval-interval ${EVAL_INTERVAL} \
+    --max-position-embeddings ${SEQ} \
+    --micro-batch-size ${MICRO_BATCH} \
+    --data-file-list ${DATA_FILE_LIST} \
+    --tensor-model-parallel-size ${TP} \
+    --global-batch-size ${GLOBAL_BATCH} \
+    --pipeline-model-parallel-size ${PP} \
+    --num-key-value-heads ${NUM_KV_HEAD} \
+    --data-cache-path ${DATA_CACHE_PATH} \
+    --ffn-hidden-size ${FFN_HIDDEN_SIZE} \
+    --tokenizer-model ${TOKENIZER_MODEL} \
+    ${LLAMA_ARGS} \
+    $ds_args \
+    ${gpt_args[*]} \
+    $custom_args \
+    |& tee ${OUTPUT_LOG}
+    "
+
+    # ---------------------------------------------------
+    # --vocab-file $VOCAB_FILE \
+    # --merge-file $MERGE_FILE \
+    # --lr-decay-iters 320000 \
+    # --lr-warmup-iters 5000 \
+    # --lr-decay-iters 10000 \
+    # --num-workers 4 \
+    # launch python3 ${EXEC} \
+    # --data-impl mmap \
+    # source ./ezpz/src/ezpz/bin/getjobenv || exit
+    # ---------------------------------------------------
     # ${DIST_LAUNCH} ./local_rank.sh python3 ${EXEC} \
     # ${DIST_LAUNCH} python3 ${EXEC} \
     # deepspeed $launcher ${EXEC} \
-# run_cmd="
-#     deepspeed --hostfile $hfds --launcher ${LAUNCHER} ${EXEC} \
-#     |& tee ${OUTPUT_LOG}
-#     "
-    # --$DTYPE \
-    # --num-workers 0 \
-    # --split 100,0,0 \
-    # --log-interval 1 \
-    # --use-flash-attn-v2 \
-    # --no-bias-gelu-fusion \
-    # --lr-decay-style cosine \
-    # --no-bias-dropout-fusion \
-    # --no-masked-softmax-fusion \
-    # --tokenizer-type Llama2Tokenizer \
-    # --no-gradient-accumulation-fusion \
-    # --accumulate-allreduce-grads-in-fp32 \
-    # --use-checkpoint-opt_param-scheduler \
-    # --lr ${LR} \
-    # --seq-length $SEQ \
-    # --save ${CKPT_DIR} \
-    # --load ${CKPT_DIR} \
-    # --num-layers ${NLAYERS} \
-    # --hidden-size ${HIDDEN} \
-    # --train-iters ${TRAIN_ITER} \
-    # --eval-iters ${EVAL_ITERS} \
-    # --distributed-backend ${NCCL} \
-    # --num-attention-heads ${HEADS} \
-    # --save-interval ${SAVE_INTERVAL} \
-    # --eval-interval ${EVAL_INTERVAL} \
-    # --max-position-embeddings ${SEQ} \
-    # --micro-batch-size ${MICRO_BATCH} \
-    # --data-file-list ${DATA_FILE_LIST} \
-    # --tensor-model-parallel-size ${TP} \
-    # --global-batch-size ${GLOBAL_BATCH} \
-    # --pipeline-model-parallel-size ${PP} \
-    # --num-key-value-heads ${NUM_KV_HEAD} \
-    # --data-cache-path ${DATA_CACHE_PATH} \
-    # --ffn-hidden-size ${FFN_HIDDEN_SIZE} \
-    # --tokenizer-model ${TOKENIZER_MODEL} \
-    # $ds_args \
-    # ${LLAMA_ARGS} \
-    # ${gpt_args[*]} \
-    # $custom_args \
-
-run_cmd="deepspeed --hostfile $hfds --launcher ${LAUNCHER} ${EXEC} ${CLI_ARGS} |& tee ${OUTPUT_LOG}"
-
     # >> ${OUTPUT_LOG} 2>&1 &
     # >> ${OUTPUT_LOG} 2>&1 &
     # |& tee $OUTPUT_DIR/output.log
@@ -113,7 +113,8 @@ echo "All DeepSpeed(s): $(which -a deepspeed)"
 echo "Using $(which deepspeed)"
 ds_report
 
-echo "[RUNNING]: ${run_cmd}"
+echo "${run_cmd}"
+
 printf "[!! \e[1;31m%s\e[0m] View output at:\n" "NOTE"
 printf "\e[1;34m%s\e[0m\n" "${OUTPUT_LOG}"
 # echo "${OUTPUT_LOG}"
