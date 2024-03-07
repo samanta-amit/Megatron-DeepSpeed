@@ -5,6 +5,7 @@
 #PBS -l select=48
 #PBS -l filesystems=eagle:home
 
+
 function sourceFile() {
     fp="$1"
     echo "source-ing ${fp}"
@@ -17,42 +18,27 @@ function sourceFile() {
 }
 
 # +++++++++++++++ SCRIPT START ++++++++++++++++++++++
-# ---- source ./helpers_alcf.sh ---------------------
+cd "${PBS_O_WORKDIR}" || exit
 HERE=$(python3 -c 'import os; print(os.getcwd())')
-sourceFile "${HERE}/helpers_alcf.sh" || exit
-
-# ---- load conda -----------------------------------
-module load conda/2023-10-04; conda activate base
-if [[ "${VIRTUAL_ENV}" ]]; then
-    echo "Caught VIRTUAL_ENV = ${VIRTUAL_ENV} from environment!!"
-else
-    echo "Not using VIRTUAL_ENV"
-    # sourceFile "${HERE}/venvs/polaris/2023-10-04/bin/activate" || exit
-fi
-echo "Using $(which python3)"
+sourceFile "${HERE}/ALCF_utils/helpers_alcf.sh" || exit
 
 # ---- fns from ./helpers_alcf.sh -------------------
-ezpz
-makeHostfiles
-saveDSenv
-# setupData "${DOLMA_CHUNK_IDX:-00}"
-# export DOLMA_CHUNK_IDX="${DOLMA_CHUNK_IDX:-0}"
-#
-# ---- DATA SETUP ------------------------------------
-dfl_debug="./data_file_list_shuf_debug.txt"
-DATA_FILE_LIST="${DATA_FILE_LIST:-${dfl_debug}}" && export DATA_FILE_LIST="${DATA_FILE_LIST}"
-NUM_DOCS=$(wc -l < "${DATA_FILE_LIST}") && export NUM_DOCS="${NUM_DOCS}"
-WEIGHT_SUM="$(sumWeights "${DATA_FILE_LIST}")" && export WEIGHT_SUM="${WEIGHT_SUM}"
-DFL_STEM=$(echo "$DATA_FILE_LIST" | tr "\/" "\t" | awk '{print $NF}' | sed "s/\.txt//g") && export DFL_STEM="${DFL_STEM}"
-dcp="${HERE}/.cache/${DFL_STEM}-index-cache"
-DATA_CACHE_PATH="${DATA_CACHE_PATH:-${dcp}}" && export DATA_CACHE_PATH="${DATA_CACHE_PATH}"
-mkdir -p "${DATA_CACHE_PATH}"
-if [[ -n "${DOLMA_CHUNK_IDX}" ]]; then
-    echo "Using DOLMA CHUNK ${DOLMA_CHUNK_IDX} from ${DATA_FILE_LIST} with ${NUM_DOCS} documents..."
-else
-    echo "Using NUM_DOCS=${NUM_DOCS} documents from DATA_FILE_LIST=${DATA_FILE_LIST}"
-fi
-echo "DOCUMENT WEIGHT_SUM: ${WEIGHT_SUM}"
+setEnv || exit
+saveDSenv || exit
+ezpz || exit
+makeHostfiles || exit
+DFL="/eagle/datasets/dolma/data_file_list_reweighted.txt"
+setupData "${DATA_FILE_LIST:-${DFL}}" || exit
+
+echo "Using $(which python3)"
+
+# mkdir -p "${DATA_CACHE_PATH}"
+# if [[ -n "${DOLMA_CHUNK_IDX}" ]]; then
+#     echo "Using DOLMA CHUNK ${DOLMA_CHUNK_IDX} from ${DATA_FILE_LIST} with ${NUM_DOCS} documents..."
+# else
+#     echo "Using NUM_DOCS=${NUM_DOCS} documents from DATA_FILE_LIST=${DATA_FILE_LIST}"
+# fi
+# echo "DOCUMENT WEIGHT_SUM: ${WEIGHT_SUM}"
 # ----------------------------------------------------
 
 # ---- Parallelism Settings --------------------------
@@ -65,6 +51,7 @@ export WORLD_SIZE=${WORLD_SIZE:-$(wc -l < "${HOSTFILE}")}
 # ----------------------------------------------------
 
 # ---- Llama2 7B Config ------------------------------
+export MODEL_KEY="Llama-7B"
 export HEADS=${HEADS:-32}
 export NLAYERS=${NLAYERS:-32}
 export HIDDEN=${HIDDEN:-4096}
@@ -73,7 +60,7 @@ export FFN_HIDDEN_SIZE=${FFN_HIDDEN_SIZE:-11008}
 # ----------------------------------------------------
 
 # ---- Run Settings ----------------------------------
-export LR=${LR:-0.00015}
+export LR=${LR:-0.0003}
 export SEQ=${SEQ:-4096}                       # SEQ_LEN: 4096
 export DTYPE=${DTYPE:-fp16}                   # DTYPE: FP16
 export ZERO_STAGE=${ZERO_STAGE:-2}
@@ -98,21 +85,6 @@ echo "- NCCL: ${NCCL:-nccl}"
 echo "- MODEL_TYPE: ${MODEL_TYPE}"
 echo "- Using DATA_FILE_LIST: ${DATA_FILE_LIST}"
 echo "++++++++++++++++++++++++++++++++++++++++++++++++++"
-
-# if [[ "${DOLMA_CHUNK_IDX}" == 0 ]]; then
-#     TRAIN_ITER=78739
-# elif [[ "${DOLMA_CHUNK_IDX}" == 1 ]]; then
-#     TRAIN_ITER=81008
-# elif [[ "${DOLMA_CHUNK_IDX}" == 2 ]]; then
-#     TRAIN_ITER=79591
-# elif [[ "${DOLMA_CHUNK_IDX}" == 3 ]]; then
-#     TRAIN_ITER=78552
-# else
-#     echo "caught DOLMA_CHUNK_IDX=${DOLMA_CHUNK_IDX}"
-#     TRAIN_ITER="${TRAIN_ITER:-320000}"
-#     echo "Setting TRAIN_ITER=${TRAIN_ITER}"
-#     # echo "Unknown DOLMA_CHUNK_IDX: ${DOLMA_CHUNK_IDX}"
-# fi
 
 # +++++NOTES ++++++++++++++++++++++++++++++++++++++++++++++++++
 # XXX:
@@ -211,7 +183,6 @@ EXEC="pretrain_gpt_alcf.py"
 # --vocab-file $VOCAB_FILE \
 # --merge-file $MERGE_FILE \
 # --lr-decay-iters 320000 \
-    # --num-workers 0 \
     # --lr-warmup-iters 5000 \
     # --lr-decay-iters 10000 \
     # --num-workers 4 \
@@ -220,7 +191,7 @@ EXEC="pretrain_gpt_alcf.py"
 run_cmd="
     deepspeed $launcher ${EXEC} \
     --$DTYPE \
-    --split 90,5,5 \
+    --split 100,0,0 \
     --use-flash-attn-v2 \
     --no-bias-gelu-fusion \
     --lr-decay-style cosine \
@@ -232,6 +203,7 @@ run_cmd="
     --use-checkpoint-opt_param-scheduler \
     --lr ${LR} \
     --log-interval 1 \
+    --num-workers 0 \
     --seq-length $SEQ \
     --save ${CKPT_DIR} \
     --load ${CKPT_DIR} \
@@ -257,8 +229,10 @@ run_cmd="
     ${LLAMA_ARGS} \
     ${gpt_args[*]} \
     $custom_args \
-    >> ${OUTPUT_LOG} 2>&1 &
+    |& tee ${OUTPUT_LOG}
     "
+    # >> ${OUTPUT_LOG} 2>&1 &
+    # >> ${OUTPUT_LOG} 2>&1 &
     # |& tee $OUTPUT_DIR/output.log
     # ${EXTRA_ARGS} \
 
@@ -268,7 +242,7 @@ ds_report
 
 echo "${run_cmd}"
 
-echo "[!! NOTE] View output at:"
+printf "[!! \e[1;31m%s\e[0m] View output at:\n" "NOTE"
 printf "\e[1;34m%s\e[0m\n" "${OUTPUT_LOG}"
 # echo "${OUTPUT_LOG}"
 eval "${run_cmd}"
