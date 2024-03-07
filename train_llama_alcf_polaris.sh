@@ -5,7 +5,6 @@
 #PBS -l select=48
 #PBS -l filesystems=eagle:home
 
-
 function sourceFile() {
     fp="$1"
     echo "source-ing ${fp}"
@@ -17,220 +16,94 @@ function sourceFile() {
     fi
 }
 
-# +++++++++++++++ SCRIPT START ++++++++++++++++++++++
+# +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+# ---- 0. Navigate into `$PBS_O_WORKDIR` -------------------------------------
 cd "${PBS_O_WORKDIR}" || exit
 HERE=$(python3 -c 'import os; print(os.getcwd())')
-sourceFile "${HERE}/ALCF_utils/helpers_alcf.sh" || exit
+export HERE
+# ---- 1. Assert `./pretrain_gpt_alcf.py` exists: -----------------------------
+export EXEC="${HERE}/pretrain_gpt_alcf.py"
+[ -f "${EXEC}" ] || exit
+# ---- 2. `source ./ALCF/helpers_alcf.sh`: ------------------------------------
+sourceFile "${HERE}/ALCF/helpers.sh" || exit
+# ---- 3. Call fns from `./ALCF/helpers_alcf.sh` ------------------------------
+setEnv || exit                      # 1. load `conda` environment
+saveDSenv || exit                   # 2. save env vars to `.deepspeed_env`
+ezpz || exit                        # 3. determine WORLD_SIZE, etc. from `PBS_*` vars
+makeHostfiles || exit               # 4. create `deepspeed` hostfile from `$PBS_NODEFILE`
+setParams || exit                   # 5. set command line arguments to pass to `"${EXEC}"`
+buildDSconfig || exit               # 6. create `deepspeed_config.json` from runtime params from ^
+setOutput || exit                   # 7. specify output directory for {logs, checkpoints, etc.}
+setArgs || exit                     # 8. specify additional `deepspeed` arguments
+setData || exit                     # 9. specify `DATA_FILE_LIST` for dolma dataset
+setDSlauncher "${HERE}" || exit     # 10. set `launcher` args for `deepspeed ${launcher} ${EXEC} ${args}`
+printJobInfo || exit                # 11. print job info
+# +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
-# ---- fns from ./helpers_alcf.sh -------------------
-setEnv || exit
-saveDSenv || exit
-ezpz || exit
-makeHostfiles || exit
-DFL="/eagle/datasets/dolma/data_file_list_reweighted.txt"
-setupData "${DATA_FILE_LIST:-${DFL}}" || exit
-
-echo "Using $(which python3)"
-
-# mkdir -p "${DATA_CACHE_PATH}"
-# if [[ -n "${DOLMA_CHUNK_IDX}" ]]; then
-#     echo "Using DOLMA CHUNK ${DOLMA_CHUNK_IDX} from ${DATA_FILE_LIST} with ${NUM_DOCS} documents..."
-# else
-#     echo "Using NUM_DOCS=${NUM_DOCS} documents from DATA_FILE_LIST=${DATA_FILE_LIST}"
-# fi
-# echo "DOCUMENT WEIGHT_SUM: ${WEIGHT_SUM}"
-# ----------------------------------------------------
-
-# ---- Parallelism Settings --------------------------
-PP=${PP:-1}
-TP=${TP:-2}
-export PP="${PP}"
-export TP="${TP}"
-export HOSTFILE="${HOSTFILE:-${PBS_NODEFILE}}"
-export WORLD_SIZE=${WORLD_SIZE:-$(wc -l < "${HOSTFILE}")}
-# ----------------------------------------------------
-
-# ---- Llama2 7B Config ------------------------------
-export MODEL_KEY="Llama-7B"
-export HEADS=${HEADS:-32}
-export NLAYERS=${NLAYERS:-32}
-export HIDDEN=${HIDDEN:-4096}
-export NUM_KV_HEAD=${NUM_KV_HEAD:-8}
-export FFN_HIDDEN_SIZE=${FFN_HIDDEN_SIZE:-11008}
-# ----------------------------------------------------
-
-# ---- Run Settings ----------------------------------
-export LR=${LR:-0.0003}
-export SEQ=${SEQ:-4096}                       # SEQ_LEN: 4096
-export DTYPE=${DTYPE:-fp16}                   # DTYPE: FP16
-export ZERO_STAGE=${ZERO_STAGE:-2}
-export MICRO_BATCH=${MICRO_BATCH:-8}
-export GRAD_ACC_STEPS=${GRAD_ACC_STEPS:-1}
-export EVAL_ITERS="${EVAL_ITERS:-10}"
-# export TRAIN_ITER="${TRAIN_ITER:-320000}"
-export TRAIN_ITER=${TRAIN_ITER:-317892}
-export EVAL_INTERVAL="${EVAL_INTERVAL:-50000}"
-export SAVE_INTERVAL=${SAVE_INTERVAL:-200}
-export USE_ACTIVATION_CHECKPOINTING=${USE_ACTIVATION_CHECKPOINTING:-1}
-# export USE_ACTIVATION_CHECKPOINTING=${USE_ACTIVATION_CHECKPOINTING:-0}
-export GLOBAL_BATCH=$(( $WORLD_SIZE * $MICRO_BATCH * $GRAD_ACC_STEPS / $TP / $PP ))
-export TOKENIZER_MODEL="${TOKENIZER_MODEL:-"/eagle/datasets/dolma/utils/tokenizer.model"}"
-export MODEL_TYPE="llama-seq${SEQ}-pp${PP}-tp${TP}-${NLAYERS}layers-${HEADS}heads-${HIDDEN}hidden"
-export LLAMA_ARGS="--no-query-key-layer-scaling --use-rotary-position-embeddings --untie-embeddings-and-output-weights --swiglu --normalization rmsnorm --disable-bias-linear"
-# ----------------------------------------------------
-
-echo "++++++++++++++++++++++++++++++++++++++++++++++++++"
-echo "- WORLD_SIZE:${WORLD_SIZE}"
-echo "- NCCL: ${NCCL:-nccl}"
-echo "- MODEL_TYPE: ${MODEL_TYPE}"
-echo "- Using DATA_FILE_LIST: ${DATA_FILE_LIST}"
-echo "++++++++++++++++++++++++++++++++++++++++++++++++++"
-
-# +++++NOTES ++++++++++++++++++++++++++++++++++++++++++++++++++
-# XXX:
-# - need to merge *.json files
-# - Can we create indices on a per-dataset basis?
-#   (i.e. one for common-crawl, one for stack-code, etc.)
-# - Aggregate `stack-code/**/{*.bin,*.idx}`
-#
-# - Given: {f1.bin,f2.bin,...,fn.bin}
-#   - tot_tokens = 0
-#   - agg = []
-#   - Start:
-#     - read: f1.bin
-#     - tot_tokens += sum(tokens(f1.bin))
-#     - if tot_tokens < needed_tokens:
-#         - agg.append(f1.bin)
-#     - else:
-#
-
-# TODO:
-# - StackExchange ~ 500B total, using 80% ~ 400B tokens
-# - figure out how to deal with MANY small files (e.g. stack-code)
-# - Add logic for determining `train_iters` dynamically from `data-file-list` 
-#   (which specifies a single _chunk_)
-# - get script from Varuni
-# - should:
-#   - take in a `data_file_list.txt`
-#   - return number of training iterations
-#
-# ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-
-# ---- Build DeepSpeed Config ---------------------------------
-export DS_CONFIG="ds_stage${ZERO_STAGE}_mb${MICRO_BATCH}_gb${GLOBAL_BATCH}_pp${PP}_${DTYPE}.json"
-bash "${HERE}/generate_config.sh" "${DS_CONFIG}" || exit 1
-# -------------------------------------------------------------
-
-# ---- Specify output location --------------------------------
-export OUTPUT_PREFIX="ds_stage${ZERO_STAGE}_nl${NLAYERS}_hs${HIDDEN}_mb${MICRO_BATCH}_seq${SEQ}_gb${GLOBAL_BATCH}_pp${PP}_tp${TP}_${DTYPE}"
-# OUTPUT_DIR=logs/ds_stage${ZERO_STAGE}_nl${NLAYERS}_hs${HIDDEN}_mb${MICRO_BATCH}_seq${SEQ}_gb${GLOBAL_BATCH}_pp${PP}_tp${TP}_${DTYPE}_`date +%m%d%H%M%S`_${HOSTNAME}
-OUTPUT_DIR="logs/${OUTPUT_PREFIX}/$(date +%m%d%H%M%S)_${HOSTNAME}"
-export OUTPUT_DIR="${OUTPUT_DIR}"
-export OUTPUT_LOG="${OUTPUT_DIR}/output.log"
-export CKPT_DIR="checkpoints/${OUTPUT_PREFIX}"
-echo "${OUTPUT_LOG}" >> "logs/latest"
-mkdir -p "${OUTPUT_DIR}"
-echo "!!!Please see logs at ${OUTPUT_DIR}"
-
-# ---- Setup DeepSpeed arguments --------------------------------
-ds_args=" "
-ds_args=" --deepspeed ${ds_args}"
-if [[ $PP == 1 ]]; then
-   ds_args=" --no-pipeline-parallel ${ds_args}" 
-fi
-ds_args=" --deepspeed_config=$DS_CONFIG ${ds_args}"
-ds_args=" --zero-stage=$ZERO_STAGE ${ds_args}"
-
-if [[ "$USE_ACTIVATION_CHECKPOINTING" == 1 ]]; then
-    echo "!! Caught USE_ACTIVATION_CHECKPOINTING=${USE_ACTIVATION_CHECKPOINTING} !!"
-    ds_args=" --deepspeed-activation-checkpointing ${ds_args}"
-    # --checkpoint-activations \
-    # --deepspeed-activation-checkpointing
-fi
-# ---------------------------------------------------------------
-
-gpt_args=()
-
-# we are now using activation checkpoint provided by megatron, see below.
-# ds_args=" --deepspeed-activation-checkpointing ${ds_args}"
-if [[ "$USE_ACTIVATION_CHECKPOINTING" == 1 ]]; then
-    echo "!! Caught USE_ACTIVATION_CHECKPOINTING=${USE_ACTIVATION_CHECKPOINTING} !!"
-    gpt_args+=(
-        "--checkpoint-activations"
-        "--checkpoint-num-layers 1"
-    )
-fi
-
-# take custom args
+# Take custom args
 custom_args=" $@"
 
-# launcher setting
-hfds="${HERE}/hostfile_deepspeed"
-hfmpi="${HERE}/hostfile_mpich"
-[ -f "$hfds" ] || exit
-[ -f "$hfmpi" ] || exit
-
-LAUNCHER=${LAUNCHER:-MPICH}
-if [[ $LAUNCHER == "deepspeed" ]]; then
-    launcher=""
-else
-    launcher="--force_multi --hostfile $hfds --launcher=${LAUNCHER} --launcher_args='-hostfile ${hfmpi}'"
-fi
-
-NCCL=${NCCL:-nccl}
-EXEC="pretrain_gpt_alcf.py"
+# Assert `./hostfile_deepspeed` exists
+export hfds="${HERE}/hostfile_deepspeed" && [ -f "${hfds}" ] || exit
 
 # --vocab-file $VOCAB_FILE \
 # --merge-file $MERGE_FILE \
 # --lr-decay-iters 320000 \
-    # --lr-warmup-iters 5000 \
-    # --lr-decay-iters 10000 \
-    # --num-workers 4 \
-    # launch python3 ${EXEC} \
-    # --data-impl mmap \
-run_cmd="
-    deepspeed $launcher ${EXEC} \
-    --$DTYPE \
-    --split 100,0,0 \
-    --use-flash-attn-v2 \
-    --no-bias-gelu-fusion \
-    --lr-decay-style cosine \
-    --no-bias-dropout-fusion \
-    --no-masked-softmax-fusion \
-    --tokenizer-type Llama2Tokenizer \
-    --no-gradient-accumulation-fusion \
-    --accumulate-allreduce-grads-in-fp32 \
-    --use-checkpoint-opt_param-scheduler \
-    --lr ${LR} \
-    --log-interval 1 \
-    --num-workers 0 \
-    --seq-length $SEQ \
-    --save ${CKPT_DIR} \
-    --load ${CKPT_DIR} \
-    --num-layers ${NLAYERS} \
-    --hidden-size ${HIDDEN} \
-    --train-iters ${TRAIN_ITER} \
-    --eval-iters ${EVAL_ITERS} \
-    --distributed-backend ${NCCL} \
-    --num-attention-heads ${HEADS} \
-    --save-interval ${SAVE_INTERVAL} \
-    --eval-interval ${EVAL_INTERVAL} \
-    --max-position-embeddings ${SEQ} \
-    --micro-batch-size ${MICRO_BATCH} \
-    --data-file-list ${DATA_FILE_LIST} \
-    --tensor-model-parallel-size ${TP} \
-    --global-batch-size ${GLOBAL_BATCH} \
-    --pipeline-model-parallel-size ${PP} \
-    --num-key-value-heads ${NUM_KV_HEAD} \
-    --data-cache-path ${DATA_CACHE_PATH} \
-    --ffn-hidden-size ${FFN_HIDDEN_SIZE} \
-    --tokenizer-model ${TOKENIZER_MODEL} \
-    $ds_args \
-    ${LLAMA_ARGS} \
-    ${gpt_args[*]} \
-    $custom_args \
-    |& tee ${OUTPUT_LOG}
-    "
+# --lr-warmup-iters 5000 \
+# --lr-decay-iters 10000 \
+# --num-workers 4 \
+# launch python3 ${EXEC} \
+# --data-impl mmap \
+# source ./ezpz/src/ezpz/bin/getjobenv || exit
+    # ${DIST_LAUNCH} ./local_rank.sh python3 ${EXEC} \
+    # ${DIST_LAUNCH} python3 ${EXEC} \
+    # deepspeed $launcher ${EXEC} \
+# run_cmd="
+#     deepspeed --hostfile $hfds --launcher ${LAUNCHER} ${EXEC} \
+#     |& tee ${OUTPUT_LOG}
+#     "
+    # --$DTYPE \
+    # --num-workers 0 \
+    # --split 100,0,0 \
+    # --log-interval 1 \
+    # --use-flash-attn-v2 \
+    # --no-bias-gelu-fusion \
+    # --lr-decay-style cosine \
+    # --no-bias-dropout-fusion \
+    # --no-masked-softmax-fusion \
+    # --tokenizer-type Llama2Tokenizer \
+    # --no-gradient-accumulation-fusion \
+    # --accumulate-allreduce-grads-in-fp32 \
+    # --use-checkpoint-opt_param-scheduler \
+    # --lr ${LR} \
+    # --seq-length $SEQ \
+    # --save ${CKPT_DIR} \
+    # --load ${CKPT_DIR} \
+    # --num-layers ${NLAYERS} \
+    # --hidden-size ${HIDDEN} \
+    # --train-iters ${TRAIN_ITER} \
+    # --eval-iters ${EVAL_ITERS} \
+    # --distributed-backend ${NCCL} \
+    # --num-attention-heads ${HEADS} \
+    # --save-interval ${SAVE_INTERVAL} \
+    # --eval-interval ${EVAL_INTERVAL} \
+    # --max-position-embeddings ${SEQ} \
+    # --micro-batch-size ${MICRO_BATCH} \
+    # --data-file-list ${DATA_FILE_LIST} \
+    # --tensor-model-parallel-size ${TP} \
+    # --global-batch-size ${GLOBAL_BATCH} \
+    # --pipeline-model-parallel-size ${PP} \
+    # --num-key-value-heads ${NUM_KV_HEAD} \
+    # --data-cache-path ${DATA_CACHE_PATH} \
+    # --ffn-hidden-size ${FFN_HIDDEN_SIZE} \
+    # --tokenizer-model ${TOKENIZER_MODEL} \
+    # $ds_args \
+    # ${LLAMA_ARGS} \
+    # ${gpt_args[*]} \
+    # $custom_args \
+
+run_cmd="deepspeed --hostfile $hfds --launcher ${LAUNCHER} ${EXEC} ${CLI_ARGS} |& tee ${OUTPUT_LOG}"
+
     # >> ${OUTPUT_LOG} 2>&1 &
     # >> ${OUTPUT_LOG} 2>&1 &
     # |& tee $OUTPUT_DIR/output.log
@@ -240,8 +113,7 @@ echo "All DeepSpeed(s): $(which -a deepspeed)"
 echo "Using $(which deepspeed)"
 ds_report
 
-echo "${run_cmd}"
-
+echo "[RUNNING]: ${run_cmd}"
 printf "[!! \e[1;31m%s\e[0m] View output at:\n" "NOTE"
 printf "\e[1;34m%s\e[0m\n" "${OUTPUT_LOG}"
 # echo "${OUTPUT_LOG}"
