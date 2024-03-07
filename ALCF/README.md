@@ -7,7 +7,6 @@
 1. Clone [`argonne-lcf/Megatron-DeepSpeed`](https://github.com/argonne-lcf/Megatron-DeepSpeed)
 
     ```bash
-    [#](#.md) ---- 0. Clone + navigate into `Megatron-DeepSpeed`:
     $ git clone https://github.com/argonne-lcf/Megatron-DeepSpeed
     $ cd Megatron-DeepSpeed
     ```
@@ -15,9 +14,9 @@
 2. Create `conda` env:
 
     ```bash
-    $ module load conda/2023-10-04 #; conda activate /lus/eagle/projects/datascience/foremans/miniconda3/envs/polaris/2024-03-06
-    $ MPICC="cc -shared -taret-accel=nvidia80"
-    $ DAY=$(date "+%Y-^m-%d")
+    $ module load conda/2023-10-04
+    $ export MPICC="cc -shared -taret-accel=nvidia80"
+    $ export DAY=$(date "+%Y-^m-%d")
     $ conda create --solver libmamba -c pytorch -c nvidia --name "${DAY}" "python==3.10"
     $ export PYTHONUSERBASE="${HOME}/.local/polaris/conda/${DAY}"
     ```
@@ -30,7 +29,7 @@
     $ python3 -m pip install --upgrade deepspeed wandb
     ```
 
-    1. Install `apex`:
+    - [`NVIDIA/apex`](https://github.com/NVIDIA/apex):
 
         ```bash
         $ git clone https://github.com/NVIDIA/apex
@@ -39,7 +38,7 @@
         $ python3 -m pip install -v --disable-pip-version-check --no-cache-dir --no-build-isolation --config-settings "--build-option=--cpp_ext" --config-settings "--build-option=--cuda_ext" ./
         ```
 
-    2. Install `ezpz`:
+    - [`ezpz`](https://github.com/saforem2/ezpz):
 
         ```bash
         $ git clone https://github.com/saforem2/ezpz
@@ -72,56 +71,53 @@ modules and launch
     # 4. Launch:
     $ bash train_llama_alcf_polaris.sh
     ```
+    <details closed><summary><b>[Output]</b></summary>
 
-<details closed><summary><b>[Output]</b></summary>
+    ```bash
+    source-ing /lus/eagle/projects/datascience/foremans/tmp/Megatron-DeepSpeed/ALCF/helpers_alcf.sh
 
-```bash
-source-ing /lus/eagle/projects/datascience/foremans/tmp/Megatron-DeepSpeed/ALCF/helpers_alcf.sh
+    CommandNotFoundError: Your shell has not been properly configured to use 'conda deactivate'.
+    To initialize your shell, run
 
-CommandNotFoundError: Your shell has not been properly configured to use 'conda deactivate'.
-To initialize your shell, run
+        $ conda init <SHELL_NAME>
 
-    $ conda init <SHELL_NAME>
+    Currently supported shells are:
+      - bash
+      - fish
+      - tcsh
+      - xonsh
+      - zsh
+      - powershell
 
-Currently supported shells are:
-  - bash
-  - fish
-  - tcsh
-  - xonsh
-  - zsh
-  - powershell
+    See 'conda init --help' for more information and options.
 
-See 'conda init --help' for more information and options.
-
-IMPORTANT: You may need to close and restart your shell after running 'conda init'.
+    IMPORTANT: You may need to close and restart your shell after running 'conda init'.
 
 
-Saving {PATH, LD_LIBRARY_PATH, htt{p,ps}_proxy, CFLAGS, PYTHONUSERBASE} to .deepspeed_env
-Found ezpz!
-/lus/eagle/projects/datascience/foremans/tmp/Megatron-DeepSpeed/ezpz/src/ezpz/__init__.py
-Has ezpz installed. Nothing to do.
-┌──────────────────────────────────────────────────────────────────
-│ [Hosts]:
-│     • [host:0] - x3005c0s37b0n0.hsn.cm.polaris.alcf.anl.gov
-│     • [host:1] - x3005c0s37b1n0.hsn.cm.polaris.alcf.anl.gov
-└──────────────────────────────────────────────────────────────────
-┌──────────────────────────────────────────────────────────────────
-│ [DIST INFO]:
-│     • Loading job env from: /home/foremans/.pbsenv
-│     • HOSTFILE: /var/spool/pbs/aux/1777928.polaris-pbs-01.hsn.cm.polaris.alcf.anl.gov
-│     • NHOSTS: 2
-│     • NGPU_PER_HOST: 4
-│     • NGPUS (NHOSTS x NGPU_PER_HOST): 8
-│     • WORLD_SIZE: 8
-│     • DIST_LAUNCH: mpiexec --verbose --envall -n 8 -ppn 4 --hostfile /var/spool/pbs/aux/1777928.polaris-pbs-01.hsn.cm.polaris.alcf.anl.gov
-└──────────────────────────────────────────────────────────────────
-┌──────────────────────────────────────────────────────────────────
-│ [Launch]:
-│     • Use: 'launch' (=mpiexec --verbose --envall -n 8 -ppn 4 --hostfile /var/spool/pbs/aux/1777928.polaris-pbs-01.hsn.cm.polaris.alcf.anl.gov)
-│       to launch job
-└──────────────────────────────────────────────────────────────────
-
-# [...]
-```
-
-</details>
+    Saving {PATH, LD_LIBRARY_PATH, htt{p,ps}_proxy, CFLAGS, PYTHONUSERBASE} to .deepspeed_env
+    Found ezpz!
+    /lus/eagle/projects/datascience/foremans/tmp/Megatron-DeepSpeed/ezpz/src/ezpz/__init__.py
+    Has ezpz installed. Nothing to do.
+    ┌──────────────────────────────────────────────────────────────────
+    │ [Hosts]:
+    │     • [host:0] - x3005c0s37b0n0.hsn.cm.polaris.alcf.anl.gov
+    │     • [host:1] - x3005c0s37b1n0.hsn.cm.polaris.alcf.anl.gov
+    └──────────────────────────────────────────────────────────────────
+    ┌──────────────────────────────────────────────────────────────────
+    │ [DIST INFO]:
+    │     • Loading job env from: /home/foremans/.pbsenv
+    │     • HOSTFILE: /var/spool/pbs/aux/1777928.polaris-pbs-01.hsn.cm.polaris.alcf.anl.gov
+    │     • NHOSTS: 2
+    │     • NGPU_PER_HOST: 4
+    │     • NGPUS (NHOSTS x NGPU_PER_HOST): 8
+    │     • WORLD_SIZE: 8
+    │     • DIST_LAUNCH: mpiexec --verbose --envall -n 8 -ppn 4 --hostfile /var/spool/pbs/aux/1777928.polaris-pbs-01.hsn.cm.polaris.alcf.anl.gov
+    └──────────────────────────────────────────────────────────────────
+    ┌──────────────────────────────────────────────────────────────────
+    │ [Launch]:
+    │     • Use: 'launch' (=mpiexec --verbose --envall -n 8 -ppn 4 --hostfile /var/spool/pbs/aux/1777928.polaris-pbs-01.hsn.cm.polaris.alcf.anl.gov)
+    │       to launch job
+    └──────────────────────────────────────────────────────────────────
+    # [...]
+    ```
+    </details>
