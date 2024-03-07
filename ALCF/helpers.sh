@@ -1,49 +1,5 @@
 #!/bin/bash --login
 
-buildCLIargs() {
-    custom_args=" $@"
-    export CLI_ARGS="
-        --$DTYPE \
-        --num-workers 0 \
-        --split 100,0,0 \
-        --log-interval 1 \
-        --use-flash-attn-v2 \
-        --no-bias-gelu-fusion \
-        --lr-decay-style cosine \
-        --no-bias-dropout-fusion \
-        --no-masked-softmax-fusion \
-        --tokenizer-type Llama2Tokenizer \
-        --no-gradient-accumulation-fusion \
-        --accumulate-allreduce-grads-in-fp32 \
-        --use-checkpoint-opt_param-scheduler \
-        --lr ${LR} \
-        --save ${CKPT_DIR} \
-        --load ${CKPT_DIR} \
-        --seq-length ${SEQ} \
-        --num-layers ${NLAYERS} \
-        --hidden-size ${HIDDEN} \
-        --train-iters ${TRAIN_ITER} \
-        --eval-iters ${EVAL_ITERS} \
-        --distributed-backend ${NCCL} \
-        --num-attention-heads ${HEADS} \
-        --save-interval ${SAVE_INTERVAL} \
-        --eval-interval ${EVAL_INTERVAL} \
-        --max-position-embeddings ${SEQ} \
-        --micro-batch-size ${MICRO_BATCH} \
-        --data-file-list ${DATA_FILE_LIST} \
-        --tensor-model-parallel-size ${TP} \
-        --global-batch-size ${GLOBAL_BATCH} \
-        --pipeline-model-parallel-size ${PP} \
-        --num-key-value-heads ${NUM_KV_HEAD} \
-        --data-cache-path ${DATA_CACHE_PATH} \
-        --ffn-hidden-size ${FFN_HIDDEN_SIZE} \
-        --tokenizer-model ${TOKENIZER_MODEL} \
-        $ds_args \
-        ${LLAMA_ARGS} \
-        ${gpt_args[*]} \
-        ${custom_args} \
-        "
-}
 
 printJobInfo() {
     echo "++++++++++++++++++++++++++++++++++++++++++++++++++"
@@ -183,7 +139,6 @@ saveDSenv() {
 setOutput() {
     # ---- Specify output location --------------------------------
     export OUTPUT_PREFIX="ds_stage${ZERO_STAGE}_nl${NLAYERS}_hs${HIDDEN}_mb${MICRO_BATCH}_seq${SEQ}_gb${GLOBAL_BATCH}_pp${PP}_tp${TP}_${DTYPE}"
-    # OUTPUT_DIR=logs/ds_stage${ZERO_STAGE}_nl${NLAYERS}_hs${HIDDEN}_mb${MICRO_BATCH}_seq${SEQ}_gb${GLOBAL_BATCH}_pp${PP}_tp${TP}_${DTYPE}_`date +%m%d%H%M%S`_${HOSTNAME}
     OUTPUT_DIR="logs/${OUTPUT_PREFIX}/$(date +%m%d%H%M%S)_${HOSTNAME}"
     export OUTPUT_DIR="${OUTPUT_DIR}"
     export OUTPUT_LOG="${OUTPUT_DIR}/output.log"
@@ -201,20 +156,6 @@ buildDSconfig() {
 }
 
 
-# makeDSenv() {
-#     saveDSenv
-# }
-
-
-# makeDSenv() {
-#     echo "PATH=${PATH}" > .deepspeed_env
-#     echo "LD_LIBRARY_PATH=${LD_LIBRARY_PATH}" >> .deepspeed_env
-#     echo "http_proxy=${http_proxy}" >> .deepspeed_env
-#     echo "https_proxy=${https_proxy}" >> .deepspeed_env
-#     echo "CFLAGS=${CFLAGS}" >> .deepspeed_env
-#     echo "PYTHONUSERBASE=$PYTHONUSERBASE" >> .deepspeed_env
-# }
-
 sumWeights() {
     local file_list=$1
     weights=$(cat "${file_list}" | awk '{print $1}' | tr '\n' '\ ,\ ' | sed 's/^/[/g' | sed 's/$/]/g' | tr '\ ' "\,\ ")
@@ -231,42 +172,19 @@ sumFiles() {
     done
 }
 
-# setupData() {
-#     cidx=$1
-#     echo "Caught DOLMA_CHUNK_IDX: ${cidx} !!"
-#     dfl="./chunks-reweighted/10/data_file_list_chunk_${cidx}_of_10.txt"
-#     if [[ -z "${DATA_FILE_LIST}" ]]; then
-#         DATA_FILE_LIST="${dfl}"
-#     else
-#         echo "Caught DATA_FILE_LIST: ${DATA_FILE_LIST} from ENV!!"
-#     fi
-#     NDOCS=$(wc -l < "${DATA_FILE_LIST}") && export NDOCS="${NDOCS}"
-#     WEIGHT_SUM="$(sumWeights "${DATA_FILE_LIST}")"
-#     export WEIGHT_SUM="${WEIGHT_SUM}"
-#     export NDOCS="${NDOCS}"
-#     echo "Using DATA_FILE_LIST: ${DATA_FILE_LIST} with ${NDOCS} documents"
-#     echo "WEIGHT SUM: ${WEIGHT_SUM}"
-#     data_file_list_stem=$(echo "$DATA_FILE_LIST" | tr "\/" "\t" | awk '{print $NF}' | sed "s/\.txt//g")
-#     export DOLMA_CHUNK_IDX="${cidx}"
-#     export DATA_FILE_LIST_STEM="${data_file_list_stem}"
-#     export DATA_CACHE_PATH=".cache/${data_file_list_stem}/index-cache"
-#     mkdir -p "${DATA_CACHE_PATH}"
-# }
-#
-
 
 setEnv() {
-    if [[ $(hostname) == x4* ]]; then
+    if [[ $(hostname) == x4* ]]; then  #  ---- [Aurora] ----------------------
         SETENV_FILE="${HOME}/anl_24_release_q4/llm.devkit/setenv.sh"
         if [[ "${SETENV_FILE}" ]]; then
             # shellcheck source=/home/foremans/anl_24_release_q4/llm.devkit/setenv.sh
-            source "${HOME}/anl_24_release_q4/llm.devkit/setenv.sh"
+            source "${HOME}/anl_24_release_q4/llm.devkit/setenv.sh" || exit
         else
             echo "Unable to source ${SETENV_FILE}, exiting!"
             exit
         fi
-    elif [[ $(hostname) == x3* ]]; then
-        # ---- load conda -----------------------------------
+    elif [[ $(hostname) == x3* ]]; then  # ---- [Polaris] ---------------------
+        # ---- [load conda] ---------------------
         module load conda/2023-10-04 ; conda activate /lus/eagle/projects/datascience/foremans/miniconda3/envs/polaris/2024-03-06
         export PYTHONUSERBASE="${HOME}/.local/polaris/conda/2024-03-06"
         mkdir -p "${PYTHONUSERBASE}"
@@ -276,7 +194,7 @@ setEnv() {
         #     echo "Not using VIRTUAL_ENV"
         #     # sourceFile "${HERE}/venvs/polaris/2023-10-04/bin/activate" || exit
         # fi
-    else
+    else # ------------------------------------- [Unknown] -------------------
         echo "Unknown hostname $(hostname)"
         exit 1
     fi
@@ -294,8 +212,7 @@ makeHostfiles() {
     sed -e "s/$/ slots=${GPUS_PER_NODE}/" -i "${hostfile_deepspeed}"
 }
 
-
-setData() {  # dfl: abbrv. for DATA_FILE_LIST
+setData() {  # ---- [dfl: abbrv. for DATA_FILE_LIST] -------------------------
     dfl="${1:-/eagle/datasets/dolma/data_file_list_reweighted.txt}"
     # dfl_fallback="/eagle/datasets/dolma/data_file_list_reweighted.txt"
     printf "Calling:  \`setData()\` with %s\n" "${dfl}"
@@ -317,6 +234,51 @@ setData() {  # dfl: abbrv. for DATA_FILE_LIST
     printf "DFL_STEM: %s\n" "${DFL_STEM}"
     printf "DATA_CACHE_PATH: %s\n" "${DATA_CACHE_PATH}"
     echo "--------------------"
+}
+
+buildCLIargs() {  # ---- [BROKEN] -------------------------------------------
+    custom_args=" $@"
+    export CLI_ARGS="
+        --$DTYPE \
+        --num-workers 0 \
+        --split 100,0,0 \
+        --log-interval 1 \
+        --use-flash-attn-v2 \
+        --no-bias-gelu-fusion \
+        --lr-decay-style cosine \
+        --no-bias-dropout-fusion \
+        --no-masked-softmax-fusion \
+        --tokenizer-type Llama2Tokenizer \
+        --no-gradient-accumulation-fusion \
+        --accumulate-allreduce-grads-in-fp32 \
+        --use-checkpoint-opt_param-scheduler \
+        --lr ${LR} \
+        --save ${CKPT_DIR} \
+        --load ${CKPT_DIR} \
+        --seq-length ${SEQ} \
+        --num-layers ${NLAYERS} \
+        --hidden-size ${HIDDEN} \
+        --train-iters ${TRAIN_ITER} \
+        --eval-iters ${EVAL_ITERS} \
+        --distributed-backend ${NCCL} \
+        --num-attention-heads ${HEADS} \
+        --save-interval ${SAVE_INTERVAL} \
+        --eval-interval ${EVAL_INTERVAL} \
+        --max-position-embeddings ${SEQ} \
+        --micro-batch-size ${MICRO_BATCH} \
+        --data-file-list ${DATA_FILE_LIST} \
+        --tensor-model-parallel-size ${TP} \
+        --global-batch-size ${GLOBAL_BATCH} \
+        --pipeline-model-parallel-size ${PP} \
+        --num-key-value-heads ${NUM_KV_HEAD} \
+        --data-cache-path ${DATA_CACHE_PATH} \
+        --ffn-hidden-size ${FFN_HIDDEN_SIZE} \
+        --tokenizer-model ${TOKENIZER_MODEL} \
+        $ds_args \
+        ${LLAMA_ARGS} \
+        ${gpt_args[*]} \
+        ${custom_args} \
+        "
 }
 
 printBlack() {
