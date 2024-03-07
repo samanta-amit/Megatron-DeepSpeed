@@ -1,6 +1,5 @@
 # Megatron-DeepSpeed @ ALCF
 
-
 ## Polaris
 
 ### Install
@@ -16,19 +15,16 @@
 2. Create `conda` env:
 
     ```bash
-    # ---- 1. Create conda env -------------------------------------------------
     $ module load conda/2023-10-04 #; conda activate /lus/eagle/projects/datascience/foremans/miniconda3/envs/polaris/2024-03-06
     $ MPICC="cc -shared -taret-accel=nvidia80"
     $ DAY=$(date "+%Y-^m-%d")
     $ conda create --solver libmamba -c pytorch -c nvidia --name "${DAY}" "python==3.10"
     $ export PYTHONUSERBASE="${HOME}/.local/polaris/conda/${DAY}"
-    # ---------------------------------------------------------------------------
     ```
 
 3. Install dependencies:
 
     ```bash
-    # -------- a. Install dependencies ------------------------------------------
     $ conda install -c pytorch -c nvidia --solver libmamba mpi4py pytorch-cuda=11.8 ninja torchvision torchaudio pytorch-cuda=11.8 transformers xformers triton
     $ python3 -m pip install --upgrade pip pybind11 toolong appdirs wandb sentencepiece ipython setuptools wheel ninja
     $ python3 -m pip install --upgrade deepspeed wandb
@@ -37,7 +33,6 @@
     1. Install `apex`:
 
         ```bash
-        # ------------ i. Install `apex` --------------------------------------------
         $ git clone https://github.com/NVIDIA/apex
         $ cd apex
         $ module swap gcc gcc/10.3.0
@@ -47,10 +42,8 @@
     2. Install `ezpz`:
 
         ```bash
-        # ------------ ii. Install `ezpz` --------------------------------------------
         $ git clone https://github.com/saforem2/ezpz
         $ python3 -m pip install -e "ezpz[dev]"
-        # ---------------------------------------------------------------------------
         ```
 
 ### Running
@@ -66,19 +59,19 @@ modules and launch
 [`pretrain_gpt_alcf.py`](https://github.com/argonne-lcf/Megatron-DeepSpeed/blob/main/pretrain_gpt_alcf.py) using `deepspeed`
 
 
-Explicitly, we can:
+- Explicitly, to launch:
 
-```bash
-# 1. Launch interactive job
-$ qsub -A <your-project> -q debug -l select=2 -l walltime=01:00:00,filesystems=eagle:home -I
-# 2. Load conda environment
-$ module load conda/2023-10-04 ; conda activate /lus/eagle/projects/datascience/foremans/miniconda3/envs/polaris/2024-03-06
-$ export PYTHONUSERBASE=/home/foremans/.local/polaris/conda/2024-03-06
-# 3. Navigate into `Megatron-DeepSpeed` directory
-$ cd Megatron-DeepSpeed
-# 4. Launch:
-$ bash train_llama_alcf_polaris.sh
-```
+    ```bash
+    # 1. Launch interactive job
+    $ qsub -A <your-project> -q debug -l select=2 -l walltime=01:00:00,filesystems=eagle:home -I
+    # 2. Load conda environment
+    $ module load conda/2023-10-04 ; conda activate /lus/eagle/projects/datascience/foremans/miniconda3/envs/polaris/2024-03-06
+    $ export PYTHONUSERBASE=/home/foremans/.local/polaris/conda/2024-03-06
+    # 3. Navigate into `Megatron-DeepSpeed` directory
+    $ cd Megatron-DeepSpeed
+    # 4. Launch:
+    $ bash train_llama_alcf_polaris.sh
+    ```
 
 <details closed><summary><b>[Output]</b></summary>
 
