@@ -2,6 +2,8 @@
 
 ## Polaris
 
+<details closed><summary>📅 <code>2024-03-07</code></summary>
+
 - Unable to save checkpoints with `torch==2.1` + `cuda==11.8`: 
     - **NEED TO DEBUG / FIX !!**
     - Training progresses OK:
@@ -44,6 +46,19 @@
 
       🤔
 
+- Convergence:
+    - [ ] Use `bf16` on both systems
+    - [ ] Will need to track (for each layer):
+        - [ ] inputs / outputs
+        - [ ] weights, gradients
+    - [ ] Start thread in Intel SC23 channel to discuss convergence issues
+        - [ ] Add hooks to track additional data
+
+- [ ] Ensure / double check that optimizer settings from `ds_config.json` aren't being overwritten by some defaults in `megatron/arguments.py`
+    - [ ] specifically, `momentum, beta{1, 2}, etc`
+
+
+<details closed><summary><b>✅ <code>Completed</code></b></summary>
 
 - Continue runs on Polaris @
     - [x] 48 Nodes
@@ -55,16 +70,9 @@
 - [x] Then, try re-creating ( / fixing) conda with `cuda==12.1`
     - 😔, failed.
 
-- Convergence:
-    - [ ] Use `bf16` on both systems
-    - [ ] Will need to track (for each layer):
-        - [ ] inputs / outputs
-        - [ ] weights, gradients
-    - [ ] Start thread in Intel SC23 channel to discuss convergence issues
-        - [ ] Add hooks to track additional data
+</details>
 
-- [ ] Ensure / double check that optimizer settings from `ds_config.json` aren't being overwritten by some defaults in `megatron/arguments.py`
-    - [ ] specifically, `momentum, beta{1, 2}, etc`
+</details>
 
 ### Install
 
