@@ -48,11 +48,11 @@ export hfds="${HERE}/hostfile_deepspeed" && [ -f "${hfds}" ] || exit
 
 run_cmd="
     deepspeed --hostfile $hfds --launcher ${LAUNCHER} ${EXEC} \
+    --use-flash-attn-v2 \
     --$DTYPE \
     --num-workers 0 \
     --split 100,0,0 \
     --log-interval 1 \
-    --use-flash-attn-v2 \
     --no-bias-gelu-fusion \
     --lr-decay-style cosine \
     --no-bias-dropout-fusion \
