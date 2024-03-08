@@ -4,7 +4,7 @@
 
 <details closed><summary>📅 <code>2024-03-07</code></summary>
 
-- Unable to save checkpoints with `torch==2.1` + `cuda==11.8`: 
+- ‼️  Unable to save checkpoints with `torch==2.1` + `cuda==11.8`: 
     - **NEED TO DEBUG / FIX !!**
     - Training progresses OK:
 
@@ -89,14 +89,20 @@
     $ module load conda/2023-10-04
     $ export MPICC="cc -shared -taret-accel=nvidia80"
     $ export DAY=$(date "+%Y-%m-%d")
-    $ conda create --solver libmamba -c pytorch -c nvidia --name "${DAY}" "python==3.10"
     $ export PYTHONUSERBASE="${HOME}/.local/polaris/conda/${DAY}"
+    $ conda create --solver libmamba -c pytorch -c nvidia --name "${DAY}" "python==3.10"
     ```
+
+    > [!NOTE]
+    > In the `conda create` command above,
+    > you can replace `--name "${DAY}"` with
+    > `--prefix /path/to/your/conda/envs`, if you prefer:
 
 3. Install dependencies:
 
     ```bash
-    $ conda install -c pytorch -c nvidia --solver libmamba mpi4py pytorch-cuda=11.8 ninja torchvision torchaudio pytorch-cuda=11.8 transformers xformers triton
+    $ conda activate "${DAY}"  # e.g. 2024-03-07
+    $ conda install -c pytorch -c nvidia --solver libmamba mpi4py ninja transformers xformers triton pytorch torchvision torchaudio pytorch-cuda=11.8
     $ python3 -m pip install --upgrade pip pybind11 toolong appdirs wandb sentencepiece ipython setuptools wheel ninja
     $ python3 -m pip install --upgrade deepspeed wandb
     ```
@@ -106,6 +112,7 @@
         ```bash
         $ git clone https://github.com/NVIDIA/apex
         $ cd apex
+        # NOTE: need GCC < 11 for APEX ¯\_(ツ)_/¯ ??
         $ module swap gcc gcc/10.3.0
         $ python3 -m pip install -v --disable-pip-version-check --no-cache-dir --no-build-isolation --config-settings "--build-option=--cpp_ext" --config-settings "--build-option=--cuda_ext" ./
         ```
