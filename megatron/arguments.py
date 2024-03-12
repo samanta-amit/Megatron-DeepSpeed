@@ -1307,6 +1307,7 @@ def _add_data_args(parser):
                        help='Force to use certain index file.')
     group.add_argument('--repeated-dataloader', action='store_true',
                        help='Once all the data has been loaded, reuse the DataLoader.')
+    group.add_argument('--multiprocessing-context', type=str, default='fork')
     return parser
 
 
