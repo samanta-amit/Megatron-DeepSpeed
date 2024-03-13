@@ -2,16 +2,6 @@
 
 ## Polaris
 
-<details closed><summary>⬜ <code>TODOs</code></summary>
-
-- Convergence:
-    - [ ] Use `bf16` on both systems
-    - [ ] Will need to track (for each layer):
-        - [ ] inputs / outputs
-        - [ ] weights, gradients
-    - [ ] Start thread in Intel SC23 channel to discuss convergence issues
-        - [ ] Add hooks to track additional data
-
 - [ ] Ensure / double check that optimizer settings from `ds_config.json` aren't being overwritten by some defaults in `megatron/arguments.py`
     - [ ] specifically, `momentum, beta{1, 2}, etc`
     
