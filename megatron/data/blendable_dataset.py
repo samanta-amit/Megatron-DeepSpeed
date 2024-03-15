@@ -80,8 +80,10 @@ class BlendableDataset(torch.utils.data.Dataset):
 
 
             counts = get_accelerator().LongTensor([cache_success])
-            torch.distributed.all_reduce(counts, group=mpu.get_data_parallel_group())
-            torch.distributed.all_reduce(counts, group=mpu.get_pipeline_model_parallel_group())
+            if mpu.get_data_parallel_world_size() > 1:
+                torch.distributed.all_reduce(counts, group=mpu.get_data_parallel_group())
+            if mpu.get_pipeline_model_parallel_world_size() > 1:
+                torch.distributed.all_reduce(counts, group=mpu.get_pipeline_model_parallel_group())
             if counts[0].item() != (
                 torch.distributed.get_world_size() //
                 torch.distributed.get_world_size(group=mpu.get_tensor_model_parallel_group()) //
