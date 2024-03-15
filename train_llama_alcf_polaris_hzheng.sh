@@ -8,6 +8,7 @@ cd ${PBS_O_WORKDIR}
 export PPN=4
 export MD=/eagle/argonne_tpc/soft/Megatron-DeepSpeed
 source /eagle/argonne_tpc/soft/conda.sh
+
 export PBS_JOBSIZE=$(cat $PBS_NODEFILE | uniq | wc -l)
 export TP=1
 export PP=1
@@ -27,8 +28,9 @@ EMBEDDINGS=2048
 TRAIN_ITERS=10
 ZERO_STAGE=2
 MODEL=LLAMA_7B
+#LAUNCHER="//eagle/argonne_tpc/soft/Megatron-DeepSpeed/..//conda/2024-03-11/lib/python3.10/site-packages/deepspeed/launcher/launcher_helper.py --launcher mpich "
 OUTPUT_PREFIX=${MODEL}_z${ZERO_STAGE}_seqlen_mp${MP}_pp${PP}_sp${SP}_nl${NUM_LAYERS}_hs${HIDDEN_SIZE}_gb${BS}_mb${MBS}
-MASTER_ADDR=localhost MASTER_PORT=6543 mpiexec --pmi=pmix -n $((PBS_JOBSIZE*PPN)) -ppn $PPN --cpu-bind depth -d 16 --hostfile $PBS_NODEFILE python3 ./pretrain_gpt_alcf.py \
+APRUN_PMI=pmix aprun -n $((PBS_JOBSIZE*PPN)) -N $PPN --cc depth -d 16 /eagle/argonne_tpc/soft/Megatron-DeepSpeed/local_rank.sh python3 $LAUNCHER ./pretrain_gpt_alcf.py \
 	   --tensor-model-parallel-size ${TP} \
 	   --pipeline-model-parallel-size ${PP} \
 	   --num-layers ${NUM_LAYERS} \
@@ -70,4 +72,5 @@ MASTER_ADDR=localhost MASTER_PORT=6543 mpiexec --pmi=pmix -n $((PBS_JOBSIZE*PPN)
 	   --data-file-list ${DATA_FILE_LIST} \
 	   --data-path ${DATA_PATH} \
 	   --vocab-file ${MD}/dataset/gpt2-vocab.json --merge-file ${MD}/dataset/gpt2-merges.txt \
-	   --zero-stage=${ZERO_STAGE} --deepspeed_config=${MD}/ds_config-gpt.json --deepspeed
+	   --zero-stage=${ZERO_STAGE} --deepspeed_config=${MD}/ds_config-gpt.json --deepspeed \
+	   --data-cache-path ./data_cache_path/

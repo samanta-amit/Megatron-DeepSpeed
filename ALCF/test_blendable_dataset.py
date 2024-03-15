@@ -6,6 +6,7 @@ from megatron.arguments import parse_args
 from megatron.initialize import initialize_megatron
 from megatron.data.data_samplers import build_pretraining_data_loader
 from mpi4py import MPI
+from megatron.core import mpu
 comm = MPI.COMM_WORLD
 initialize_megatron(allow_no_cuda=True)
 args = get_args()
@@ -68,10 +69,12 @@ for i in range(10):
     if comm.rank==0:
         print(f"Sample: {i} \t dataset_idx: {train_ds.dataset_index[i]}, sample_idx: {train_ds.dataset_sample_index[i]}")
 
-
 #### Build data loaders
-train_dataloader = build_pretraining_data_loader(
+rank_in_parallel_group = mpu.get_sequence_parallel_rank()
+print(rank_in_parallel_group)
+if rank_in_parallel_group == 0:
+    train_dataloader = build_pretraining_data_loader(
         train_ds, args.consumed_train_samples)
-valid_dataloader = build_pretraining_data_loader(
+    valid_dataloader = build_pretraining_data_loader(
         valid_ds, args.consumed_valid_samples)
-test_dataloader = build_pretraining_data_loader(test_ds, 0)
+    test_dataloader = build_pretraining_data_loader(test_ds, 0)
