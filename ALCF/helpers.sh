@@ -31,21 +31,23 @@ function setDSlauncher() {
 }
 
 setParams() {
-    # [Parallelism Settings] {{{
-    if [[ $(hostname) == x4* ]]; then    # ---- [AURORA] ----
-        TP=${TP:-1}                      # • TP = 1
-        PP=${PP:-1}                      # • PP = 1
-        export CCL=${CCL:-ccl}           # • CCL
-        export BE="${CCL}"               # • BE = CCL
-        export DTYPE=${DTYPE:-bf16}      # • DTYPE: bf16
-    elif [[ $(hostname) == x3* ]]; then  # ---- [POLARIS] ----
-        PP=${PP:-1}                      # • PP = 1
-        TP=${TP:-2}                      # • TP = 2
-        export NCCL=${NCCL:-nccl}        # • NCCL
-        export BE="${NCCL}"              # • BE = NCCL
-        export DTYPE=${DTYPE:-fp16}      # • DTYPE: FP16
+    # ---- [Parallelism Settings] --------------------------------------------
+    # -------- [Aurora] ---- || ----- [SunSpot] ------------
+    if [[ $(hostname) == x4* || $(hostname) == x1* ]]; then
+        TP=${TP:-1}                      # TP = 1
+        PP=${PP:-1}                      # PP = 1
+        export CCL=${CCL:-ccl}           # CCL
+        export BE="${CCL}"               # BE = CCL
+        export DTYPE=${DTYPE:-bf16}      # DTYPE: bf16
+    # -------- [Polaris] -----------------------------------
+    elif [[ $(hostname) == x3* ]]; then
+        TP=${TP:-2}                      # TP = 2
+        PP=${PP:-1}                      # PP = 1
+        export NCCL=${NCCL:-nccl}        # NCCL
+        export BE="${NCCL}"              # BE = NCCL
+        export DTYPE=${DTYPE:-fp16}      # DTYPE: FP16
     fi
-    # }}}
+    # ------------------------------------------------------------------------
     export PP="${PP}"
     export TP="${TP}"
     export HOSTFILE="${HOSTFILE:-${PBS_NODEFILE}}"
@@ -69,8 +71,10 @@ setParams() {
     export SAVE_INTERVAL=${SAVE_INTERVAL:-200}
     export USE_ACTIVATION_CHECKPOINTING=${USE_ACTIVATION_CHECKPOINTING:-1}
     # export USE_ACTIVATION_CHECKPOINTING=${USE_ACTIVATION_CHECKPOINTING:-0}
-    export GLOBAL_BATCH=$(( $WORLD_SIZE * $MICRO_BATCH * $GRAD_ACC_STEPS / $TP / $PP ))
-    export TOKENIZER_MODEL="${TOKENIZER_MODEL:-"/eagle/datasets/dolma/utils/tokenizer.model"}"
+    # export GLOBAL_BATCH=$(( $WORLD_SIZE * $MICRO_BATCH * $GRAD_ACC_STEPS / $TP / $PP ))
+    export GLOBAL_BATCH_MAX=$(( $WORLD_SIZE * $MICRO_BATCH * $GRAD_ACC_STEPS / $TP / $PP ))
+    export GLOBAL_BATCH="${GLOBAL_BATCH:-${GLOBAL_BATCH_MAX}}"
+    export TOKENIZER_MODEL="${TOKENIZER_MODEL:-"/home/foremans/q4-drop_sunspot/llm.devkit/Megatron-DeepSpeed/tokenizer.model"}"
     export MODEL_TYPE="llama-seq${SEQ}-pp${PP}-tp${TP}-${NLAYERS}layers-${HEADS}heads-${HIDDEN}hidden"
     export LLAMA_ARGS="--no-query-key-layer-scaling --use-rotary-position-embeddings --untie-embeddings-and-output-weights --swiglu --normalization rmsnorm --disable-bias-linear"
     # ----------------------------------------------------
@@ -120,8 +124,9 @@ ezpz() {
         echo "Using $(which python3) to install \`ezpz\`:"
         python3 -m pip install -e ezpz > ezpz-install.log 2>&1
     fi
-    source ezpz/src/ezpz/bin/savejobenv > /tmp/savejobenv.log 2>&1 || exit
-    source ezpz/src/ezpz/bin/getjobenv || exit
+    echo "Done with ezpz."
+    # source ezpz/src/ezpz/bin/savejobenv || exit  # > /tmp/savejobenv.log 2>&1 || exit
+    # source ezpz/src/ezpz/bin/getjobenv || exit
 }
 
 saveDSenv() {
@@ -151,7 +156,10 @@ setOutput() {
 buildDSconfig() {
     # ---- Build DeepSpeed Config ---------------------------------
     export DS_CONFIG="ds_stage${ZERO_STAGE}_mb${MICRO_BATCH}_gb${GLOBAL_BATCH}_pp${PP}_${DTYPE}.json"
-    bash "${HERE}/generate_config.sh" "${DS_CONFIG}" || exit 1
+    echo "DS_CONFIG: ${DS_CONFIG}"
+    printf "ZS: %s, MB: %s, GB: %s, PP: %s, DTYPE: %s" ${ZERO_STAGE} ${MICRO_BATCH} ${GLOBAL_BATCH} ${PP} ${DTYPE}
+    # generateConfig "${DS_CONFIG}"
+    bash "${PBS_O_WORKDIR}/generate_config.sh" "${DS_CONFIG}"  #|| exit 1
     # -------------------------------------------------------------
 }
 
@@ -174,18 +182,24 @@ sumFiles() {
 
 
 setEnv() {
-    if [[ $(hostname) == x4* ]]; then  #  ---- [Aurora] ----------------------
-        SETENV_FILE="${HOME}/anl_24_release_q4/llm.devkit/setenv.sh"
-        if [[ "${SETENV_FILE}" ]]; then
-            # shellcheck source=/home/foremans/anl_24_release_q4/llm.devkit/setenv.sh
-            source "${HOME}/anl_24_release_q4/llm.devkit/setenv.sh" || exit
-        else
-            echo "Unable to source ${SETENV_FILE}, exiting!"
-            exit
+    # ---- [SunSpot] ------- || ---- [Aurora] --------------
+    if [[ $(hostname) == x1* || $(hostname) == x4* ]]; then
+        PBS_PARENT=$(dirname ${PBS_O_WORKDIR})
+        echo "Sourcing ${PBS_PARENT}/setenv.sh..."
+        source "${PBS_PARENT}/setenv.sh" || exit
+        # ----- [Aurora] -----------------------------------
+        if [[ $(hostname) == x4* ]]; then
+            eval "$(/home/foremans/miniconda3/bin/conda shell.zsh hook)" && conda activate anl_release_q4v2
+        # ----- [SunSpot] ----------------------------------
+        elif [[ $(hostname) == x1* ]]; then
+            echo "Running on SunSpot !!"
+            eval "$(/home/foremans/miniconda3/bin/conda shell.zsh hook)" && conda activate q4-drop
         fi
-    elif [[ $(hostname) == x3* ]]; then  # ---- [Polaris] ---------------------
+    # ----- [Polaris] ---------------------------------------
+    elif [[ $(hostname) == x3* ]]; then
+        echo "Running on Polaris !!"
         # ---- [load conda] ---------------------
-        module load conda/2023-10-04; conda activate cu118-pt221
+        module load conda/2023-10-04; conda activate cu118-pt221 ; unset PYTHONUSERBASE
         # module load conda/2023-10-04 ; conda activate /lus/eagle/projects/datascience/foremans/miniconda3/envs/polaris/py311-cu118 
         # ; conda activate /lus/eagle/projects/datascience/foremans/miniconda3/envs/polaris/2024-03-06
         # export PYTHONUSERBASE="${HOME}/.local/polaris/conda/py311-cu118"
@@ -203,8 +217,13 @@ setEnv() {
 }
 
 makeHostfiles() {
-    GPUS_PER_NODE=$(python3 -Wignore -c 'import ezpz; print(ezpz.get_gpus_per_node())')
-    export GPUS_PER_NODE="${GPUS_PER_NODE}"
+    # GPUS_PER_NODE=$(python3 -Wignore -c 'import ezpz; print(ezpz.get_gpus_per_node())')
+    # source $(python3 -c 'import ezpz; print(ezpz.SAVEJOBENV.as_posix())') || exit
+    # source $(python3 -c 'import ezpz; print(ezpz.GETJOBENV.as_posix())') || exit
+    source ezpz/src/ezpz/bin/savejobenv || exit #> /tmp/savejobenv.log 2>&1 &
+    source ezpz/src/ezpz/bin/getjobenv || exit
+    export GPUS_PER_NODE="${NGPU_PER_HOST}"
+    # export GPUS_PER_NODE="${GPUS_PER_NODE}"
     # ---- Make MPICH hostfile ----------------
     export hostfile_mpich=hostfile_mpich
     cat "$PBS_NODEFILE" > "${hostfile_mpich}"
@@ -215,7 +234,16 @@ makeHostfiles() {
 }
 
 setData() {  # ---- [dfl: abbrv. for DATA_FILE_LIST] -------------------------
-    dfl="${1:-/eagle/datasets/dolma/data_file_list_reweighted.txt}"
+    if [[ $(hostname) == x4* ]]; then    # ---- [AURORA] ----
+        dfl_fallback="/home/foremans/anl_24_release_q4/llm.devkit/Megatron-DeepSpeed/data_file_list_reweighted.txt"
+    elif [[ $(hostname) == x1* ]]; then
+        dfl_fallback="/gila/Aurora_deployment/AuroraGPT/datasets/dolma/data_file_list_reweighted.txt"
+    elif [[ $(hostname) == x3* ]]; then
+        dfl_fallback="/eagle/datasets/dolma/data_file_list_reweighted.txt"
+    else
+        echo "Unknown hostname. Must manually specify DATA_FILE_LIST."
+    fi
+    dfl="${1:-${dfl_fallback}}"
     # dfl_fallback="/eagle/datasets/dolma/data_file_list_reweighted.txt"
     printf "Calling:  \`setData()\` with %s\n" "${dfl}"
     ndocs=$(wc -l < "${dfl}")
@@ -238,50 +266,51 @@ setData() {  # ---- [dfl: abbrv. for DATA_FILE_LIST] -------------------------
     echo "--------------------"
 }
 
-buildCLIargs() {  # ---- [BROKEN] -------------------------------------------
-    custom_args=" $@"
-    export CLI_ARGS="
-        --$DTYPE \
-        --num-workers 0 \
-        --split 100,0,0 \
-        --log-interval 1 \
-        --use-flash-attn-v2 \
-        --no-bias-gelu-fusion \
-        --lr-decay-style cosine \
-        --no-bias-dropout-fusion \
-        --no-masked-softmax-fusion \
-        --tokenizer-type Llama2Tokenizer \
-        --no-gradient-accumulation-fusion \
-        --accumulate-allreduce-grads-in-fp32 \
-        --use-checkpoint-opt_param-scheduler \
-        --lr ${LR} \
-        --save ${CKPT_DIR} \
-        --load ${CKPT_DIR} \
-        --seq-length ${SEQ} \
-        --num-layers ${NLAYERS} \
-        --hidden-size ${HIDDEN} \
-        --train-iters ${TRAIN_ITER} \
-        --eval-iters ${EVAL_ITERS} \
-        --distributed-backend ${NCCL} \
-        --num-attention-heads ${HEADS} \
-        --save-interval ${SAVE_INTERVAL} \
-        --eval-interval ${EVAL_INTERVAL} \
-        --max-position-embeddings ${SEQ} \
-        --micro-batch-size ${MICRO_BATCH} \
-        --data-file-list ${DATA_FILE_LIST} \
-        --tensor-model-parallel-size ${TP} \
-        --global-batch-size ${GLOBAL_BATCH} \
-        --pipeline-model-parallel-size ${PP} \
-        --num-key-value-heads ${NUM_KV_HEAD} \
-        --data-cache-path ${DATA_CACHE_PATH} \
-        --ffn-hidden-size ${FFN_HIDDEN_SIZE} \
-        --tokenizer-model ${TOKENIZER_MODEL} \
-        $ds_args \
-        ${LLAMA_ARGS} \
-        ${gpt_args[*]} \
-        ${custom_args} \
-        "
-}
+# buildCLIargs() {  # ---- [BROKEN] -------------------------------------------
+#     custom_args=" $@"
+#     export CLI_ARGS="
+#         --$DTYPE \
+#         --num-workers 0 \
+#         --split 100,0,0 \
+#         --log-interval 1 \
+#         --use-flash-attn-v2 \
+#         --no-bias-gelu-fusion \
+#         --lr-decay-style cosine \
+#         --no-bias-dropout-fusion \
+#         --no-masked-softmax-fusion \
+#         --tokenizer-type Llama2Tokenizer \
+#         --no-gradient-accumulation-fusion \
+#         --accumulate-allreduce-grads-in-fp32 \
+#         --use-checkpoint-opt_param-scheduler \
+#         --lr ${LR} \
+#         --save ${CKPT_DIR} \
+#         --load ${CKPT_DIR} \
+#         --seq-length ${SEQ} \
+#         --num-layers ${NLAYERS} \
+#         --hidden-size ${HIDDEN} \
+#         --train-iters ${TRAIN_ITER} \
+#         --eval-iters ${EVAL_ITERS} \
+#         --distributed-backend ${BE} \
+#         --num-attention-heads ${HEADS} \
+#         --save-interval ${SAVE_INTERVAL} \
+#         --eval-interval ${EVAL_INTERVAL} \
+#         --max-position-embeddings ${SEQ} \
+#         --micro-batch-size ${MICRO_BATCH} \
+#         --data-file-list ${DATA_FILE_LIST} \
+#         --tensor-model-parallel-size ${TP} \
+#         --global-batch-size ${GLOBAL_BATCH} \
+#         --pipeline-model-parallel-size ${PP} \
+#         --num-key-value-heads ${NUM_KV_HEAD} \
+#         --data-cache-path ${DATA_CACHE_PATH} \
+#         --ffn-hidden-size ${FFN_HIDDEN_SIZE} \
+#         --tokenizer-model ${TOKENIZER_MODEL} \
+#         $ds_args \
+#         ${LLAMA_ARGS} \
+#         ${gpt_args[*]} \
+#         ${custom_args} \
+#         "
+# }
+
 
 printBlack() {
     printf "\e[1;30m%s\e[0m\n" "$@"
