@@ -2,16 +2,6 @@
 
 ## Polaris
 
-<details closed><summary>⬜ <code>TODOs</code></summary>
-
-- Convergence:
-    - [ ] Use `bf16` on both systems
-    - [ ] Will need to track (for each layer):
-        - [ ] inputs / outputs
-        - [ ] weights, gradients
-    - [ ] Start thread in Intel SC23 channel to discuss convergence issues
-        - [ ] Add hooks to track additional data
-
 - [ ] Ensure / double check that optimizer settings from `ds_config.json` aren't being overwritten by some defaults in `megatron/arguments.py`
     - [ ] specifically, `momentum, beta{1, 2}, etc`
     
@@ -148,11 +138,11 @@ modules and launch
     # 1. Launch interactive job
     $ qsub -A <your-project> -q debug -l select=2 -l walltime=01:00:00,filesystems=eagle:home -I
     # 2. Load conda environment
-    $ module load conda/2023-10-04 ; conda activate /lus/eagle/projects/datascience/foremans/miniconda3/envs/polaris/2024-03-06
-    # $ export PYTHONUSERBASE=/home/foremans/.local/polaris/conda/2024-03-06
+    $ module load conda/2023-10-04 ; conda activate /eagle/datascience/foremans/miniconda3/envs/cu118-pt221 ; unset PYTHONUSERBASE
     # 3. Navigate into `Megatron-DeepSpeed` directory
     $ cd Megatron-DeepSpeed
     # 4. Launch:
+    $ export PBS_O_WORKDIR=$(pwd)
     $ bash train_llama_alcf_polaris.sh
     ```
     <details closed><summary><b>[Output]</b></summary>
