@@ -165,7 +165,13 @@ buildDSconfig() {
     echo "DS_CONFIG: ${DS_CONFIG}"
     printf "ZS: %s, MB: %s, GB: %s, PP: %s, DTYPE: %s" ${ZERO_STAGE} ${MICRO_BATCH} ${GLOBAL_BATCH} ${PP} ${DTYPE}
     # generateConfig "${DS_CONFIG}"
-    bash "${PBS_O_WORKDIR}/generate_config.sh" "${DS_CONFIG}"  #|| exit 1
+    use_cpu_opt=$1
+    if [[ $use_cpu_opt ]]; then
+        echo "!!! Using CPU Optimizer !!!"
+        bash "${PBS_O_WORKDIR}/generate_config_cpu_optimizer.sh" "${DS_CONFIG}"
+    else
+        bash "${PBS_O_WORKDIR}/generate_config.sh" "${DS_CONFIG}"  #|| exit 1
+    fi
     # -------------------------------------------------------------
 }
 
