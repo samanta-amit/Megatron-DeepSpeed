@@ -95,6 +95,7 @@ export hfds="${HERE}/hostfile_deepspeed" && [ -f "${hfds}" ] || exit
 run_cmd="
     deepspeed --hostfile $hfds --launcher MPICH ${EXEC} \
     --$DTYPE \
+    --cpu-optimizer \
     --num-workers 0 \
     --split 100,0,0 \
     --log-interval 1 \
