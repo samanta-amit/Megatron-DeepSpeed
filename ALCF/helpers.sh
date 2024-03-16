@@ -39,6 +39,7 @@ setParams() {
         export CCL=${CCL:-ccl}           # CCL
         export BE="${CCL}"               # BE = CCL
         export DTYPE=${DTYPE:-bf16}      # DTYPE: bf16
+        MICRO_BATCH=${MICRO_BATCH:-4}    # MICRO_BATCH = 4
     # -------- [Polaris] -----------------------------------
     elif [[ $(hostname) == x3* ]]; then
         TP=${TP:-2}                      # TP = 2
@@ -46,6 +47,7 @@ setParams() {
         export NCCL=${NCCL:-nccl}        # NCCL
         export BE="${NCCL}"              # BE = NCCL
         export DTYPE=${DTYPE:-fp16}      # DTYPE: FP16
+        MICRO_BATCH=${MICRO_BATCH:-8}    # MICRO_BATCH = 8
     fi
     # ------------------------------------------------------------------------
     export PP="${PP}"
@@ -74,7 +76,9 @@ setParams() {
     # export GLOBAL_BATCH=$(( $WORLD_SIZE * $MICRO_BATCH * $GRAD_ACC_STEPS / $TP / $PP ))
     export GLOBAL_BATCH_MAX=$(( $WORLD_SIZE * $MICRO_BATCH * $GRAD_ACC_STEPS / $TP / $PP ))
     export GLOBAL_BATCH="${GLOBAL_BATCH:-${GLOBAL_BATCH_MAX}}"
-    export TOKENIZER_MODEL="${TOKENIZER_MODEL:-"/home/foremans/q4-drop_sunspot/llm.devkit/Megatron-DeepSpeed/tokenizer.model"}"
+    tm_a=/home/foremans/q4-drop_sunspot/llm.devkit/Megatron-DeepSpeed/tokenizer.model
+    tm_p="/eagle/datasets/dolma/utils/tokenizer.model"
+    export TOKENIZER_MODEL="${TOKENIZER_MODEL:-${tm_p:-${tm_a}}}"
     export MODEL_TYPE="llama-seq${SEQ}-pp${PP}-tp${TP}-${NLAYERS}layers-${HEADS}heads-${HIDDEN}hidden"
     export LLAMA_ARGS="--no-query-key-layer-scaling --use-rotary-position-embeddings --untie-embeddings-and-output-weights --swiglu --normalization rmsnorm --disable-bias-linear"
     # ----------------------------------------------------
@@ -222,14 +226,14 @@ makeHostfiles() {
     # source $(python3 -c 'import ezpz; print(ezpz.GETJOBENV.as_posix())') || exit
     source ezpz/src/ezpz/bin/savejobenv || exit #> /tmp/savejobenv.log 2>&1 &
     source ezpz/src/ezpz/bin/getjobenv || exit
-    export GPUS_PER_NODE="${NGPU_PER_HOST}"
-    # export GPUS_PER_NODE="${GPUS_PER_NODE}"
+    export GPUS_PER_NODE="${GPUS_PER_NODE:-${NGPU_PER_HOST}}"
     # ---- Make MPICH hostfile ----------------
+    hf="${HOSTFILE:-${PBS_NODEFILE}}"
     export hostfile_mpich=hostfile_mpich
-    cat "$PBS_NODEFILE" > "${hostfile_mpich}"
+    cat "${hf}" > "${hostfile_mpich}"
     # ---- Make DeepSpeed hostfile -------------------
     export hostfile_deepspeed=hostfile_deepspeed
-    cat "$PBS_NODEFILE" > "${hostfile_deepspeed}"
+    cat "${hf}" > "${hostfile_deepspeed}"
     sed -e "s/$/ slots=${GPUS_PER_NODE}/" -i "${hostfile_deepspeed}"
 }
 
