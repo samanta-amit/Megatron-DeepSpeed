@@ -32,7 +32,7 @@ saveDSenv || exit                   # 2. save env vars to `.deepspeed_env`
 ezpz || exit                        # 3. determine WORLD_SIZE, etc. from `PBS_*` vars
 makeHostfiles || exit               # 4. create `deepspeed` hostfile from `$PBS_NODEFILE`
 setParams || exit                   # 5. set command line arguments to pass to `"${EXEC}"`
-buildDSconfig || exit               # 6. create `deepspeed_config.json` from runtime params from ^
+buildDSconfig "${CPU_OPTIMIZER:-0}" || exit               # 6. create `deepspeed_config.json` from runtime params from ^
 setOutput || exit                   # 7. specify output directory for {logs, checkpoints, etc.}
 setArgs || exit                     # 8. specify additional `deepspeed` arguments
 setData "${DATA_FILE_LIST}"|| exit  # 9. specify `DATA_FILE_LIST` for dolma dataset
@@ -46,8 +46,13 @@ custom_args=" $@"
 # Assert `./hostfile_deepspeed` exists
 export hfds="${HERE}/hostfile_deepspeed" && [ -f "${hfds}" ] || exit
 
+# source "${HERE}/venvs/polaris/2024-03-14/bin/activate" || exit
+# echo "Using $(which python3)"
+# --launcher_args='--pmi=pmix'
+    # deepspeed --hostfile $hfds --launcher ${LAUNCHER} ${EXEC} \
+    # ${launch_cmd} \
 run_cmd="
-    deepspeed --hostfile $hfds --launcher ${LAUNCHER} ${EXEC} \
+    deepspeed --hostfile $hfds --launcher MPICH ${EXEC} \
     --use-flash-attn-v2 \
     --$DTYPE \
     --num-workers 0 \
@@ -69,7 +74,7 @@ run_cmd="
     --hidden-size ${HIDDEN} \
     --train-iters ${TRAIN_ITER} \
     --eval-iters ${EVAL_ITERS} \
-    --distributed-backend ${NCCL} \
+    --distributed-backend ${BE} \
     --num-attention-heads ${HEADS} \
     --save-interval ${SAVE_INTERVAL} \
     --eval-interval ${EVAL_INTERVAL} \
@@ -90,24 +95,6 @@ run_cmd="
     |& tee ${OUTPUT_LOG}
     "
 
-    # ---------------------------------------------------
-    # --vocab-file $VOCAB_FILE \
-    # --merge-file $MERGE_FILE \
-    # --lr-decay-iters 320000 \
-    # --lr-warmup-iters 5000 \
-    # --lr-decay-iters 10000 \
-    # --num-workers 4 \
-    # launch python3 ${EXEC} \
-    # --data-impl mmap \
-    # source ./ezpz/src/ezpz/bin/getjobenv || exit
-    # ---------------------------------------------------
-    # ${DIST_LAUNCH} ./local_rank.sh python3 ${EXEC} \
-    # ${DIST_LAUNCH} python3 ${EXEC} \
-    # deepspeed $launcher ${EXEC} \
-    # >> ${OUTPUT_LOG} 2>&1 &
-    # >> ${OUTPUT_LOG} 2>&1 &
-    # |& tee $OUTPUT_DIR/output.log
-    # ${EXTRA_ARGS} \
 
 echo "All DeepSpeed(s): $(which -a deepspeed)"
 echo "Using $(which deepspeed)"
