@@ -76,9 +76,11 @@ setParams() {
     # export GLOBAL_BATCH=$(( $WORLD_SIZE * $MICRO_BATCH * $GRAD_ACC_STEPS / $TP / $PP ))
     export GLOBAL_BATCH_MAX=$(( $WORLD_SIZE * $MICRO_BATCH * $GRAD_ACC_STEPS / $TP / $PP ))
     export GLOBAL_BATCH="${GLOBAL_BATCH:-${GLOBAL_BATCH_MAX}}"
-    tm_a=/home/foremans/q4-drop_sunspot/llm.devkit/Megatron-DeepSpeed/tokenizer.model
-    tm_p="/eagle/datasets/dolma/utils/tokenizer.model"
-    export TOKENIZER_MODEL="${TOKENIZER_MODEL:-${tm_p:-${tm_a}}}"
+    tm="${PBS_O_WORKDIR}/ALCF/tokenizer.model"
+    # tm_a=/home/foremans/q4-drop_sunspot/llm.devkit/Megatron-DeepSpeed/tokenizer.model
+    # tm_p="/eagle/datasets/dolma/utils/tokenizer.model"
+    # export TOKENIZER_MODEL="${TOKENIZER_MODEL:-${tm_p:-${tm_a}}}"
+    export TOKENIZER_MODEL="${TOKENIZER_MODEL:-${tm}}"
     export MODEL_TYPE="llama-seq${SEQ}-pp${PP}-tp${TP}-${NLAYERS}layers-${HEADS}heads-${HIDDEN}hidden"
     export LLAMA_ARGS="--no-query-key-layer-scaling --use-rotary-position-embeddings --untie-embeddings-and-output-weights --swiglu --normalization rmsnorm --disable-bias-linear"
     # ----------------------------------------------------
