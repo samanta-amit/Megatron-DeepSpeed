@@ -98,6 +98,7 @@
     ```bash
     $ conda activate "${DAY}"  # e.g. 2024-03-07
     $ conda install -c pytorch -c nvidia --solver libmamba mpi4py ninja transformers xformers triton pytorch torchvision torchaudio pytorch-cuda=11.8
+    $ conda install --solver libmamba mpi4py -c conda-forge -c pytorch -c nvidia
     $ python3 -m pip install --upgrade pip pybind11 toolong appdirs wandb sentencepiece ipython setuptools wheel ninja
     $ python3 -m pip install --upgrade deepspeed wandb
     ```
