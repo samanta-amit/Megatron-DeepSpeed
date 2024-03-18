@@ -45,6 +45,10 @@ module () {
 # eval "$(/home/foremans/miniconda3/bin/conda shell.zsh hook)"
 # conda activate q4-drop
 
+if [[ $(hostname) == x1* || $(hostname) == x4* ]] ; then
+  echo "!!!! Caught Intel XPU, using CPU_OPTIMIZER !!!!"
+  export CPU_OPTIMIZER=1;
+fi
 
 
 # +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
@@ -52,27 +56,24 @@ module () {
 cd "${PBS_O_WORKDIR}" || exit
 HERE=$(python3 -c 'import os; print(os.getcwd())')
 export HERE
-
-# PARENT="$(dirname "${HERE}")"
-# source "${PARENT}/setenv.sh" || exit
 # ---- 1. Assert `./pretrain_gpt_alcf.py` exists: -----------------------------
 export EXEC="${HERE}/pretrain_gpt_alcf.py"
 [ -f "${EXEC}" ] || exit
 # ---- 2. `source ./ALCF/helpers_alcf.sh`: ------------------------------------
 sourceFile "${HERE}/ALCF/helpers.sh" || exit
-# ---- 3. Call fns from `./ALCF/helpers_alcf.sh` ------------------------------
-setEnv || exit                      # 1. load `conda` environment
-saveDSenv || exit                   # 2. save env vars to `.deepspeed_env`
-ezpz || exit                        # 3. determine WORLD_SIZE, etc. from `PBS_*` vars
-makeHostfiles || exit               # 4. create `deepspeed` hostfile from `$PBS_NODEFILE`
-setParams || exit                   # 5. set command line arguments to pass to `"${EXEC}"`
-buildDSconfig || exit               # 6. create `deepspeed_config.json` from runtime params from ^
-setOutput || exit                   # 7. specify output directory for {logs, checkpoints, etc.}
-setArgs || exit                     # 8. specify additional `deepspeed` arguments
-setData "${DATA_FILE_LIST}"|| exit  # 9. specify `DATA_FILE_LIST` for dolma dataset
-setDSlauncher "${HERE}" || exit     # 10. set `launcher` args for `deepspeed ${launcher} ${EXEC} ${args}`
-printJobInfo || exit                # 11. print job info
-# +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+# ---- 3. Call fns from `./ALCF/helpers_alcf.sh` ------------------------------------------------------------------
+setEnv || exit                                # 1. load `conda` environment
+saveDSenv || exit                             # 2. save env vars to `.deepspeed_env`
+ezpz || exit                                  # 3. determine WORLD_SIZE, etc. from `PBS_*` vars
+makeHostfiles || exit                         # 4. create `deepspeed` hostfile from `$PBS_NODEFILE`
+setParams || exit                             # 5. set command line arguments to pass to `"${EXEC}"`
+buildDSconfig || exit   # 6. create `deepspeed_config.json` from runtime params from ^
+setOutput || exit                             # 7. specify output directory for {logs, checkpoints, etc.}
+setArgs || exit                               # 8. specify additional `deepspeed` arguments
+setData "${DATA_FILE_LIST}"|| exit            # 9. specify `DATA_FILE_LIST` for dolma dataset
+setDSlauncher "${HERE}" || exit               # 10. set `launcher` args for `deepspeed ${launcher} ${EXEC} ${args}`
+printJobInfo || exit                          # 11. print job info
+# ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
 # Take custom args
 custom_args=" $@"
@@ -95,7 +96,6 @@ export hfds="${HERE}/hostfile_deepspeed" && [ -f "${hfds}" ] || exit
 run_cmd="
     deepspeed --hostfile $hfds --launcher MPICH ${EXEC} \
     --$DTYPE \
-    --cpu-optimizer \
     --num-workers 0 \
     --split 100,0,0 \
     --log-interval 1 \
