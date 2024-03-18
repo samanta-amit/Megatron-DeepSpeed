@@ -32,7 +32,7 @@ saveDSenv || exit                   # 2. save env vars to `.deepspeed_env`
 ezpz || exit                        # 3. determine WORLD_SIZE, etc. from `PBS_*` vars
 makeHostfiles || exit               # 4. create `deepspeed` hostfile from `$PBS_NODEFILE`
 setParams || exit                   # 5. set command line arguments to pass to `"${EXEC}"`
-buildDSconfig "${CPU_OPTIMIZER:-0}" || exit               # 6. create `deepspeed_config.json` from runtime params from ^
+buildDSconfig || exit               # 6. create `deepspeed_config.json` from runtime params from ^
 setOutput || exit                   # 7. specify output directory for {logs, checkpoints, etc.}
 setArgs || exit                     # 8. specify additional `deepspeed` arguments
 setData "${DATA_FILE_LIST}"|| exit  # 9. specify `DATA_FILE_LIST` for dolma dataset
