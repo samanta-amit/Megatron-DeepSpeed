@@ -40,12 +40,15 @@ setParams() {
         export BE="${CCL}"               # BE = CCL
         export DTYPE=${DTYPE:-bf16}      # DTYPE: bf16
         MICRO_BATCH=${MICRO_BATCH:-4}    # MICRO_BATCH = 4
+        echo "!!!! Using CPU_OPTIMIZER on Intel XPU by Default !!!!"
+        export CPU_OPTIMIZER=${CPU_OPTIMIZER:-1}  # CPU OPTIMIZER ON INTEL XPU
     # -------- [Polaris] -----------------------------------
     elif [[ $(hostname) == x3* ]]; then
         TP=${TP:-2}                      # TP = 2
         PP=${PP:-1}                      # PP = 1
         export NCCL=${NCCL:-nccl}        # NCCL
         export BE="${NCCL}"              # BE = NCCL
+        # export DTYPE=${DTYPE:-bf16}      # DTYPE: BF16 ??
         export DTYPE=${DTYPE:-fp16}      # DTYPE: FP16
         MICRO_BATCH=${MICRO_BATCH:-8}    # MICRO_BATCH = 8
     fi
@@ -83,7 +86,8 @@ setParams() {
     export TOKENIZER_MODEL="${TOKENIZER_MODEL:-${tm}}"
     export MODEL_TYPE="llama-seq${SEQ}-pp${PP}-tp${TP}-${NLAYERS}layers-${HEADS}heads-${HIDDEN}hidden"
     export LLAMA_ARGS="--no-query-key-layer-scaling --use-rotary-position-embeddings --untie-embeddings-and-output-weights --swiglu --normalization rmsnorm --disable-bias-linear"
-    if [[ "${CPU_OPTIMIZER:-0}" ]]; then
+    # if [[ "${CPU_OPTIMIZER:-0}" ]]; then
+    if [[ -n "${CPU_OPTIMIZER}" ]]; then
         echo "\n!!! Appending \`--cpu-optimizer\` to LLAMA_ARGS..."
         export LLAMA_ARGS="${LLAMA_ARGS} --cpu-optimizer"
     fi
@@ -168,13 +172,11 @@ buildDSconfig() {
     export DS_CONFIG="ds_stage${ZERO_STAGE}_mb${MICRO_BATCH}_gb${GLOBAL_BATCH}_pp${PP}_${DTYPE}.json"
     echo "DS_CONFIG: ${DS_CONFIG}"
     printf "ZS: %s, MB: %s, GB: %s, PP: %s, DTYPE: %s" ${ZERO_STAGE} ${MICRO_BATCH} ${GLOBAL_BATCH} ${PP} ${DTYPE}
-    # generateConfig "${DS_CONFIG}"
-    use_cpu_opt=$1
-    if [[ $use_cpu_opt ]]; then
+    if [[ -z "${CPU_OPTIMIZER}" ]]; then
+        bash "${PBS_O_WORKDIR}/generate_config.sh" "${DS_CONFIG}"  #|| exit 1
+    else
         echo "!!! Using CPU Optimizer !!!"
         bash "${PBS_O_WORKDIR}/generate_config_cpu_optimizer.sh" "${DS_CONFIG}"
-    else
-        bash "${PBS_O_WORKDIR}/generate_config.sh" "${DS_CONFIG}"  #|| exit 1
     fi
     # -------------------------------------------------------------
 }
