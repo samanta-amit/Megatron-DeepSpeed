@@ -959,6 +959,11 @@ def _add_training_args(parser):
     group.add_argument('--use-dataset-only', type=bool, required=False, default=False,
                        help='If set to True, only use the megatron dataset for external trainer ')
     group.add_argument('--profile', action='store_true', help='Enable Torch Profiler')
+    group.add_argument('--train-iters-to-skip', action="extend", nargs="+", type=str,
+                       help=(
+                           "Specific train iterations to skip when training. "
+                           "Load the data and just perform a noop."
+                       ))
     return parser
 
 
@@ -1510,7 +1515,6 @@ def _add_activation_checkpoint_args(parser):
 def _add_distillation_args(parser):
     group = parser.add_argument_group('Knowledge distillation',
                                       'Distillation Configurations')
-    
     group.add_argument('--num-layers-teacher', type=int, default=None,
                        help='Number of the teacher transformer layers.')                  
     group.add_argument('--num-experts-teacher', type=int, nargs='+', default=[1,],
@@ -1519,7 +1523,6 @@ def _add_distillation_args(parser):
                        help='Tansformer teacher hidden size.')
     group.add_argument('--num-attention-heads-teacher', type=int, default=None,
                        help='Number of teacher transformer attention heads.') 
-
     group.add_argument('--mos', action='store_true',
                        help='Enable Mixture-of-Students via knolwedge distillation.')
     group.add_argument('--kd', action='store_true',
@@ -1529,7 +1532,6 @@ def _add_distillation_args(parser):
     group.add_argument('--kd-temp', default=1.0, type=float)
     group.add_argument('--reset-iteration', action='store_true',
                     help='Reset the iteration count.')
-    
     group.add_argument('--load-teacher', type=str, default=None,
                        help='Directory containing a teacher model checkpoint.')
 

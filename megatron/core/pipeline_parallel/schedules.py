@@ -241,6 +241,17 @@ def backward_step(input_tensor, output_tensor, output_tensor_grad, model_type, c
     # needs to be modified slightly to support arbitrary numbers of skip
     # connections.
     args = get_args()
+    assert args is not None
+    if config.timers is not None:
+        config.timers('backward-compute', log_level=2).start()
+    # if (to_skip := args.train_iters_to_skip) is not None and len(to_skip) > 0:
+    to_skip = getattr(args, 'train_iters_to_skip', None)
+    if to_skip is not None:
+        if config.timers is not None:
+            config.timers('backward-compute').stop()
+        if args.iteration in [int(i) for i in to_skip]:
+            print(f'Caught {args.iteration=} in `iters_to_skip`! Skipping!')
+            return [None]
     if args.deepspeed:
         assert model is not None
 
