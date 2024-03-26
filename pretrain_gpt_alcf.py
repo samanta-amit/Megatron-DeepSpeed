@@ -153,12 +153,14 @@ def model_provider(pre_process=True, post_process=True):
     see_memory_usage("After Building Model", force=True)
     if wandb.run is not None:
         wandb.run.config.update({'num_params': num_params})
-    #     wandb.run.watch(
-    #         model,
-    #         log='all',
-    #         log_graph=True,
-    #     )
-    #     wandb.run.config.update({'num_params': num_params})
+        try:
+            wandb.run.watch(
+                model,
+                log='all',
+                log_graph=True,
+            )
+        except Exception:
+            pass
     return model
 
 
