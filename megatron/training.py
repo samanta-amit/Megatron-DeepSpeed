@@ -143,6 +143,8 @@ def pretrain(train_valid_test_dataset_provider,
 
     args = get_args()
     timers = get_timers()
+    assert args is not None
+    assert timers is not None
 
     if args.deepspeed:
         args.deepspeed_config_dict = _create_ds_config_dict()
@@ -319,6 +321,7 @@ def setup_teacher_model(args, model_provider):
 def get_model(model_provider_func, model_type=ModelType.encoder_or_decoder, wrap_with_ddp=True):
     """Build the model."""
     args = get_args()
+    assert args is not None
     args.model_type = model_type
 
     # Build model.
