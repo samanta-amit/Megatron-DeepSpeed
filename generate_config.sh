@@ -24,6 +24,14 @@ fi
 #     \"weight_decay\": 1e-1
 #   }
 # },
+# \"scheduler\": {
+#   \"type\": \"WarmupLR\",
+#   \"params\": {
+#       \"warmup_min_lr\": 0.00003,
+#       \"warmup_max_lr\": 0.0003,
+#       \"warmup_num_steps\": 5000
+#   }
+# },
 
 extra=""
 common="\
@@ -31,14 +39,6 @@ common="\
     \"train_micro_batch_size_per_gpu\": $MICRO_BATCH,
     \"steps_per_print\": 1,
     \"gradient_accumulation_steps\": $GRAD_ACC_STEPS,
-    \"scheduler\": {
-      \"type\": \"WarmupLR\",
-      \"params\": {
-          \"warmup_min_lr\": 0.00003,
-          \"warmup_max_lr\": 0.0003,
-          \"warmup_num_steps\": 5000
-      }
-    },
     \"zero_allow_untested_optimizer\": true,
     \"gradient_clipping\": 1.0,
     \"activation_checkpointing\": {
