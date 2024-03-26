@@ -40,8 +40,11 @@ setParams() {
         export BE="${CCL}"               # BE = CCL
         export DTYPE=${DTYPE:-bf16}      # DTYPE: bf16
         MICRO_BATCH=${MICRO_BATCH:-4}    # MICRO_BATCH = 4
-        echo "!!!! Using CPU_OPTIMIZER on Intel XPU by Default !!!!"
-        export CPU_OPTIMIZER=${CPU_OPTIMIZER:-1}  # CPU OPTIMIZER ON INTEL XPU
+        # if [[ -z "${CPU_OPTIMIZER}" ]]; then
+        #     CPU_OPTIMIZER=1
+        # fi
+        # echo "!!!! Using CPU_OPTIMIZER on Intel XPU by Default !!!!"
+        # export CPU_OPTIMIZER=${CPU_OPTIMIZER:-1}  # CPU OPTIMIZER ON INTEL XPU
     # -------- [Polaris] -----------------------------------
     elif [[ $(hostname) == x3* ]]; then
         TP=${TP:-2}                      # TP = 2
@@ -53,8 +56,10 @@ setParams() {
         MICRO_BATCH=${MICRO_BATCH:-8}    # MICRO_BATCH = 8
     fi
     # ------------------------------------------------------------------------
+    # export OFFLOAD_DEVICE="${OFFLOAD_DEVICE:-none}"
     export PP="${PP}"
     export TP="${TP}"
+    export OPT="${OPT:-adamw}"
     export HOSTFILE="${HOSTFILE:-${PBS_NODEFILE}}"
     export WORLD_SIZE=${WORLD_SIZE:-$(wc -l < "${HOSTFILE}")}
     # ---- Llama2 7B Config ------------------------------
@@ -87,9 +92,13 @@ setParams() {
     export MODEL_TYPE="llama-seq${SEQ}-pp${PP}-tp${TP}-${NLAYERS}layers-${HEADS}heads-${HIDDEN}hidden"
     export LLAMA_ARGS="--no-query-key-layer-scaling --use-rotary-position-embeddings --untie-embeddings-and-output-weights --swiglu --normalization rmsnorm --disable-bias-linear"
     # if [[ "${CPU_OPTIMIZER:-0}" ]]; then
-    if [[ -n "${CPU_OPTIMIZER}" ]]; then
+    # if [[ -n "${CPU_OPTIMIZER}" ]]; then
+    if [[ "${CPU_OPTIMIZER}" == 1 ]]; then
+        export OFFLOAD_DEVICE="cpu"
         echo "\n!!! Appending \`--cpu-optimizer\` to LLAMA_ARGS..."
         export LLAMA_ARGS="${LLAMA_ARGS} --cpu-optimizer"
+    else
+        export OFFLOAD_DEVICE="none"
     fi
     # ----------------------------------------------------
 }
@@ -171,13 +180,15 @@ buildDSconfig() {
     # ---- Build DeepSpeed Config ---------------------------------
     export DS_CONFIG="ds_stage${ZERO_STAGE}_mb${MICRO_BATCH}_gb${GLOBAL_BATCH}_pp${PP}_${DTYPE}.json"
     echo "DS_CONFIG: ${DS_CONFIG}"
-    printf "ZS: %s, MB: %s, GB: %s, PP: %s, DTYPE: %s" ${ZERO_STAGE} ${MICRO_BATCH} ${GLOBAL_BATCH} ${PP} ${DTYPE}
-    if [[ -z "${CPU_OPTIMIZER}" ]]; then
-        bash "${PBS_O_WORKDIR}/generate_config.sh" "${DS_CONFIG}"  #|| exit 1
-    else
-        echo "!!! Using CPU Optimizer !!!"
-        bash "${PBS_O_WORKDIR}/generate_config_cpu_optimizer.sh" "${DS_CONFIG}"
-    fi
+    printf "ZS: %s, CPU_OPTIMIZER: %s, MB: %s, GB: %s, PP: %s, DTYPE: %s" "${ZERO_STAGE}" "${CPU_OPTIMIZER}" "${MICRO_BATCH}" "${GLOBAL_BATCH}" "${PP}" "${DTYPE}"
+    bash "${PBS_O_WORKDIR}/generate_config.sh" "${DS_CONFIG}"
+    # if [[ -z "${CPU_OPTIMIZER}" ]]; then
+    #     echo "!!! Using GPU Optimizer !!!"
+    #     bash "${PBS_O_WORKDIR}/generate_config.sh" "${DS_CONFIG}"  #|| exit 1
+    # else
+    #     echo "!!! Using CPU Optimizer !!!"
+    #     bash "${PBS_O_WORKDIR}/generate_config_cpu_optimizer.sh" "${DS_CONFIG}"
+    # fi
     # -------------------------------------------------------------
 }
 
