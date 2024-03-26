@@ -41,15 +41,6 @@ module () {
   return $__lmod_my_status
 }
 
-#
-# eval "$(/home/foremans/miniconda3/bin/conda shell.zsh hook)"
-# conda activate q4-drop
-
-if [[ $(hostname) == x1* || $(hostname) == x4* ]] ; then
-  echo "!!!! Caught Intel XPU, using CPU_OPTIMIZER !!!!"
-  export CPU_OPTIMIZER=1;
-fi
-
 
 # +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 # ---- 0. Navigate into `$PBS_O_WORKDIR` -------------------------------------
@@ -67,7 +58,7 @@ saveDSenv || exit                             # 2. save env vars to `.deepspeed_
 ezpz || exit                                  # 3. determine WORLD_SIZE, etc. from `PBS_*` vars
 makeHostfiles || exit                         # 4. create `deepspeed` hostfile from `$PBS_NODEFILE`
 setParams || exit                             # 5. set command line arguments to pass to `"${EXEC}"`
-buildDSconfig || exit   # 6. create `deepspeed_config.json` from runtime params from ^
+buildDSconfig || exit                         # 6. create `deepspeed_config.json` from runtime params from ^
 setOutput || exit                             # 7. specify output directory for {logs, checkpoints, etc.}
 setArgs || exit                               # 8. specify additional `deepspeed` arguments
 setData "${DATA_FILE_LIST}"|| exit            # 9. specify `DATA_FILE_LIST` for dolma dataset
@@ -81,21 +72,15 @@ custom_args=" $@"
 # Assert `./hostfile_deepspeed` exists
 export hfds="${HERE}/hostfile_deepspeed" && [ -f "${hfds}" ] || exit
 
-# hf="${HOSTFILE:-${PBS_NODEFILE}}"
-# nh=$(wc -l "${hf}")
-# if [[ "${nh}" -gt 1 ]]; then
-#     launch_cmd="deepspeed --hostfile $hfds --launcher MPICH ${EXEC}"
-# else
-#     launch_cmd="python3 ${EXEC}"
-# fi
-#
-# echo "launch_cmd: ${launch_cmd}"
-
     # --use-flash-attn-v2 \
-    # python3 ${EXEC} \
+    # --use-flash-attn \
+    # --$DTYPE \
+    # --optimizer adamw \
+    # --adam-beta1 0.9 \
+    # --adam-beta2 0.95 \
 run_cmd="
     deepspeed --hostfile $hfds --launcher MPICH ${EXEC} \
-    --$DTYPE \
+    --optimizer ${OPT} \
     --num-workers 0 \
     --split 100,0,0 \
     --log-interval 1 \
@@ -108,9 +93,9 @@ run_cmd="
     --accumulate-allreduce-grads-in-fp32 \
     --use-checkpoint-opt_param-scheduler \
     --lr ${LR} \
-    --seq-length $SEQ \
     --save ${CKPT_DIR} \
     --load ${CKPT_DIR} \
+    --seq-length ${SEQ} \
     --num-layers ${NLAYERS} \
     --hidden-size ${HIDDEN} \
     --train-iters ${TRAIN_ITER} \
@@ -155,12 +140,10 @@ run_cmd="
     # |& tee $OUTPUT_DIR/output.log
     # ${EXTRA_ARGS} \
 
-echo "All DeepSpeed(s): $(which -a deepspeed)"
-echo "Using $(which deepspeed)"
+echo "! Using $(which deepspeed)"
 ds_report
 
 echo "${run_cmd}"
-
 printf "[!! \e[1;31m%s\e[0m] View output at:\n" "NOTE"
 printf "\e[1;34m%s\e[0m\n" "${OUTPUT_LOG}"
 # echo "${OUTPUT_LOG}"
