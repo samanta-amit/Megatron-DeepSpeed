@@ -800,7 +800,7 @@ def _add_training_args(parser):
                        '                      <batch size incerement> '
                        '                      <ramp-up samples> '
                        'For example:'
-                       '   --rampup-batch-size 16 8 300000 \ '
+                       '   --rampup-batch-size 16 8 300000 \\ '
                        '   --global-batch-size 1024'
                        'will start with global batch size 16 and over '
                        ' (1024 - 16) / 8 = 126 intervals will increase'
@@ -914,7 +914,7 @@ def _add_training_args(parser):
                        help='Disable bias in the linear layers',
                        dest='add_bias_linear')
     group.add_argument('--optimizer', type=str, default='adam',
-                       choices=['adam', 'sgd'],
+                       choices=['adam', 'adamw', 'sgd'],
                        help='Optimizer function')
     group.add_argument('--dataloader-type', type=str, default=None,
                        choices=['single', 'cyclic'],
