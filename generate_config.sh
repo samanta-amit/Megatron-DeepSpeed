@@ -14,22 +14,23 @@ if [ $# -ne 1 ]; then
   exit 1
 fi
 
+# \"optimizer\": {
+#   \"type\": \"AdamW\",
+#   \"params\": {
+#     \"lr\": ${LR},
+#     \"beta1\": 0.9,
+#     \"beta2\": 0.95,
+#     \"eps\": 1e-5,
+#     \"weight_decay\": 1e-1
+#   }
+# },
+
 extra=""
 common="\
     \"train_batch_size\": $GLOBAL_BATCH,
     \"train_micro_batch_size_per_gpu\": $MICRO_BATCH,
     \"steps_per_print\": 1,
     \"gradient_accumulation_steps\": $GRAD_ACC_STEPS,
-    \"optimizer\": {
-      \"type\": \"AdamW\",
-      \"params\": {
-        \"lr\": ${LR},
-        \"beta1\": 0.9,
-        \"beta2\": 0.95,
-        \"eps\": 1e-5,
-        \"weight_decay\": 1e-1
-      }
-    },
     \"scheduler\": {
       \"type\": \"WarmupLR\",
       \"params\": {
@@ -70,7 +71,7 @@ dtype="\
       \"enabled\": true,
       \"loss_scale\": 1.0
     },"
-else
+elif [[ $DTYPE == "fp16" ]]; then
 dtype="\
     \"communication_data_type\": \"fp16\",
     \"fp16\": {
@@ -84,6 +85,8 @@ dtype="\
       \"enabled\": false,
       \"loss_scale\": 1.0
     },"
+else
+  dtype="\"communication_data_type\": \"fp32\","
 fi
 
 if [ $ZERO_STAGE == 3 ]; then
@@ -107,27 +110,43 @@ zero="\
         \"pin_memory\": true
       }
     },"
-elif [ $ZERO_STAGE == 2 ] || [ $ZERO_STAGE == 1 ]; then
+
+# elif [[ $ZERO_STAGE == 2 ]]; then
+elif [ "${ZERO_STAGE}" == 2 ] || [ "${ZERO_STAGE}" == 1 ]; then
+
+if [[ -n "${CPU_OPTIMIZER}" ]]; then
+echo "!!!! CAUGHT CPU_OPTIMIZER !!!!"
+
+zero="\
+    \"zero_optimization\": {
+        \"stage\": $ZERO_STAGE,
+        \"offload_optimizer\": {
+          \"device\": \"cpu\"
+        }
+    },"
+
+else
 zero="\
     \"zero_optimization\": {
       \"stage\": $ZERO_STAGE
     },"
-  if [ $ZERO_STAGE == 1 ]; then
-    if [ $PP > 1 ]; then
-    extra="\
-        \"data_types\": {
-          \"grad_accum_dtype\": \"fp32\"
-        },
-        \"comms_logger\": {
-          \"enabled\": true,
-          \"verbose\": false,
-          \"prof_all\": true,
-          \"debug\": false
-        },"
-    else
-      echo 'please add the config for zero_stage 1 without pipeline-parallelism'
-    fi
-  fi
+fi
+
+# elif [[ $ZERO_STAGE == 1 ]]; then
+if [[ $PP > 1 ]]; then
+  extra="\
+      \"data_types\": {
+        \"grad_accum_dtype\": \"fp32\"
+      },
+      \"comms_logger\": {
+        \"enabled\": true,
+        \"verbose\": false,
+        \"prof_all\": true,
+        \"debug\": false
+      },"
+else
+  echo 'please add the config for zero_stage 1 without pipeline-parallelism'
+fi
 else
   echo 'Please add the correct config set!!!'
 fi
