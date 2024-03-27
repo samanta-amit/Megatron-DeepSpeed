@@ -92,6 +92,8 @@ run_cmd="
     --no-gradient-accumulation-fusion \
     --accumulate-allreduce-grads-in-fp32 \
     --use-checkpoint-opt_param-scheduler \
+    --log-timers-to-tensorboard \
+    --log-optimizer-states-to-tensorboard \
     --lr ${LR} \
     --save ${CKPT_DIR} \
     --load ${CKPT_DIR} \
