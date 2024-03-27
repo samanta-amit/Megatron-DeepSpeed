@@ -755,7 +755,6 @@ def train_step(forward_step_func, data_iterator,
         skipped_iter = 0
         grad_norm = None
         num_zeros_in_grad = None
-        
         loss_reduced = {}
         for key in losses_reduced[0]:
             losses_reduced_for_key = [x[key] for x in losses_reduced]
@@ -793,7 +792,7 @@ def training_log(loss_dict, total_loss_dict, learning_rate, iteration,
     args = get_args()
     timers = get_timers()
     writer = get_tensorboard_writer()
-
+    wandb_metrics = {}
     # Advanced, skipped, and Nan iterations.
     advanced_iters_key = 'advanced iterations'
     skipped_iters_key = 'skipped iterations'
@@ -852,11 +851,15 @@ def training_log(loss_dict, total_loss_dict, learning_rate, iteration,
         'optimizer']
 
     # Calculate batch size.
-    batch_size = args.micro_batch_size * args.data_parallel_size * \
-        get_num_microbatches()
-
-    total_iterations = total_loss_dict[advanced_iters_key] + \
-                       total_loss_dict[skipped_iters_key]
+    batch_size = (
+            args.micro_batch_size
+            * args.data_parallel_size
+            * get_num_microbatches()
+    )
+    total_iterations = (
+            total_loss_dict[advanced_iters_key] 
+            + total_loss_dict[skipped_iters_key]
+    )
 
     # Tensorboard values.
     # Timer requires all the ranks to call.
@@ -870,6 +873,10 @@ def training_log(loss_dict, total_loss_dict, learning_rate, iteration,
         writer.add_scalar('steps-vs-tokens/y=steps,x=tokens', iteration, args.consumed_train_tokens)
         writer.add_scalar('steps-vs-tokens/y=tokens,x=steps', args.consumed_train_tokens, iteration)
         if args.log_learning_rate_to_tensorboard:
+            wandb_metrics |= {
+                'learning-rate/iteration': iteration,
+                'learning-rate/learning-rate': learning_rate,
+            }
             writer.add_scalar('learning-rate/learning-rate', learning_rate, iteration)
             writer.add_scalar('learning-rate/learning-rate vs samples', learning_rate,
                               args.consumed_train_samples)
@@ -881,7 +888,12 @@ def training_log(loss_dict, total_loss_dict, learning_rate, iteration,
                               args.consumed_train_samples)
             writer.add_scalar('batch-size/batch-size vs tokens', batch_size,
                               args.consumed_train_tokens)
+        wandb_metrics |= {
+            'lm-loss-training/iteration': iteration,
+            'lm-loss-training/consumed_train_tokens': args.consumed_train_tokens,
+        }
         for key in loss_dict:
+            wandb_metrics |= {f'lm-loss-training/{key}': loss_dict[key]}
             writer.add_scalar(f"lm-loss-training/{key}", loss_dict[key], iteration)
             writer.add_scalar(f"lm-loss-training/{key}" + ' vs samples', loss_dict[key],
                               args.consumed_train_samples)
@@ -900,18 +912,21 @@ def training_log(loss_dict, total_loss_dict, learning_rate, iteration,
             writer.add_scalar('world-size/world-size vs tokens', args.world_size,
                               args.consumed_train_tokens)
         if grad_norm is not None:
+            wandb_metrics |= {'training/grad-norm': grad_norm}
             writer.add_scalar('grad-norm/grad-norm', grad_norm, iteration)
             writer.add_scalar('grad-norm/grad-norm vs samples', grad_norm,
                               args.consumed_train_samples)
             writer.add_scalar('grad-norm/grad-norm vs tokens', grad_norm,
                               args.consumed_train_tokens)
         if num_zeros_in_grad is not None:
+            wandb_metrics |= {'training/num-zeros': num_zeros_in_grad}
             writer.add_scalar('num-zeros/num-zeros', num_zeros_in_grad, iteration)
             writer.add_scalar('num-zeros/num-zeros vs samples', num_zeros_in_grad,
                               args.consumed_train_samples)
             writer.add_scalar('num-zeros/num-zeros vs tokens', num_zeros_in_grad,
                               args.consumed_train_tokens)
         if params_norm is not None:
+            wandb_metrics |= {'training/params-norm': params_norm}
             writer.add_scalar('params-norm/params-norm', params_norm, iteration)
             writer.add_scalar('params-norm/params-norm vs samples', params_norm,
                               args.consumed_train_samples)
@@ -955,7 +970,6 @@ def training_log(loss_dict, total_loss_dict, learning_rate, iteration,
                 mem_stats["allocation.all.current"],
                 iteration,
             )
-
     if iteration % args.tensorboard_log_interval == 0:
         # This logging write various optimizer states to tensorboard. This
         # feature may consume extra GPU memory thus is set at false by default.
@@ -979,26 +993,49 @@ def training_log(loss_dict, total_loss_dict, learning_rate, iteration,
             # print('step {} rank {} before sync opt_stats {}, {}'.format(iteration, torch.distributed.get_rank(), opt_stats_2, opt_stats))
             if args.zero_stage > 0:
                 # ZeRO partiions optimizer states
+                # opt_stats = opt_stats.clone().detach()
+                # opt_stats = get_accelerator().FloatTensor
                 opt_stats = get_accelerator().FloatTensor(opt_stats)
                 torch.distributed.all_reduce(opt_stats, group=mpu.get_sequence_data_parallel_group())
+                # opt_stats_2 = get_accelerator().FloatTensor(opt_stats_2)
+                # opt_stats_2 = opt_stats_2.clone().detach()
                 opt_stats_2 = get_accelerator().FloatTensor(opt_stats_2)
                 torch.distributed.all_reduce(opt_stats_2, op=torch.distributed.ReduceOp.MAX,
                     group=mpu.get_sequence_data_parallel_group())
 
             if args.tensor_model_parallel_size > 1:
+                # opt_stats = opt_stats.clone().detach()
                 opt_stats = get_accelerator().FloatTensor(opt_stats)
                 torch.distributed.all_reduce(opt_stats, group=mpu.get_tensor_model_parallel_group())
+                # opt_stats_2 = opt_stats_2.clone().detach()
                 opt_stats_2 = get_accelerator().FloatTensor(opt_stats_2)
                 torch.distributed.all_reduce(opt_stats_2, op=torch.distributed.ReduceOp.MAX,
                     group=mpu.get_tensor_model_parallel_group())
 
             if args.pipeline_model_parallel_size > 1:
+                # opt_stats = opt_stats.clone().detach()
                 opt_stats = get_accelerator().FloatTensor(opt_stats)
                 torch.distributed.all_reduce(opt_stats, group=mpu.get_pipeline_model_parallel_group())
+                # opt_stats_2 = opt_stats_2.clone().detach()
                 opt_stats_2 = get_accelerator().FloatTensor(opt_stats_2)
                 torch.distributed.all_reduce(opt_stats_2, op=torch.distributed.ReduceOp.MAX,
                     group=mpu.get_pipeline_model_parallel_group())
-
+            wandb_metrics |= {
+                'optimizer/iteration': args.iteration,
+                'optimizer/consumed_train_tokens': args.consumed_train_tokens,
+                'optimizer/variance_l2': opt_stats[0]**0.5,
+                'optimizer/variance_sqrt_l2': opt_stats[1]**0.5,
+                'optimizer/momentum_l2': opt_stats[2]**0.5,
+                'optimizer/weight_l2': opt_stats[3]**0.5,
+                'optimizer/variance_l1': opt_stats[4],
+                'optimizer/variance_sqrt_l1': opt_stats[5],
+                'optimizer/momentum_l1': opt_stats[6],
+                'optimizer/weight_l1': opt_stats[7],
+                'optimizer/variance_abs_max': opt_stats_2[0],
+                'optimizer/variance_sqrt_abs_max': opt_stats_2[1],
+                'optimizer/momentum_abs_max': opt_stats_2[2],
+                'optimizer/weight_abs_max': opt_stats_2[3],
+            }
             # print('step {} rank {} after sync opt_stats {}, {}'.format(iteration, torch.distributed.get_rank(), opt_stats_2, opt_stats))
             if writer and is_last_rank():
                 writer.add_scalar('optimizer/variance_l2 vs tokens', opt_stats[0]**0.5, args.consumed_train_tokens)
@@ -1045,27 +1082,24 @@ def training_log(loss_dict, total_loss_dict, learning_rate, iteration,
         tokens_per_sec_per_replica = tokens_per_sec / args.data_parallel_size
         tokens_per_gpu_per_second = tokens_per_sec / args.world_size
         tokens_per_gpu_per_second_per_replica = tokens_per_gpu_per_second / args.data_parallel_size
-        wandb_metrics = {}
-        if wandb is not None and getattr(wandb, 'run', None) is not None:
-            assert wandb.run is not None
-            wandb_metrics = {
-                'throughput/iteration-time': elapsed_time_per_iteration,  # 1000 ms / s
-                'throughput/samples_per_sec': samples_per_sec,
-                'throughput/samples_per_sec_per_replica': samples_per_sec_per_replica,
-                'throughput/tokens_per_sec': tokens_per_sec,
-                'throughput/tokens_per_sec_per_replica': tokens_per_sec_per_replica,
-                'throughput/tokens_per_gpu_per_sec': tokens_per_gpu_per_second,
-                'throughput/tokens_per_gpu_per_sec_per_replica': tokens_per_gpu_per_second_per_replica,
-                'throughput/tflops': tflops,
-                'throughput/approx_params_in_billions': approx_parameters_in_billions,
-                'throughput/elapsed_ms_per_iteration': elapsed_time_per_iteration,
-                'throughput/iteration': iteration,
+        wandb_metrics |= {
+            'throughput/iteration-time': elapsed_time_per_iteration,  # 1000 ms / s
+            'throughput/samples_per_sec': samples_per_sec,
+            'throughput/samples_per_sec_per_replica': samples_per_sec_per_replica,
+            'throughput/tokens_per_sec': tokens_per_sec,
+            'throughput/tokens_per_sec_per_replica': tokens_per_sec_per_replica,
+            'throughput/tokens_per_gpu_per_sec': tokens_per_gpu_per_second,
+            'throughput/tokens_per_gpu_per_sec_per_replica': tokens_per_gpu_per_second_per_replica,
+            'throughput/tflops': tflops,
+            'throughput/approx_params_in_billions': approx_parameters_in_billions,
+            'throughput/elapsed_ms_per_iteration': elapsed_time_per_iteration,
+            'throughput/iteration': iteration,
+        }
+        if loss_dict is not None:
+            wandb_metrics |= {
+                'loss/iteration': iteration,
+                **{f'loss/{k}': v for k, v in loss_dict.items()}
             }
-            if loss_dict is not None:
-                wandb_metrics |= {
-                    'loss/iteration': iteration,
-                    **{f'loss/{k}': v for k, v in loss_dict.items()}
-                }
         if writer and args.log_timers_to_tensorboard:
             writer.add_scalar('iteration-time/iteration-time',
                               elapsed_time_per_iteration, iteration)
@@ -1073,31 +1107,36 @@ def training_log(loss_dict, total_loss_dict, learning_rate, iteration,
                               elapsed_time_per_iteration, args.consumed_train_samples)
             writer.add_scalar('iteration-time/iteration-time vs tokens',
                               elapsed_time_per_iteration, args.consumed_train_tokens)
-        log_string = ' iteration {:8d}/{:8d} |'.format(
-            iteration, args.train_iters)
-        log_string += ' consumed samples: {:12d} |'.format(
-            args.consumed_train_samples)
-        log_string += ' consumed tokens: {:12d} |'.format(
-            args.consumed_train_tokens)
-        log_string += ' elapsed time per iteration (ms): {:.1f} |'.format(
-            elapsed_time_per_iteration * 1000.0)
-        log_string += ' learning rate: {:.3E} |'.format(learning_rate)
-        log_string += ' global batch size: {:5d} |'.format(batch_size)
-        if wandb is not None and getattr(wandb, 'run', None) is not None:
-            wandb_metrics |= {
-                'training/iteration': iteration,
-                'training/iteration_time': elapsed_time_per_iteration,
-                'training/iteration_time_vs_tokens': (
-                    (elapsed_time_per_iteration
-                        / args.consumed_train_tokens)
-                ),
-                'training/iteration_time_vs_samples': (
-                    (elapsed_time_per_iteration
-                        / args.consumed_train_samples),
-                ),
-                'training/consumed_samples': args.consumed_train_samples,
-                'training/consumed_tokens': args.consumed_train_tokens,
-            }
+        log_string = f' iteration {iteration:8d}/{args.train_iters:8d} |'
+        # .format( iteration, args.train_iters)
+        log_string += (
+                f' consumed samples: {args.consumed_train_samples:12d} |'
+                # .format(args.consumed_train_samples)
+        )
+        log_string += f' consumed tokens: {args.consumed_train_tokens:12d} |'
+        # .format( args.consumed_train_tokens)
+        log_string += (
+                ' elapsed time per iteration (ms): '
+                f'{elapsed_time_per_iteration * 1000.0:.1f} |'
+                # .format( elapsed_time_per_iteration * 1000.0)
+        )
+        log_string += f' learning rate: {learning_rate:.3E} |'
+        log_string += f' global batch size: {batch_size:5d} |'
+        # if wandb is not None and getattr(wandb, 'run', None) is not None:
+        wandb_metrics |= {
+            'training/iteration': iteration,
+            'training/iteration_time': elapsed_time_per_iteration,
+            'training/iteration_time_vs_tokens': (
+                (elapsed_time_per_iteration
+                    / args.consumed_train_tokens)
+            ),
+            'training/iteration_time_vs_samples': (
+                (elapsed_time_per_iteration
+                    / args.consumed_train_samples),
+            ),
+            'training/consumed_samples': args.consumed_train_samples,
+            'training/consumed_tokens': args.consumed_train_tokens,
+        }
         for key in total_loss_dict:
             if key not in [advanced_iters_key, skipped_iters_key,
                            nan_iters_key]:
