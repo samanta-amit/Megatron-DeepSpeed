@@ -51,6 +51,7 @@ export hfds="${HERE}/hostfile_deepspeed" && [ -f "${hfds}" ] || exit
 # --launcher_args='--pmi=pmix'
     # deepspeed --hostfile $hfds --launcher ${LAUNCHER} ${EXEC} \
     # ${launch_cmd} \
+    # --optimizer adam \
 run_cmd="
     deepspeed --hostfile $hfds --launcher MPICH ${EXEC} \
     --use-flash-attn-v2 \
@@ -66,6 +67,7 @@ run_cmd="
     --no-gradient-accumulation-fusion \
     --accumulate-allreduce-grads-in-fp32 \
     --use-checkpoint-opt_param-scheduler \
+    --log-optimizer-states-to-tensorboard \
     --lr ${LR} \
     --seq-length $SEQ \
     --save ${CKPT_DIR} \
