@@ -45,6 +45,8 @@ custom_args=" $@"
 
 # Assert `./hostfile_deepspeed` exists
 export hfds="${HERE}/hostfile_deepspeed" && [ -f "${hfds}" ] || exit
+TBDIR="${CKPT_DIR}/tensorboard"
+mkdir -p "${TBDIR}"
 
 # source "${HERE}/venvs/polaris/2024-03-14/bin/activate" || exit
 # echo "Using $(which python3)"
@@ -52,10 +54,11 @@ export hfds="${HERE}/hostfile_deepspeed" && [ -f "${hfds}" ] || exit
     # deepspeed --hostfile $hfds --launcher ${LAUNCHER} ${EXEC} \
     # ${launch_cmd} \
     # --optimizer adam \
+    # --use-flash-attn-v2 \
 run_cmd="
     deepspeed --hostfile $hfds --launcher MPICH ${EXEC} \
-    --use-flash-attn-v2 \
     --$DTYPE \
+    --optimizer ${OPT} \
     --num-workers 0 \
     --split 100,0,0 \
     --log-interval 1 \
@@ -67,11 +70,13 @@ run_cmd="
     --no-gradient-accumulation-fusion \
     --accumulate-allreduce-grads-in-fp32 \
     --use-checkpoint-opt_param-scheduler \
+    --tensorboard-dir ${TBDIR} \
+    --log-timers-to-tensorboard \
     --log-optimizer-states-to-tensorboard \
     --lr ${LR} \
-    --seq-length $SEQ \
     --save ${CKPT_DIR} \
     --load ${CKPT_DIR} \
+    --seq-length ${SEQ} \
     --num-layers ${NLAYERS} \
     --hidden-size ${HIDDEN} \
     --train-iters ${TRAIN_ITER} \
@@ -98,8 +103,8 @@ run_cmd="
     "
 
 
-echo "All DeepSpeed(s): $(which -a deepspeed)"
-echo "Using $(which deepspeed)"
+# echo "All DeepSpeed(s): $(which -a deepspeed)"
+echo "! Using $(which deepspeed)"
 ds_report
 
 echo "${run_cmd}"

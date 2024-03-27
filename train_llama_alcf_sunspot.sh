@@ -72,6 +72,9 @@ custom_args=" $@"
 # Assert `./hostfile_deepspeed` exists
 export hfds="${HERE}/hostfile_deepspeed" && [ -f "${hfds}" ] || exit
 
+TBDIR="${CKPT_DIR}/tensorboard"
+mkdir -p "${TBDIR}"
+
     # --use-flash-attn-v2 \
     # --use-flash-attn \
     # --$DTYPE \
@@ -80,6 +83,7 @@ export hfds="${HERE}/hostfile_deepspeed" && [ -f "${hfds}" ] || exit
     # --adam-beta2 0.95 \
 run_cmd="
     deepspeed --hostfile $hfds --launcher MPICH ${EXEC} \
+    --${DTYPE} \
     --optimizer ${OPT} \
     --num-workers 0 \
     --split 100,0,0 \
@@ -92,6 +96,7 @@ run_cmd="
     --no-gradient-accumulation-fusion \
     --accumulate-allreduce-grads-in-fp32 \
     --use-checkpoint-opt_param-scheduler \
+    --tensorboard-dir ${TBDIR} \
     --log-timers-to-tensorboard \
     --log-optimizer-states-to-tensorboard \
     --lr ${LR} \
