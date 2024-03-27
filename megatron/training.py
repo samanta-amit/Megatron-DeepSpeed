@@ -63,26 +63,55 @@ def print_datetime(string):
     time_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     print_rank_0('[' + string + '] datetime: {} '.format(time_str))
 
+
+def num_floating_point_operations(args, batch_size):
+    # Group Query Attention.
+    # if not args.group_query_attention:
+    if not args.num_key_value_heads:
+        args.num_key_value_heads = args.num_attention_heads
+        # args.num_query_groups = args.num_attention_heads
+    # MoE.
+    # num_experts_routed_to = 1 if args.num_experts is None else args.moe_router_topk
+    num_experts_routed_to = 1 if args.num_experts is None else args.topk
+    gated_linear_multiplier = 3 / 2 if args.swiglu else 1
+    return (
+        12
+        * batch_size
+        * args.seq_length
+        * args.num_layers
+        * args.hidden_size
+        * args.hidden_size
+        * (
+            1
+            + (
+                (args.ffn_hidden_size / args.hidden_size)
+                * num_experts_routed_to
+                * gated_linear_multiplier
+            )
+            + (args.num_key_value_heads / args.num_attention_heads)
+            + (args.seq_length / args.hidden_size)
+            + (args.padded_vocab_size / (2 * args.num_layers * args.hidden_size))
+        )
+    )
+
 '''
 Since v0.9.0, deepspeed.initialize() has forbidden simultaneous setting of args.deepspeed_config (Path) and ds_config dict.
 So, we use ds_config dict which is the more flexible option. 
 '''
 def _create_ds_config_dict():
     args = get_args()
+    assert args is not None
     if isinstance(args.deepspeed_config, dict) :
         ds_config_dict = args.deepspeed_config
     else:
         with open(args.deepspeed_config, 'r', encoding='utf-8') as config_file:
             ds_config_dict = json.load(config_file)
-
     if args.universal_checkpoint:
         ds_config_dict["checkpoint"] = {"load_universal": True}
-
     # Clear config path
-    args.deepspeed_config = None 
-
+    args.deepspeed_config = None
     return ds_config_dict
-    
+
 
 def pretrain(train_valid_test_dataset_provider,
              model_provider,
@@ -1021,6 +1050,7 @@ def training_log(loss_dict, total_loss_dict, learning_rate, iteration,
                 torch.distributed.all_reduce(opt_stats_2, op=torch.distributed.ReduceOp.MAX,
                     group=mpu.get_pipeline_model_parallel_group())
             wandb_metrics |= {
+                'optimizer/learning_rate': learning_rate,
                 'optimizer/iteration': args.iteration,
                 'optimizer/consumed_train_tokens': args.consumed_train_tokens,
                 'optimizer/variance_l2': opt_stats[0]**0.5,
@@ -1077,6 +1107,10 @@ def training_log(loss_dict, total_loss_dict, learning_rate, iteration,
             elapsed_time,
             total_iterations
         )
+        num_flops = num_floating_point_operations(args, batch_size)
+        # throughput = (
+        #     num_floating_point_operations_so_far - arg
+        # )
         samples_per_sec_per_replica = samples_per_sec / args.data_parallel_size
         tokens_per_sec = samples_per_sec * seq_len
         tokens_per_sec_per_replica = tokens_per_sec / args.data_parallel_size
@@ -1091,6 +1125,8 @@ def training_log(loss_dict, total_loss_dict, learning_rate, iteration,
             'throughput/tokens_per_gpu_per_sec': tokens_per_gpu_per_second,
             'throughput/tokens_per_gpu_per_sec_per_replica': tokens_per_gpu_per_second_per_replica,
             'throughput/tflops': tflops,
+            'throughput/flops': num_flops,
+            'throughput/tflops-new': num_flops / elapsed_time_per_iteration,
             'throughput/approx_params_in_billions': approx_parameters_in_billions,
             'throughput/elapsed_ms_per_iteration': elapsed_time_per_iteration,
             'throughput/iteration': iteration,
