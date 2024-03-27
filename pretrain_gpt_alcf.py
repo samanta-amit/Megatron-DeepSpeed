@@ -25,6 +25,7 @@ from megatron.utils import (
     checkpoint_throughput_calculator
 )
 from pathlib import Path
+from enrich import get_logger
 
 import deepspeed
 from deepspeed.runtime.utils import see_memory_usage
@@ -43,6 +44,7 @@ from ezpz.dist import get_world_size, setup_wandb, get_rank
 #     backend='deepspeed',
 #     port='5432',
 # )
+log = get_logger(__name__)
 RANK = get_rank()
 WORLD_SIZE = get_world_size()
 LEVEL = "DEBUG" if RANK == 0 else "CRITICAL"
@@ -51,6 +53,10 @@ WANDB_MODE = os.environ.get('WANDB_MODE', None)
 DISABLE_WANDB = (
     WANDB_MODE is not None and str(WANDB_MODE).lower() == 'disabled'
 )
+if RANK == 0:
+    log.setLevel("INFO")
+else:
+    log.setLevel("CRITICAL")
 
 if RANK == 0 and not DISABLE_WANDB:
     project_name = (
@@ -74,9 +80,18 @@ def model_provider(pre_process=True, post_process=True):
     see_memory_usage("Before Building Model", force=True)
     args = get_args()
     config = core_transformer_config_from_args(args)
-    if wandb.run is not None:
-        print(f"Updating WandB run: [{wandb.run.name}]({wandb.run.url})")
-        wandb.run.config.update({"args": vars(args)})
+    # if wandb.run is not None and RANK == 0:
+    #     print(f"Updating WandB run: [{wandb.run.name}]({wandb.run.url})")
+    #     try:
+    #         wandb.run.config.update({"args": vars(args)})
+    #     except Exception:
+    #         log.error(
+    #             'Unable to `wandb.run.config.update({"args": vars(args)})`'
+    #         )
+    # if wandb is not None and wandb.run is not None:
+    #     assert wandb is not None and wandb.run is not None
+    #     print(f'Updating {wandb.run.name=} at {wandb.run.url=}')
+    #     wandb.run.config.update({'args': vars(args)})
     if RANK == 0:
         git_ds_info()
     if hasattr(mpu, 'get_sequence_parallel_group'):
@@ -85,10 +100,6 @@ def model_provider(pre_process=True, post_process=True):
         dpg = mpu.get_data_parallel_group()
     else:
         dpg = None
-    if wandb is not None and wandb.run is not None:
-        assert wandb is not None and wandb.run is not None
-        print(f'Updating {wandb.run.name=} at {wandb.run.url=}')
-        wandb.run.config.update({'args': vars(args)})
     with deepspeed.zero.Init(
             data_parallel_group=dpg,
             remote_device=(
@@ -153,6 +164,18 @@ def model_provider(pre_process=True, post_process=True):
     see_memory_usage("After Building Model", force=True)
     if wandb.run is not None:
         wandb.run.config.update({'num_params': num_params})
+        if "args" not in wandb.run.config:
+            log.info(
+                f"Updating WandB run.config: [{wandb.run.name}]({wandb.run.get_url()})"
+            )
+            try:
+                wandb.run.config.update(
+                    {"args": dict(sorted(vars(args).items()))}
+                )
+            except Exception:
+                log.error(
+                    'Unable to `wandb.run.config.update({"args": vars(args)})`'
+                )
         try:
             wandb.run.watch(
                 model,
