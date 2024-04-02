@@ -6,16 +6,16 @@
 #PBS -l filesystems=eagle:grand:home
 cd ${PBS_O_WORKDIR}
 export PPN=4
-export MD=/home/hzheng/ALCF-Megatron-DeepSpeed
-module load conda/2023-10-04
-#conda activate /soft/datascience/megatron-deepspeed/2023-10-04
-conda activate $HOME/PolarisAT/pyenvs/megatron/2023-10-04
+export MD=/eagle/argonne_tpc/soft/Megatron-DeepSpeed
+source /eagle/argonne_tpc/soft/conda.sh
+export TRITON_CACHE_DIR=/tmp/.cache/
+
 export TP=1
 export PP=1
 export SP=128
 export MBS=1
 export BS=$((MBS*SP))
-export export DATE_TAG=$(date +"%Y-%m-%d-%H-%M-%S")
+export DATE_TAG=$(date +"%Y-%m-%d-%H-%M-%S")
 export DATA_FILE_LIST="/eagle/datasets//dolma/data_file_list_reweighted.txt"
 
 HIDDEN_SIZE=4096
@@ -25,8 +25,9 @@ EMBEDDINGS=2048
 TRAIN_ITERS=80797
 ZERO_STAGE=2
 MODEL=LLAMA_7B
+export PBS_JOBSIZE=$(cat $PBS_NODEFILE | uniq | wc -l)
 OUTPUT_PREFIX=${MODEL}_z${ZERO_STAGE}_seqlen_mp${MP}_pp${PP}_sp${SP}_nl${NUM_LAYERS}_hs${HIDDEN_SIZE}_gb${BS}_mb${MBS}
-python3 ALCF_utils/test_blendable_dataset.py \
+APRUN_PMI=pmix aprun -n $((PBS_JOBSIZE*PPN)) -N $PPN --cc depth -d 16 ${MD}/local_rank.sh python3 ALCF/test_blendable_dataset.py \
 	   --tensor-model-parallel-size ${TP} \
 	   --pipeline-model-parallel-size ${PP} \
 	   --num-layers ${NUM_LAYERS} \
@@ -51,7 +52,6 @@ python3 ALCF_utils/test_blendable_dataset.py \
 	   --lr-warmup-iters 2 \
 	   --optimizer adam \
 	   --adam-beta1 0.9 \
-	   --mmap_warmup False \
 	   --adam-beta2 0.95 \
 	   --log-interval 1 \
 	   --cpu-optimizer \
@@ -70,4 +70,4 @@ python3 ALCF_utils/test_blendable_dataset.py \
 	   --data-path ${DATA_PATH} \
 	   --data-cache-path /tmp/hzheng-megatron-deepspeed-cache/ \
 	   --vocab-file ${MD}/dataset/gpt2-vocab.json --merge-file ${MD}/dataset/gpt2-merges.txt \
-	   --zero-stage=${ZERO_STAGE} --deepspeed_config=${MD}/ds_config-gpt.json --deepspeed
+	   --zero-stage=${ZERO_STAGE} --deepspeed_config=${MD}/ds_config-gpt.json --deepspeed 

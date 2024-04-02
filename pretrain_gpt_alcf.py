@@ -491,6 +491,7 @@ def train_valid_test_datasets_provider(train_val_test_num_samples):
                  'for GPT ...')
     files = []
     if args.data_file_list is not None:
+        print_rank_0(f"Reading datasets from {args.data_file_list}")
         with open(args.data_file_list, 'r') as flist:
             for f in flist.readlines():
                 w, fname = f.split()
@@ -504,7 +505,7 @@ def train_valid_test_datasets_provider(train_val_test_num_samples):
                 files.append(path + f.split(".bin")[0])
     else:
         files = args.data_path
-    print_rank_0(f"file list {files}")
+
     train_ds, valid_ds, test_ds = build_train_valid_test_datasets(
         data_prefix=files,
         data_impl=args.data_impl,

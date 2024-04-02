@@ -46,7 +46,7 @@ def build_pretraining_data_loader(dataset, consumed_samples):
         batch_sampler=batch_sampler,
         num_workers=args.num_workers,
         pin_memory=True,
-        # multiprocessing_context='spawn'
+        multiprocessing_context=args.multiprocessing_context
     )
     if args.repeated_dataloader:
         loader=RepeatingLoader(loader)
