@@ -53,11 +53,6 @@ setParams() {
         export DTYPE=${DTYPE:-bf16}      # DTYPE: bf16
         MICRO_BATCH=${MICRO_BATCH:-4}    # MICRO_BATCH = 4
         export WORKING_DIR="${PBS_O_WORKDIR}"
-        # if [[ -z "${CPU_OPTIMIZER}" ]]; then
-        #     CPU_OPTIMIZER=1
-        # fi
-        # echo "!!!! Using CPU_OPTIMIZER on Intel XPU by Default !!!!"
-        # export CPU_OPTIMIZER=${CPU_OPTIMIZER:-1}  # CPU OPTIMIZER ON INTEL XPU
     # -------- [Polaris] -----------------------------------
     elif [[ $(hostname) == x3* ]]; then
         TP=${TP:-2}                      # TP = 2
@@ -67,10 +62,11 @@ setParams() {
         export DTYPE=${DTYPE:-fp16}      # DTYPE: FP16
         MICRO_BATCH=${MICRO_BATCH:-8}    # MICRO_BATCH = 8
         export WORKING_DIR="${PBS_O_WORKDIR}"
+    # -------- [Perlmutter] ---------------------------------
     elif [[ $(hostname) == login* || $(hostname) == nid* ]]; then
         TP="${TP:-2}"
         export NCCL="${NCCL:-nccl}"
-        export BE="${CCL}"
+        export BE="${NCCL}"
         export DTYPE="${DTYPE:-bf16}"
         MICRO_BATCH="${MICRO_BATCH:-8}"
         export WORKING_DIR="${SLURM_SUBMIT_DIR}"
