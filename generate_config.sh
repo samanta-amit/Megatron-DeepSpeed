@@ -49,7 +49,7 @@ common="\
 
 flops_profiler="\
     \"flops_profiler\": {
-      \"enabled\": false,
+      \"enabled\": true,
       \"profile_step\": 45,
       \"module_depth\": -1,
       \"top_modules\": 1,
@@ -94,6 +94,8 @@ zero="\
     \"zero_optimization\": {
       \"stage\": 3,
       \"reduce_scatter\": false,
+      \"mics_shard_size\": 4,
+      \"mics_hierarchical_params_gather\": true,
       \"stage3_max_live_parameters\": 3e9,
       \"stage3_max_reuse_distance\": 3e9,
       \"stage3_param_persistence_threshold\": 1e5,
@@ -145,7 +147,14 @@ if [[ $PP > 1 ]]; then
         \"debug\": false
       },"
 else
-  echo 'please add the config for zero_stage 1 without pipeline-parallelism'
+  # echo 'please add the config for zero_stage 1 without pipeline-parallelism'
+  extra="\
+      \"comms_logger\": {
+        \"enabled\": true,
+        \"verbose\": false,
+        \"prof_all\": true,
+        \"debug\": false
+      },"
 fi
 else
   echo 'Please add the correct config set!!!'
