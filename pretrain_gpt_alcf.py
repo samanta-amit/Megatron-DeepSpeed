@@ -571,18 +571,21 @@ def main():
                 model_provider,
                 ModelType.encoder_or_decoder,
                 forward_step,
-                args_defaults={'tokenizer_type': 'GPT2BPETokenizer'},
+                # args_defaults={'tokenizer_type': 'GPT2BPETokenizer'},
                 data_post_process=data_post_process
             )
-
-        prof.export_chrome_trace(f"{args.tensorboard_dir}/torch-trace-{RANK}-of-{WORLD_SIZE}.json")
+        args = get_args()
+        prof.export_chrome_trace(
+            f"{args.tensorboard_dir}"
+            "/torch-trace-{RANK}-of-{WORLD_SIZE}.json"
+        )
     else:
         model = pretrain(
             train_valid_test_datasets_provider,
             model_provider,
             ModelType.encoder_or_decoder,
             forward_step,
-            args_defaults={'tokenizer_type': 'GPT2BPETokenizer'},
+            # args_defaults={'tokenizer_type': 'GPT2BPETokenizer'},
             data_post_process=data_post_process
         )
     return model
