@@ -12,6 +12,19 @@ printJobInfo() {
     echo "++++++++++++++++++++++++++++++++++++++++++++++++++"
 }
 
+
+function setupSrun() {
+    if [[ $(hostname) == login* || $(hostname) == nid* ]]; then
+        export NHOSTS="${SLURM_NNODES:-1}"
+        export NGPU_PER_HOST="${SLURM_GPUS_ON_NODE:-$(nvidia-smi -L | wc -l)}"
+        export NGPUS="$(( NHOSTS * NGPU_PER_HOST ))"
+        export SRUN_EXEC="srun --gpus ${NGPUS} --gpus-per-node ${NGPU_PER_HOST} -N ${NHOSTS} -n ${NGPUS} -l -u --verbose"
+    else
+        echo "Skipping setupSrun() on $(hostname)"
+    fi
+}
+
+
 function setDSlauncher() {
     # launcher setting
     outdir=$1
@@ -35,11 +48,11 @@ setParams() {
     # -------- [Aurora] ---- || ----- [SunSpot] ------------
     if [[ $(hostname) == x4* || $(hostname) == x1* ]]; then
         TP=${TP:-1}                      # TP = 1
-        PP=${PP:-1}                      # PP = 1
         export CCL=${CCL:-ccl}           # CCL
         export BE="${CCL}"               # BE = CCL
         export DTYPE=${DTYPE:-bf16}      # DTYPE: bf16
         MICRO_BATCH=${MICRO_BATCH:-4}    # MICRO_BATCH = 4
+        export WORKING_DIR="${PBS_O_WORKDIR}"
         # if [[ -z "${CPU_OPTIMIZER}" ]]; then
         #     CPU_OPTIMIZER=1
         # fi
@@ -48,17 +61,24 @@ setParams() {
     # -------- [Polaris] -----------------------------------
     elif [[ $(hostname) == x3* ]]; then
         TP=${TP:-2}                      # TP = 2
-        PP=${PP:-1}                      # PP = 1
         export NCCL=${NCCL:-nccl}        # NCCL
         export BE="${NCCL}"              # BE = NCCL
         # export DTYPE=${DTYPE:-bf16}      # DTYPE: BF16 ??
         export DTYPE=${DTYPE:-fp16}      # DTYPE: FP16
         MICRO_BATCH=${MICRO_BATCH:-8}    # MICRO_BATCH = 8
+        export WORKING_DIR="${PBS_O_WORKDIR}"
+    elif [[ $(hostname) == login* || $(hostname) == nid* ]]; then
+        TP="${TP:-2}"
+        export NCCL="${NCCL:-nccl}"
+        export BE="${CCL}"
+        export DTYPE="${DTYPE:-bf16}"
+        MICRO_BATCH="${MICRO_BATCH:-8}"
+        export WORKING_DIR="${SLURM_SUBMIT_DIR}"
     fi
     # ------------------------------------------------------------------------
-    # export OFFLOAD_DEVICE="${OFFLOAD_DEVICE:-none}"
-    export PP="${PP}"
     export TP="${TP}"
+    export PP="${PP:-1}"
+    export DTYPE="${DTYPE:-bf16}"
     export OPT="${OPT:-adamw}"
     export HOSTFILE="${HOSTFILE:-${PBS_NODEFILE}}"
     export WORLD_SIZE=${WORLD_SIZE:-$(wc -l < "${HOSTFILE}")}
@@ -82,19 +102,10 @@ setParams() {
     export USE_ACTIVATION_CHECKPOINTING=${USE_ACTIVATION_CHECKPOINTING:-1}
     export GLOBAL_BATCH_MAX=$(( $WORLD_SIZE * $MICRO_BATCH * $GRAD_ACC_STEPS / $TP / $PP ))
     export GLOBAL_BATCH="${GLOBAL_BATCH:-${GLOBAL_BATCH_MAX}}"
-    tm="${PBS_O_WORKDIR}/ALCF/tokenizer.model"
+    tm="${WORKING_DIR}/ALCF/tokenizer.model"
     export TOKENIZER_MODEL="${TOKENIZER_MODEL:-${tm}}"
     export MODEL_TYPE="llama-seq${SEQ}-pp${PP}-tp${TP}-${NLAYERS}layers-${HEADS}heads-${HIDDEN}hidden"
     export LLAMA_ARGS="--no-query-key-layer-scaling --use-rotary-position-embeddings --untie-embeddings-and-output-weights --swiglu --normalization rmsnorm --disable-bias-linear"
-    # # if [[ "${CPU_OPTIMIZER:-0}" ]]; then
-    # # if [[ -n "${CPU_OPTIMIZER}" ]]; then
-    # if [[ "${CPU_OPTIMIZER}" == 1 ]]; then
-    #     export OFFLOAD_DEVICE="cpu"
-    #     echo "\n!!! Appending \`--cpu-optimizer\` to LLAMA_ARGS..."
-    #     export LLAMA_ARGS="${LLAMA_ARGS} --cpu-optimizer"
-    # else
-    #     export OFFLOAD_DEVICE="none"
-    # fi
     # ----------------------------------------------------
 }
 
@@ -176,14 +187,8 @@ buildDSconfig() {
     export DS_CONFIG="ds_stage${ZERO_STAGE}_mb${MICRO_BATCH}_gb${GLOBAL_BATCH}_pp${PP}_${DTYPE}.json"
     echo "DS_CONFIG: ${DS_CONFIG}"
     printf "ZS: %s, CPU_OPTIMIZER: %s, MB: %s, GB: %s, PP: %s, DTYPE: %s" "${ZERO_STAGE}" "${CPU_OPTIMIZER}" "${MICRO_BATCH}" "${GLOBAL_BATCH}" "${PP}" "${DTYPE}"
-    bash "${PBS_O_WORKDIR}/generate_config.sh" "${DS_CONFIG}"
-    # if [[ -z "${CPU_OPTIMIZER}" ]]; then
-    #     echo "!!! Using GPU Optimizer !!!"
-    #     bash "${PBS_O_WORKDIR}/generate_config.sh" "${DS_CONFIG}"  #|| exit 1
-    # else
-    #     echo "!!! Using CPU Optimizer !!!"
-    #     bash "${PBS_O_WORKDIR}/generate_config_cpu_optimizer.sh" "${DS_CONFIG}"
-    # fi
+    working_dir="${PBS_O_WORKDIR:-${SLURM_SUBMIT_DIR:-$(pwd)}}"
+    bash "${working_dir}/generate_config.sh" "${DS_CONFIG}"
     # -------------------------------------------------------------
 }
 
@@ -224,29 +229,21 @@ setEnv() {
         echo "Running on Polaris !!"
         # ---- [load conda] ---------------------
         module load conda/2023-10-04; conda activate cu118-pt221 ; unset PYTHONUSERBASE
-        # module load conda/2023-10-04 ; conda activate /lus/eagle/projects/datascience/foremans/miniconda3/envs/polaris/py311-cu118 
-        # ; conda activate /lus/eagle/projects/datascience/foremans/miniconda3/envs/polaris/2024-03-06
-        # export PYTHONUSERBASE="${HOME}/.local/polaris/conda/py311-cu118"
-        # mkdir -p "${PYTHONUSERBASE}"
-        # if [[ "${VIRTUAL_ENV}" ]]; then
-        #     echo "Caught VIRTUAL_ENV = ${VIRTUAL_ENV} from environment!!"
-        # else
-        #     echo "Not using VIRTUAL_ENV"
-        #     # sourceFile "${HERE}/venvs/polaris/2023-10-04/bin/activate" || exit
-        # fi
+    elif [[ $(hostname) == login* || $(hostname) == nid* ]]; then
+        echo "Running on Perlmutter !!"
+        module load pytorch
+        source "${SLURM_SUBMIT_DIR}/venvs/perlmutter/pytorch-2.1.0-cu12/bin/activate"
     else # ------------------------------------- [Unknown] -------------------
         echo "Unknown hostname $(hostname)"
         exit 1
     fi
+    echo "[python] Using: $(which python3)"
 }
 
 makeHostfiles() {
-    # GPUS_PER_NODE=$(python3 -Wignore -c 'import ezpz; print(ezpz.get_gpus_per_node())')
-    # source $(python3 -c 'import ezpz; print(ezpz.SAVEJOBENV.as_posix())') || exit
-    # source $(python3 -c 'import ezpz; print(ezpz.GETJOBENV.as_posix())') || exit
     source ezpz/src/ezpz/bin/savejobenv || exit #> /tmp/savejobenv.log 2>&1 &
     source ezpz/src/ezpz/bin/getjobenv || exit
-    export GPUS_PER_NODE="${GPUS_PER_NODE:-${NGPU_PER_HOST}}"
+    export GPUS_PER_NODE="${GPUS_PER_NODE:-${NGPU_PER_HOST:-${SLURM_GPUS_ON_NODE:-$(nvidia-smi -L | wc -l)}}}"
     # ---- Make MPICH hostfile ----------------
     hf="${HOSTFILE:-${PBS_NODEFILE}}"
     export hostfile_mpich=hostfile_mpich
@@ -264,6 +261,8 @@ setData() {  # ---- [dfl: abbrv. for DATA_FILE_LIST] -------------------------
         dfl_fallback="/gila/Aurora_deployment/AuroraGPT/datasets/dolma/data_file_list_reweighted.txt"
     elif [[ $(hostname) == x3* ]]; then
         dfl_fallback="/eagle/datasets/dolma/data_file_list_reweighted.txt"
+    elif [[ $(hostname) == login* || $(hostname) == nid* ]]; then
+        dfl_fallback="${SLURM_SUBMIT_DIR}/genslm-subsample.txt"
     else
         echo "Unknown hostname. Must manually specify DATA_FILE_LIST."
     fi
