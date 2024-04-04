@@ -50,11 +50,11 @@ mkdir -p "${TBDIR}"
 # source "${HERE}/venvs/polaris/2024-03-14/bin/activate" || exit
 # echo "Using $(which python3)"
 # --launcher_args='--pmi=pmix'
-    # deepspeed --hostfile $hfds --launcher ${LAUNCHER} ${EXEC} \
-    # ${launch_cmd} \
-    # --optimizer adam \
-    # --use-flash-attn-v2 \
-    # --num-workers 0 \
+# deepspeed --hostfile $hfds --launcher ${LAUNCHER} ${EXEC} \
+# ${launch_cmd} \
+# --use-flash-attn-v2 \
+# --num-workers 0 \
+
 run_cmd="
     deepspeed --hostfile $hfds --launcher MPICH ${EXEC} \
     --$DTYPE \

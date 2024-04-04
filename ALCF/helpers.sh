@@ -102,6 +102,9 @@ setParams() {
     export TOKENIZER_MODEL="${TOKENIZER_MODEL:-${tm}}"
     export MODEL_TYPE="llama-seq${SEQ}-pp${PP}-tp${TP}-${NLAYERS}layers-${HEADS}heads-${HIDDEN}hidden"
     export LLAMA_ARGS="--no-query-key-layer-scaling --use-rotary-position-embeddings --untie-embeddings-and-output-weights --swiglu --normalization rmsnorm --disable-bias-linear"
+    if [[ -z "${NO_FLASH_ATTN}" ]]; then
+        export LLAMA_ARGS="${LLAMA_ARGS} --use-flash-attn-v2"
+    fi
     # ----------------------------------------------------
 }
 
