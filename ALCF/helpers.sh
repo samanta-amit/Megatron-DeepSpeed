@@ -44,6 +44,7 @@ function setDSlauncher() {
 }
 
 setParams() {
+    LLAMA_ARGS=""
     # ---- [Parallelism Settings] --------------------------------------------
     # -------- [Aurora] ---- || ----- [SunSpot] ------------
     if [[ $(hostname) == x4* || $(hostname) == x1* ]]; then
@@ -53,6 +54,9 @@ setParams() {
         export DTYPE=${DTYPE:-bf16}      # DTYPE: bf16
         MICRO_BATCH=${MICRO_BATCH:-4}    # MICRO_BATCH = 4
         export WORKING_DIR="${PBS_O_WORKDIR}"
+        if [[ -z "${NO_FLASH_ATTN}" ]]; then
+            LLAMA_ARGS="${LLAMA_ARGS} --use-flash-attn"
+        fi
     # -------- [Polaris] -----------------------------------
     elif [[ $(hostname) == x3* ]]; then
         TP=${TP:-2}                      # TP = 2
@@ -62,6 +66,9 @@ setParams() {
         export DTYPE=${DTYPE:-fp16}      # DTYPE: FP16
         MICRO_BATCH=${MICRO_BATCH:-8}    # MICRO_BATCH = 8
         export WORKING_DIR="${PBS_O_WORKDIR}"
+        if [[ -z "${NO_FLASH_ATTN}" ]]; then
+            LLAMA_ARGS="${LLAMA_ARGS} --use-flash-attn-v2"
+        fi
     # -------- [Perlmutter] ---------------------------------
     elif [[ $(hostname) == login* || $(hostname) == nid* ]]; then
         TP="${TP:-2}"
@@ -70,6 +77,9 @@ setParams() {
         export DTYPE="${DTYPE:-bf16}"
         MICRO_BATCH="${MICRO_BATCH:-8}"
         export WORKING_DIR="${SLURM_SUBMIT_DIR}"
+        if [[ -z "${NO_FLASH_ATTN}" ]]; then
+            LLAMA_ARGS="${LLAMA_ARGS} --use-flash-attn-v2"
+        fi
     fi
     # ------------------------------------------------------------------------
     export TP="${TP}"
@@ -101,10 +111,7 @@ setParams() {
     tm="${WORKING_DIR}/ALCF/tokenizer.model"
     export TOKENIZER_MODEL="${TOKENIZER_MODEL:-${tm}}"
     export MODEL_TYPE="llama-seq${SEQ}-pp${PP}-tp${TP}-${NLAYERS}layers-${HEADS}heads-${HIDDEN}hidden"
-    export LLAMA_ARGS="--no-query-key-layer-scaling --use-rotary-position-embeddings --untie-embeddings-and-output-weights --swiglu --normalization rmsnorm --disable-bias-linear"
-    if [[ -z "${NO_FLASH_ATTN}" ]]; then
-        export LLAMA_ARGS="${LLAMA_ARGS} --use-flash-attn-v2"
-    fi
+    export LLAMA_ARGS="${LLAMA_ARGS} --no-query-key-layer-scaling --use-rotary-position-embeddings --untie-embeddings-and-output-weights --swiglu --normalization rmsnorm --disable-bias-linear"
     # ----------------------------------------------------
 }
 
