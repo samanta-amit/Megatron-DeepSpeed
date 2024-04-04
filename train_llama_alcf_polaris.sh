@@ -55,11 +55,11 @@ mkdir -p "${TBDIR}"
     # ${launch_cmd} \
     # --optimizer adam \
     # --use-flash-attn-v2 \
+    # --num-workers 0 \
 run_cmd="
     deepspeed --hostfile $hfds --launcher MPICH ${EXEC} \
     --$DTYPE \
     --optimizer ${OPT} \
-    --num-workers 0 \
     --split 100,0,0 \
     --log-interval 1 \
     --no-bias-gelu-fusion \
