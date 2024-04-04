@@ -113,15 +113,17 @@ def _create_ds_config_dict():
     return ds_config_dict
 
 
-def pretrain(train_valid_test_dataset_provider,
-             model_provider,
-             model_type,
-             forward_step_func,
-             process_non_loss_data_func=None,
-             extra_args_provider=None,
-             args_defaults={},
-             data_post_process=None,
-             external_args={}):
+def pretrain(
+        train_valid_test_dataset_provider,
+        model_provider,
+        model_type,
+        forward_step_func,
+        process_non_loss_data_func=None,
+        extra_args_provider=None,
+        args_defaults={},
+        data_post_process=None,
+        external_args={},
+) -> torch.nn.Module:
     """Main training program.
 
     This function will run the followings in the order provided:
@@ -149,6 +151,9 @@ def pretrain(train_valid_test_dataset_provider,
             to it. It is used for programs to add their own arguments.
         args_defaults: a dictionary from argument-name to argument-value. It
             to set already parse arguments.
+
+    Returns:
+        model (torch.nn.Module)
     """
 
     # Initalize and get arguments, timers, and Tensorboard writer.
