@@ -196,3 +196,14 @@ modules and launch
     # [...]
     ```
     </details>
+
+### Data Preprocessing 
+
+AuroraGPT is trained on the Dolma dataset (initially v0), now in the process of moving to v6. For more details on the dataset, refer to https://huggingface.co/datasets/allenai/dolma. The dolma dataset downloaded is already preprocessing to remove the duplicates (dedup) and filtering the data (mixing). For more details refer to https://github.com/allenai/dolma/tree/main/docs and https://github.com/vksastry/dolma_alcf/blob/main/ALCF/Readme.md. 
+
+The data preprocessing of Dolma dataset before training consists of tokenization of the data using a specific tokenizer (LlamaTokenizer is what we are currently using), Use the below script to tokenize the entire dataset. Example shown for Polaris. 
+
+``` bash
+cd /eagle/datasets/dolma/utils
+./tokenization.sh
+``` 
