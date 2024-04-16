@@ -1018,18 +1018,37 @@ def training_log(loss_dict, total_loss_dict, learning_rate, iteration,
             opt_stats_2 = [0.0] * 4
             for _, group in enumerate(optimizer.param_groups):
                 for _, param in enumerate(group['params']):
-                    opt_stats[0] += (torch.norm(optimizer.state[param]['exp_avg_sq']).item())**2
-                    opt_stats[1] += (torch.norm(optimizer.state[param]['exp_avg_sq'].sqrt()).item())**2
-                    opt_stats[2] += (torch.norm(optimizer.state[param]['exp_avg']).item())**2
-                    opt_stats[3] += (torch.norm(param).item())**2
-                    opt_stats[4] += torch.norm(optimizer.state[param]['exp_avg_sq'],p=1).item()
-                    opt_stats[5] += torch.norm(optimizer.state[param]['exp_avg_sq'].sqrt(),p=1).item()
-                    opt_stats[6] += torch.norm(optimizer.state[param]['exp_avg'],p=1).item()
-                    opt_stats[7] += torch.norm(param,p=1).item()
-                    opt_stats_2[0] = max(opt_stats_2[0], abs(optimizer.state[param]['exp_avg_sq'].max().item()), abs(optimizer.state[param]['exp_avg_sq'].min().item()))
-                    opt_stats_2[1] = max(opt_stats_2[1], optimizer.state[param]['exp_avg_sq'].sqrt().abs_().max().item())
-                    opt_stats_2[2] = max(opt_stats_2[2], abs(optimizer.state[param]['exp_avg'].max().item()), abs(optimizer.state[param]['exp_avg'].min().item()))
-                    opt_stats_2[3] = max(opt_stats_2[3], abs(param.max().item()), abs(param.min().item()))
+                    state_param = getattr(optimizer, 'state', None)
+                    if state_param is not None:
+                        exp_avg_sq = state_param.get('exp_avg_sq', torch.tensor(0.))
+                        exp_avg = state_param.get('exp_avg', torch.tensor(0.))
+                        opt_stats[0] += (torch.norm(exp_avg_sq).item()) ** 2
+                        opt_stats[1] += (torch.norm(exp_avg_sq.sqrt()).item()) ** 2
+                        opt_stats[2] += (torch.norm(exp_avg).item()) ** 2
+                        opt_stats[3] += (torch.norm(param).item()) ** 2
+                        opt_stats[4] += torch.norm(exp_avg_sq, p=1).item()
+                        opt_stats[5] += torch.norm(exp_avg_sq.sqrt(), p=1).item()
+                        opt_stats[6] += torch.norm(exp_avg, p=1).item()
+                        opt_stats[7] += torch.norm(param, p=1).item()
+                        opt_stats_2[0] = max(
+                            opt_stats_2[0],
+                            abs(exp_avg_sq.max().item()),
+                            abs(exp_avg_sq.min().item())
+                        )
+                        opt_stats_2[1] = max(
+                            opt_stats_2[1],
+                            exp_avg_sq.sqrt().abs_().max().item()
+                        )
+                        opt_stats_2[2] = max(
+                            opt_stats_2[2],
+                            abs(exp_avg.max().item()),
+                            abs(exp_avg.min().item())
+                        )
+                        opt_stats_2[3] = max(
+                            opt_stats_2[3],
+                            abs(param.max().item()),
+                            abs(param.min().item())
+                        )
             # print('step {} rank {} before sync opt_stats {}, {}'.format(iteration, torch.distributed.get_rank(), opt_stats_2, opt_stats))
             if args.zero_stage > 0:
                 # ZeRO partiions optimizer states

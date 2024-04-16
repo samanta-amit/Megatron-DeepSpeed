@@ -87,8 +87,22 @@ def get_megatron_optimizer(model,
                                        weight_decay=args.weight_decay,
                                        betas=(args.adam_beta1, args.adam_beta2),
                                        eps=args.adam_eps)
-    else:
-        if str(args.optimizer).lower() == 'apex.adam':
+    elif str(args.optimizer).lower() == 'adamwschedulefree':
+        import schedulefree
+        optimizer = schedulefree.AdamWScheduleFree(
+            param_groups,
+            lr=args.lr,
+            warmup_steps=args.lr_warmup_iters,
+        )
+    elif str(args.optimizer).lower() == 'sgdschedulefree':
+        import schedulefree
+        optimizer = schedulefree.SGDScheduleFree(
+            param_groups,
+            lr=args.lr,
+            warmup_steps=args.lr_warmup_iters,
+        )
+    # else:
+    elif str(args.optimizer).lower() == 'apex.adam':
             assert get_accelerator().device_name() == 'cuda'
             from apex.optimizers import FusedAdam as Adam
             optimizer = Adam(
@@ -98,45 +112,45 @@ def get_megatron_optimizer(model,
                 betas=(args.adam_beta1, args.adam_beta2),
                 eps=args.adam_eps
             )
-        elif str(args.optimizer).lower() == 'apex.sgd':
-            from apex.optimizers import FusedSGD as SGD
-            optimizer = SGD(
-                param_groups,
-                lr=args.lr,
-                weight_decay=args.weight_decay,
-                momentum=args.sgd_momentum
-            )
-        elif str(args.optimizer).lower() == 'adamw':
-            optimizer = torch.optim.AdamW(
-                param_groups,
-                lr=args.lr,
-                weight_decay=args.weight_decay,
-                betas=(args.adam_beta1, args.adam_beta2),
-                eps=args.adam_eps
-            )
-        elif args.optimizer == 'adam':
-            if args.ds_fused_adam:
-                # global Adam
-                from deepspeed.ops.adam import FusedAdam
-                Adam = FusedAdam
-            else:
-                Adam = torch.optim.Adam
-            optimizer = Adam(
-                param_groups,
-                lr=args.lr,
-                weight_decay=args.weight_decay,
-                betas=(args.adam_beta1, args.adam_beta2),
-                eps=args.adam_eps
-            )
-        elif args.optimizer == 'sgd':
-            optimizer = torch.optim.SGD(
-                param_groups,
-                lr=args.lr,
-                weight_decay=args.weight_decay,
-                momentum=args.sgd_momentum
-            )
+    elif str(args.optimizer).lower() == 'apex.sgd':
+        from apex.optimizers import FusedSGD as SGD
+        optimizer = SGD(
+            param_groups,
+            lr=args.lr,
+            weight_decay=args.weight_decay,
+            momentum=args.sgd_momentum
+        )
+    elif str(args.optimizer).lower() == 'adamw':
+        optimizer = torch.optim.AdamW(
+            param_groups,
+            lr=args.lr,
+            weight_decay=args.weight_decay,
+            betas=(args.adam_beta1, args.adam_beta2),
+            eps=args.adam_eps
+        )
+    elif args.optimizer == 'adam':
+        if args.ds_fused_adam:
+            # global Adam
+            from deepspeed.ops.adam import FusedAdam
+            Adam = FusedAdam
         else:
-            raise TypeError(f'{args.optimizer} optimizer is not supported.')
+            Adam = torch.optim.Adam
+        optimizer = Adam(
+            param_groups,
+            lr=args.lr,
+            weight_decay=args.weight_decay,
+            betas=(args.adam_beta1, args.adam_beta2),
+            eps=args.adam_eps
+        )
+    elif args.optimizer == 'sgd':
+        optimizer = torch.optim.SGD(
+            param_groups,
+            lr=args.lr,
+            weight_decay=args.weight_decay,
+            momentum=args.sgd_momentum
+        )
+    else:
+        raise TypeError(f'{args.optimizer} optimizer is not supported.')
     if args.deepspeed:
         return optimizer
 
