@@ -47,6 +47,15 @@ export hfds="${HERE}/hostfile_deepspeed" && [ -f "${hfds}" ] || exit
 TBDIR="${CKPT_DIR}/tensorboard"
 mkdir -p "${TBDIR}"
 
+# TORCH_DEVICE=$(python3 -c 'import ezpz as ez; print(ez.get_torch_device())')
+# printf %s "Using TORCH_DEVICE=${TORCH_DEVICE}"
+#
+# if [[ "${TORCH_DEVICE}" == "cuda" ]]; then
+#     printf %s "Setting PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True"
+#     PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+# fi
+
+
 # source "${HERE}/venvs/polaris/2024-03-14/bin/activate" || exit
 # echo "Using $(which python3)"
 # --launcher_args='--pmi=pmix'
@@ -55,6 +64,9 @@ mkdir -p "${TBDIR}"
 # --use-flash-attn-v2 \
 # --num-workers 0 \
 
+    # aprun -n "${NGPUS}" -N "${NGPU_PER_HOST}" --pmi=pmix ${PBS_O_WORKDIR}/local_rank.sh
+    # ${DIST_LAUNCH} $(which python3) ${EXEC} \
+# yeet="${DIST_LAUNCH} ./local_rank.sh"
 run_cmd="
     deepspeed --hostfile $hfds --launcher MPICH ${EXEC} \
     --$DTYPE \
