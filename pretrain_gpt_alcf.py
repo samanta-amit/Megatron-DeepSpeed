@@ -36,34 +36,33 @@ import wandb
 import time
 from torch import nn
 import torch.nn.functional as F
+import ezpz as ez
 
-# from ezpz import get_logger
-from ezpz.dist import get_world_size, setup_wandb, get_rank
 
-# RANK = setup_torch(
+# ---- SETUP DISTRIBUTED COMMS ----
+# RANK = ez.setup_torch(
 #     backend='deepspeed',
 #     port='5432',
 # )
-log = get_logger(__name__)
-RANK = get_rank()
-WORLD_SIZE = get_world_size()
-LEVEL = "DEBUG" if RANK == 0 else "CRITICAL"
+RANK = ez.get_rank()
+WORLD_SIZE = ez.get_world_size()
+DEVICE = ez.get_torch_device()
 
+# --- TURN OFF LOGGER ON ALL RANK != 0 ----
+log = get_logger(__name__)
+log.setLevel("INFO") if RANK == 0 else log.setLevel("CRITICAL")
+
+# ---- SETUP WANDB FROM RANK 0 ----------------
 WANDB_MODE = os.environ.get('WANDB_MODE', None)
 DISABLE_WANDB = (
     WANDB_MODE is not None and str(WANDB_MODE).lower() == 'disabled'
 )
-if RANK == 0:
-    log.setLevel("INFO")
-else:
-    log.setLevel("CRITICAL")
-
 if RANK == 0 and not DISABLE_WANDB:
     project_name = (
         os.environ.get(
-            'WB_PROJECT',
+            'WB_PROJECT',         # look for WB_PROJECT in env
             os.environ.get(
-                'WANDB_PROJECT',
+                'WANDB_PROJECT',  # look for WANDB_PROJECT in env
                 'AuroraGPT'
             ),
         )
@@ -71,7 +70,7 @@ if RANK == 0 and not DISABLE_WANDB:
     print('--------------------------------------------------')
     print(f"Setting up W&B from: {RANK} with {project_name}")
     print('--------------------------------------------------')
-    setup_wandb(project_name=project_name)
+    ez.setup_wandb(project_name=project_name)
 
 
 def model_provider(pre_process=True, post_process=True):
@@ -591,7 +590,6 @@ def main():
         )
     try:
         from megatron.text_generation import generate_and_post_process
-        import ezpz as ez
         with torch.autocast(device_type=ez.get_torch_device(), dtype=torch.float16):
             response, _, _, _ = generate_and_post_process(model, prompts=["Hello world", "Nature is", "Turing test comprises", "Explain solar eclipse"], tokens_to_generate=32)
         if RANK == 0:
