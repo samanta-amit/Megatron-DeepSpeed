@@ -94,8 +94,8 @@ def model_provider(pre_process=True, post_process=True):
     #     wandb.run.config.update({'args': vars(args)})
     if RANK == 0:
         git_ds_info()
-    if hasattr(mpu, 'get_sequence_parallel_group'):
-        dpg = mpu.get_sequence_parallel_group()
+    if hasattr(mpu, 'get_sequence_data_parallel_group'):
+        dpg = mpu.get_sequence_data_parallel_group()
     elif hasattr(mpu, 'get_data_parallel_group'):
         dpg = mpu.get_data_parallel_group()
     else:
@@ -154,6 +154,7 @@ def model_provider(pre_process=True, post_process=True):
                 pre_process=pre_process,
                 post_process=post_process
             )
+
     num_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     # print_rank_0('\n ------------------------ ')
     # print_rank_0(f'num of parameters {num_params}')
@@ -588,6 +589,18 @@ def main():
             # args_defaults={'tokenizer_type': 'GPT2BPETokenizer'},
             data_post_process=data_post_process
         )
+    try:
+        from megatron.text_generation import generate_and_post_process
+        import ezpz as ez
+        with torch.autocast(device_type=ez.get_torch_device(), dtype=torch.float16):
+            response, _, _, _ = generate_and_post_process(model, prompts=["Hello world", "Nature is", "Turing test comprises", "Explain solar eclipse"], tokens_to_generate=32)
+        if RANK == 0:
+            log.info(f'generation completed..\n response:{response}')
+    except ValueError as ve:
+        log.critical(f'ValueError: {ve}')
+        pass
+    # dist.barrier()
+    model.train()
     return model
 
 
