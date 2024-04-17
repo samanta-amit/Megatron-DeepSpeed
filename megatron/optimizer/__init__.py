@@ -60,21 +60,29 @@ def get_param_groups(modules,
 
     return param_groups
 
-def get_megatron_optimizer(model,
-                           no_weight_decay_cond=None,
-                           scale_lr_cond=None,
-                           lr_mult=1.0):
+
+def get_megatron_optimizer(
+        model,
+        no_weight_decay_cond=None,
+        scale_lr_cond=None,
+        lr_mult=1.0
+):
     args = get_args()
 
     # Base optimizer.
-    param_groups = get_param_groups(model,
-                                    no_weight_decay_cond,
-                                    scale_lr_cond,
-                                    lr_mult)
+    param_groups = get_param_groups(
+        model,
+        no_weight_decay_cond,
+        scale_lr_cond,
+        lr_mult
+    )
     if args.create_moe_param_group:
-        from deepspeed.moe.utils import split_params_into_different_moe_groups_for_optimizer
-        param_groups = split_params_into_different_moe_groups_for_optimizer(param_groups)
-
+        from deepspeed.moe.utils import (
+            split_params_into_different_moe_groups_for_optimizer
+        )
+        param_groups = split_params_into_different_moe_groups_for_optimizer(
+            param_groups
+        )
     if args.cpu_optimizer:
         assert args.optimizer == 'adam', 'CPU offloading is for Adam'
         if args.cpu_torch_adam:
@@ -82,36 +90,44 @@ def get_megatron_optimizer(model,
         else:
             from deepspeed.ops.adam import DeepSpeedCPUAdam
             cpu_adam_optimizer = DeepSpeedCPUAdam
-        optimizer = cpu_adam_optimizer(param_groups,
-                                       lr=args.lr,
-                                       weight_decay=args.weight_decay,
-                                       betas=(args.adam_beta1, args.adam_beta2),
-                                       eps=args.adam_eps)
+        optimizer = cpu_adam_optimizer(
+            param_groups,
+            lr=args.lr,
+            weight_decay=args.weight_decay,
+            betas=(args.adam_beta1, args.adam_beta2),
+            eps=args.adam_eps,
+        )
     elif str(args.optimizer).lower() == 'adamwschedulefree':
         import schedulefree
         optimizer = schedulefree.AdamWScheduleFree(
             param_groups,
             lr=args.lr,
+            weight_decay=args.weight_decay,
+            betas=(args.adam_beta1, args.adam_beta2),
+            eps=args.adam_eps,
             warmup_steps=args.lr_warmup_iters,
+            foreach=args.schedulefree_for_each,
         )
     elif str(args.optimizer).lower() == 'sgdschedulefree':
         import schedulefree
         optimizer = schedulefree.SGDScheduleFree(
             param_groups,
             lr=args.lr,
+            momentum=args.sgd_momentum,
+            weight_decay=args.weight_decay,
             warmup_steps=args.lr_warmup_iters,
+            foreach=args.schedulefree_for_each,
         )
-    # else:
     elif str(args.optimizer).lower() == 'apex.adam':
-            assert get_accelerator().device_name() == 'cuda'
-            from apex.optimizers import FusedAdam as Adam
-            optimizer = Adam(
-                param_groups,
-                lr=args.lr,
-                weight_decay=args.weight_decay,
-                betas=(args.adam_beta1, args.adam_beta2),
-                eps=args.adam_eps
-            )
+        assert get_accelerator().device_name() == 'cuda'
+        from apex.optimizers import FusedAdam as Adam
+        optimizer = Adam(
+            param_groups,
+            lr=args.lr,
+            weight_decay=args.weight_decay,
+            betas=(args.adam_beta1, args.adam_beta2),
+            eps=args.adam_eps
+        )
     elif str(args.optimizer).lower() == 'apex.sgd':
         from apex.optimizers import FusedSGD as SGD
         optimizer = SGD(
@@ -153,18 +169,15 @@ def get_megatron_optimizer(model,
         raise TypeError(f'{args.optimizer} optimizer is not supported.')
     if args.deepspeed:
         return optimizer
-
     # Determine whether the params have main-grad field.
     params_have_main_grad = False
     if args.use_contiguous_buffers_in_local_ddp:
         params_have_main_grad = True
-
     # Mixed precision optimizer.
     # - Note: both the Float16Optimizer and the DistributedOptimizer inherit
     #   from the MixedPrecisionOptimizer, which manages any optimizer where
     #   the model params and main params are distinct.
     if args.fp16 or args.bf16 or args.use_distributed_optimizer:
-
         # Grad scaler:
         #    if loss-scale is provided, instantiate the constant scaler.
         #    if we are using fp16 and loss-scale is not present, use a
@@ -172,11 +185,9 @@ def get_megatron_optimizer(model,
         #    otherwise we are running in bf16 with no loss-scale so
         #       leave it as None.
         grad_scaler = None
-
         # Constant loss scale.
         if args.loss_scale:
             grad_scaler = ConstantGradScaler(args.loss_scale)
-
         # Dynamic loss scale.
         else:
             if args.fp16:
@@ -187,11 +198,11 @@ def get_megatron_optimizer(model,
                     backoff_factor=0.5,
                     growth_interval=args.loss_scale_window,
                     hysteresis=args.hysteresis)
-
         # Megatron optimizer.
-        opt_ty = DistributedOptimizer \
-            if args.use_distributed_optimizer else \
-            Float16OptimizerWithFloat16Params
+        opt_ty = (
+                DistributedOptimizer if args.use_distributed_optimizer 
+                else Float16OptimizerWithFloat16Params
+        )
         return opt_ty(optimizer,
                       args.clip_grad,
                       args.log_num_zeros_in_grad,
@@ -202,10 +213,12 @@ def get_megatron_optimizer(model,
                       args.params_dtype,
                       grad_scaler,
                       model)
-
     # FP32.
-    return FP32Optimizer(optimizer, args.clip_grad,
-                         args.log_num_zeros_in_grad,
-                         params_have_main_grad,
-                         args.use_contiguous_buffers_in_local_ddp,
-                         model)
+    return FP32Optimizer(
+        optimizer,
+        args.clip_grad,
+        args.log_num_zeros_in_grad,
+        params_have_main_grad,
+        args.use_contiguous_buffers_in_local_ddp,
+        model
+    )

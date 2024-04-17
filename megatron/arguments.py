@@ -915,17 +915,30 @@ def _add_training_args(parser):
     group.add_argument('--disable-bias-linear', action='store_false',
                        help='Disable bias in the linear layers',
                        dest='add_bias_linear')
-    group.add_argument('--optimizer', type=str, default='adam',
-                       choices=[
-                           'adam',
-                           'adamw',
-                           'sgd',
-                           'apex.adam',
-                           'apex.sgd',
-                           'adamwschedulefree',
-                           'sgdschedulefree'
-                       ],
-                       help='Optimizer function')
+    group.add_argument(
+        '--optimizer',
+        type=str,
+        default='adam',
+        choices=[
+            'adam',
+            'adamw',
+            'sgd',
+            'apex.adam',
+            'apex.sgd',
+            'adamwschedulefree',
+            'sgdschedulefree'
+        ],
+        help='Optimizer function'
+    )
+    group.add_argument(
+        "--schedulefree-for-each",
+        action="store_true",
+        help="""
+        Use a foreach-backed implementation of the schedulefree optimizers.
+        Should be significantly faster,
+        but will have a higher peak memory usage.
+        """,
+    )
     group.add_argument('--dataloader-type', type=str, default=None,
                        choices=['single', 'cyclic'],
                        help='Single pass vs multiple pass data loader')
