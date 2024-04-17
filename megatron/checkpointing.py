@@ -608,16 +608,16 @@ def load_checkpoint(
     args = get_args()
     assert args is not None
     load_dir = getattr(args, load_arg)
+    lr_state_dict = {}
+    lr_tensor = torch.tensor(args.lr, requires_grad=False, device=DEVICE)
     if RANK == 0:
         lr_state_dict = load_lr_state_dict(strict=strict_lr_state_dict)
-        lr_tensor = torch.tensor(
-            lr_state_dict['lr'],
-            requires_grad=False,
-            device=DEVICE
-        )
-    else:
-        lr_state_dict = {}
-        lr_tensor = torch.tensor(0., requires_grad=False, device=DEVICE)
+        if len(lr_state_dict.keys()) > 0 and 'lr' in lr_state_dict:
+            lr_tensor = torch.tensor(
+                lr_state_dict['lr'],
+                requires_grad=False,
+                device=DEVICE,
+            )
     tdist.broadcast(lr_tensor, 0)
     args.lr = lr_tensor.item()
     if args.deepspeed:
