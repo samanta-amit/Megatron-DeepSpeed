@@ -70,7 +70,7 @@ def print_datetime(string):
     """Note that this call will sync across all ranks."""
     tdist.barrier()
     time_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    log.info('[' + string + '] datetime: {} '.format(time_str))
+    log.info('[' + string + '] datetime={} '.format(time_str))
 
 
 def num_floating_point_operations(args, batch_size):
@@ -181,7 +181,7 @@ def pretrain(
     # torch.distributed.all_reduce(start_time_tensor,
     #                              op=torch.distributed.ReduceOp.MIN)
     _TRAIN_START_TIME = start_time_tensor.item()
-    log.info('time to initialize megatron (seconds): {:.3f}'.format(
+    log.info('time to initialize megatron (seconds)={:.3f}'.format(
         time.time() - _TRAIN_START_TIME))
     print_datetime('after megatron is initialized')
 
@@ -435,7 +435,7 @@ def get_model(model_provider_func, model_type=ModelType.encoder_or_decoder, wrap
     # Print number of parameters.
     if mpu.get_data_parallel_rank() == 0:
         print(' > number of parameters on (tensor, pipeline) '
-              'model parallel rank ({}, {}): {}'.format(
+              'model parallel rank ({}, {})={}'.format(
             mpu.get_tensor_model_parallel_rank(),
             mpu.get_pipeline_model_parallel_rank(),
             sum([sum([p.ds_numel if hasattr(p,'ds_id') else p.nelement() for p in model_module.parameters()])
@@ -1185,18 +1185,18 @@ def training_log(loss_dict, total_loss_dict, learning_rate, iteration,
         log_string = f' iteration {iteration:8d}/{args.train_iters:8d} |'
         # .format( iteration, args.train_iters)
         log_string += (
-                f' consumed samples: {args.consumed_train_samples:12d} |'
+                f' consumed samples={args.consumed_train_samples:12d} |'
                 # .format(args.consumed_train_samples)
         )
-        log_string += f' consumed tokens: {args.consumed_train_tokens:12d} |'
+        log_string += f' consumed tokens={args.consumed_train_tokens:12d} |'
         # .format( args.consumed_train_tokens)
         log_string += (
                 ' elapsed time per iteration (ms): '
                 f'{elapsed_time_per_iteration * 1000.0:.1f} |'
                 # .format( elapsed_time_per_iteration * 1000.0)
         )
-        log_string += f' learning rate: {learning_rate:.3E} |'
-        log_string += f' global batch size: {batch_size:5d} |'
+        log_string += f' learning rate={learning_rate:.3f} |'
+        log_string += f' global batch size={batch_size:5d} |'
         # if wandb is not None and getattr(wandb, 'run', None) is not None:
         wandb_metrics |= {
             'training/iteration': iteration,
@@ -1218,32 +1218,32 @@ def training_log(loss_dict, total_loss_dict, learning_rate, iteration,
                 avg = total_loss_dict[key].item() / \
                       float(max(1, total_loss_dict[advanced_iters_key]))
                 if avg > 0.0:
-                    log_string += ' {}: {:.6f} |'.format(key, avg)
+                    log_string += ' {}={:.6f} |'.format(key, avg)
                 total_loss_dict[key] = get_accelerator().FloatTensor([0.0])
         if loss_scale is not None:
-            log_string += ' loss scale: {:.1f} |'.format(loss_scale)
+            log_string += ' loss scale={:.1f} |'.format(loss_scale)
             wandb_metrics |= {'loss/loss_scale': loss_scale}
         if grad_norm is not None:
-            log_string += ' grad norm: {:.3f} |'.format(grad_norm)
+            log_string += ' grad norm={:.3f} |'.format(grad_norm)
             wandb_metrics |= {'loss/grad_norm': grad_norm}
         if num_zeros_in_grad is not None:
-            log_string += ' num zeros: {:.1f} |'.format(num_zeros_in_grad)
+            log_string += ' num zeros={:.1f} |'.format(num_zeros_in_grad)
             wandb_metrics |= {'loss/num_zeros_in_grad': num_zeros_in_grad}
         if params_norm is not None:
-            log_string += ' params norm: {:.3f} |'.format(params_norm)
+            log_string += ' params norm={:.3f} |'.format(params_norm)
             wandb_metrics |= {'loss/params_norm': params_norm}
         if args.curriculum_learning_legacy or args.data_efficiency_curriculum_learning:
-            log_string += ' curriculum seqlen: {:5d} |'.format(args.curriculum_seqlen)
+            log_string += ' curriculum seqlen={:5d} |'.format(args.curriculum_seqlen)
         if args.random_ltd:
-            log_string += ' random ltd reserved length: {:5d} |'.format(args.random_ltd_reserved_length)
-        log_string += ' actual seqlen: {:5d} |'.format(seq_len)
-        log_string += ' number of skipped iterations: {:3d} |'.format(
+            log_string += ' random ltd reserved length={:5d} |'.format(args.random_ltd_reserved_length)
+        log_string += ' actual seqlen={:5d} |'.format(seq_len)
+        log_string += ' number of skipped iterations={:3d} |'.format(
             total_loss_dict[skipped_iters_key])
-        log_string += ' number of nan iterations: {:3d} |'.format(
+        log_string += ' number of nan iterations={:3d} |'.format(
             total_loss_dict[nan_iters_key])
-        log_string += ' samples per second: {:.3f} |'.format(samples_per_sec)
-        log_string += ' tokens per gpu per second (tgs): {:.3f} |'.format(tokens_per_gpu_per_second)
-        log_string += ' TFLOPs: {:.2f} |'.format(tflops)
+        log_string += ' samples per second={:.3f} |'.format(samples_per_sec)
+        log_string += ' tokens per gpu per second (tgs)={:.3f} |'.format(tokens_per_gpu_per_second)
+        log_string += ' TFLOPs={:.2f} |'.format(tflops)
         total_loss_dict[advanced_iters_key] = 0
         total_loss_dict[skipped_iters_key] = 0
         total_loss_dict[nan_iters_key] = 0
@@ -1560,9 +1560,10 @@ def evaluate_and_print_results(prefix, forward_step_func,
         process_non_loss_data_func, config, verbose)
     string = ' validation loss at {} | '.format(prefix)
     for key in total_loss_dict:
-        string += '{} value: {:.6E} | '.format(key, total_loss_dict[key].item())
+        string += f"{key} value={total_loss_dict[key].item():.6f}"
         ppl = math.exp(min(20, total_loss_dict[key].item()))
-        string += '{} PPL: {:.6E} | '.format(key, ppl)
+        string += f"{key} PPL={ppl:.6f}"
+        # string += '{} PPL={:.6f} | '.format(key, ppl)
         if writer and is_last_rank():
             data_type = 'test' if test else 'validation'
             writer.add_scalar(f'lm-loss-validation/{key} {data_type}',
