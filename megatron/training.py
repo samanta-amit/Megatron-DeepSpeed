@@ -10,6 +10,7 @@ import json
 # The earliest we can measure the start time.
 _TRAIN_START_TIME = time.time()
 import torch
+import torch.distributed as tdist
 from collections import OrderedDict
 from torch.nn.parallel.distributed import DistributedDataParallel as torchDDP
 
@@ -49,8 +50,15 @@ from deepspeed.accelerator import get_accelerator
 from deepspeed.compression.compress import init_compression, redundancy_clean
 from deepspeed.runtime.data_pipeline.data_routing.helper import convert_to_random_ltd
 from megatron.model.transformer import ParallelTransformerLayer
+import ezpz as ez
+import logging
 
 from deepspeed import comm as dist
+
+RANK = ez.get_rank()
+WORLD_SIZE = ez.get_world_size()
+log = logging.getLogger(__name__)
+log.setLevel("INFO") if RANK == 0 else log.setLevel("CRITICAL")
 
 try:
     import wandb
@@ -60,9 +68,9 @@ except (ImportError, ModuleNotFoundError):
 
 def print_datetime(string):
     """Note that this call will sync across all ranks."""
-    torch.distributed.barrier()
+    tdist.barrier()
     time_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    print_rank_0('[' + string + '] datetime: {} '.format(time_str))
+    log.info('[' + string + '] datetime: {} '.format(time_str))
 
 
 def num_floating_point_operations(args, batch_size):
@@ -169,10 +177,11 @@ def pretrain(
     # image ... launches.
     global _TRAIN_START_TIME
     start_time_tensor = get_accelerator().DoubleTensor([_TRAIN_START_TIME])
-    torch.distributed.all_reduce(start_time_tensor,
-                                 op=torch.distributed.ReduceOp.MIN)
+    tdist.all_reduce(start_time_tensor, op=tdist.ReduceOp.MIN)
+    # torch.distributed.all_reduce(start_time_tensor,
+    #                              op=torch.distributed.ReduceOp.MIN)
     _TRAIN_START_TIME = start_time_tensor.item()
-    print_rank_0('time to initialize megatron (seconds): {:.3f}'.format(
+    log.info('time to initialize megatron (seconds): {:.3f}'.format(
         time.time() - _TRAIN_START_TIME))
     print_datetime('after megatron is initialized')
 
@@ -247,16 +256,16 @@ def pretrain(
         args.teacher_model = setup_teacher_model(args, model_provider)
 
     # Print setup timing.
-    print_rank_0('done with setup ...')
+    log.info('done with setup ...')
     timers.log(['model-and-optimizer-setup',
                 'train/valid/test-data-iterators-setup'], barrier=True)
 
     if not args.skip_train:
-        print_rank_0('training ...')
+        log.info('training ...')
 
         if args.dataloader_type == 'cyclic' and args.retro_add_retriever:
             args.train_iters = args.retro_cyclic_train_iters
-            print_rank_0("retro cyclic train iters : %d" % args.train_iters)
+            log.info("retro cyclic train iters : %d" % args.train_iters)
 
         iteration = 0
         if args.do_train and args.train_iters > 0:
@@ -273,7 +282,7 @@ def pretrain(
         if args.save and iteration != 0:
             save_checkpoint(iteration, model, optimizer, opt_param_scheduler)
     else:
-        print_rank_0('skipping training (--skip-train is on) ...')
+        log.info('skipping training (--skip-train is on) ...')
 
         iteration = args.iteration
 
@@ -321,12 +330,12 @@ def update_train_iters(args):
                       args.global_batch_size
         args.train_iters = iterations
 
-    print_rank_0('setting training iterations to {}'.format(args.train_iters))
+    log.info('setting training iterations to {}'.format(args.train_iters))
 
 
 def setup_teacher_model(args, model_provider):        
     
-    print_rank_0('***>>>>> Student model checkpoint iteration:{}'.format(args.iteration))
+    log.info('***>>>>> Student model checkpoint iteration:{}'.format(args.iteration))
     iteration_stuent = args.iteration
     num_layers_student = args.num_layers
     num_experts_student = args.num_experts
@@ -334,7 +343,7 @@ def setup_teacher_model(args, model_provider):
     num_attention_heads_student = args.num_attention_heads
     load_student = args.load
 
-    print_rank_0('***>>>>> Setting up the teacher model')
+    log.info('***>>>>> Setting up the teacher model')
 
     args.num_layers = args.num_layers_teacher
     args.num_experts = args.num_experts_teacher
@@ -342,7 +351,7 @@ def setup_teacher_model(args, model_provider):
     args.num_attention_heads = args.num_attention_heads_teacher
     args.load = args.load_teacher
     teacher_model, _, _ = load_model_weights_only(model_provider)
-    print_rank_0('***>>>>> Teacher model:{}'.format(teacher_model))
+    log.info('***>>>>> Teacher model:{}'.format(teacher_model))
 
     args.num_layers = num_layers_student
     args.num_experts = num_experts_student
@@ -518,7 +527,7 @@ def get_optimizer_param_scheduler(optimizer):
 def load_model_weights_only(model_provider_func):
     """Setup model and optimizer."""
     args = get_args()
-    print_rank_0('***>>>>> Args:{}'.format(args))
+    log.info('***>>>>> Args:{}'.format(args))
 
     model = get_model(model_provider_func)
 
@@ -577,7 +586,7 @@ def setup_model_and_optimizer(model_provider_func,
         else:
             args.iteration = 0
         student_global_steps = model[0].global_steps
-        print_rank_0('***>>>>> Student model, global step:{}'.format(student_global_steps))
+        log.info('***>>>>> Student model, global step:{}'.format(student_global_steps))
 
     if args.compression_training:
         model, _, _, _ = deepspeed.initialize(
@@ -605,7 +614,7 @@ def setup_model_and_optimizer(model_provider_func,
         opt_param_scheduler = get_optimizer_param_scheduler(optimizer)
 
     if args.deepspeed:
-        print_rank_0("DeepSpeed is enabled.")
+        log.info("DeepSpeed is enabled.")
         pp = mpu.get_pipeline_model_parallel_world_size()
         if args.data_efficiency_curriculum_learning and build_train_valid_test_datasets_provider is not None:
             train_ds = None
@@ -681,7 +690,7 @@ def setup_model_and_optimizer(model_provider_func,
     # get model without FP16 and/or TorchDDP wrappers
     if args.iteration == 0 and len(unwrapped_model) == 1 \
         and hasattr(unwrapped_model[0], 'init_state_dict_from_bert'):
-        print_rank_0("Initializing ICT from pretrained BERT model")
+        log.info("Initializing ICT from pretrained BERT model")
         unwrapped_model[0].init_state_dict_from_bert()
         if args.fp16:
             optimizer.reload_model_params()
@@ -1238,7 +1247,8 @@ def training_log(loss_dict, total_loss_dict, learning_rate, iteration,
         total_loss_dict[advanced_iters_key] = 0
         total_loss_dict[skipped_iters_key] = 0
         total_loss_dict[nan_iters_key] = 0
-        print_rank_last(log_string)
+        # print_rank_last(log_string)
+        log.info(log_string)
         if report_memory_flag and learning_rate > 0.:
             # Report memory after optimizer state has been initialized.
             report_memory('(after {} iterations)'.format(iteration))
@@ -1465,7 +1475,7 @@ def evaluate(forward_step_func,
         while iteration < args.eval_iters:
             iteration += 1
             if verbose and iteration % args.log_interval == 0:
-                print_rank_0('Evaluating iter {}/{}'.format(iteration,
+                log.info('Evaluating iter {}/{}'.format(iteration,
                                                             args.eval_iters))
 
             forward_backward_func = get_forward_backward_func()
@@ -1576,9 +1586,9 @@ def evaluate_and_print_results(prefix, forward_step_func,
         process_non_loss_data_func(collected_non_loss_data, iteration, writer)
 
     length = len(string) + 1
-    print_rank_last('-' * length)
-    print_rank_last(string)
-    print_rank_last('-' * length)
+    log.info('-' * length)
+    log.info(string)
+    log.info('-' * length)
 
 
 def cyclic_iter(iter):
@@ -1603,10 +1613,10 @@ def build_train_valid_test_datasets(build_train_valid_test_datasets_provider):
     train_val_test_num_samples = [train_samples,
                                   eval_iters * args.global_batch_size,
                                   test_iters * args.global_batch_size]
-    print_rank_0(' > datasets target sizes (minimum size):')
-    print_rank_0('    train:      {}'.format(train_val_test_num_samples[0]))
-    print_rank_0('    validation: {}'.format(train_val_test_num_samples[1]))
-    print_rank_0('    test:       {}'.format(train_val_test_num_samples[2]))
+    log.info(' > datasets target sizes (minimum size):')
+    log.info('    train:      {}'.format(train_val_test_num_samples[0]))
+    log.info('    validation: {}'.format(train_val_test_num_samples[1]))
+    log.info('    test:       {}'.format(train_val_test_num_samples[2]))
 
     # Build the datasets.
     return build_train_valid_test_datasets_provider(train_val_test_num_samples)
@@ -1620,7 +1630,7 @@ def build_train_valid_test_data_loaders(
 
     (train_dataloader, valid_dataloader, test_dataloader) = (None, None, None)
 
-    print_rank_0('> building train, validation, and test datasets ...')
+    log.info('> building train, validation, and test datasets ...')
 
     # Backward compatibility, assume fixed batch size.
     if args.iteration > 0 and args.consumed_train_samples == 0:

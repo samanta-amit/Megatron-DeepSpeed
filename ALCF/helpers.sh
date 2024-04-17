@@ -178,7 +178,7 @@ saveDSenv() {
 
 setOutput() {
     # ---- Specify output location --------------------------------
-    export OUTPUT_PREFIX="ds_stage${ZERO_STAGE}_nl${NLAYERS}_hs${HIDDEN}_mb${MICRO_BATCH}_seq${SEQ}_gb${GLOBAL_BATCH}_pp${PP}_tp${TP}_${DTYPE}"
+    export OUTPUT_PREFIX="ds_stage${ZERO_STAGE}_nl${NLAYERS}_hs${HIDDEN}_mb${MICRO_BATCH}_seq${SEQ}_gb${GLOBAL_BATCH}_pp${PP}_tp${TP}_${DTYPE}_opt${OPT}"
     OUTPUT_DIR="logs/${OUTPUT_PREFIX}/$(date +%m%d%H%M%S)_${HOSTNAME}"
     export OUTPUT_DIR="${OUTPUT_DIR}"
     export OUTPUT_LOG="${OUTPUT_DIR}/output.log"
@@ -235,6 +235,9 @@ setEnv() {
         echo "Running on Polaris !!"
         # ---- [load conda] ---------------------
         module load conda/2023-10-04; conda activate cu118-pt221 ; unset PYTHONUSERBASE
+        if [[ -d "${PBS_O_WORKDIR}/venvs/polaris/cu118-pt221" ]]; then
+            source "${PBS_O_WORKDIR}/venvs/polaris/cu118-pt221/bin/activate"
+        fi
     elif [[ $(hostname) == login* || $(hostname) == nid* ]]; then
         echo "Running on Perlmutter !!"
         module load pytorch
