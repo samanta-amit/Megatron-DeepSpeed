@@ -28,9 +28,6 @@ function setupSrun() {
 function setDSlauncher() {
     # launcher setting
     outdir=$1
-    # hfds=$1
-    # hfmpi=$2
-    # here=$(python3 -c 'import os; print(os.getcwd())')
     export hfds="$outdir/hostfile_deepspeed"
     export hfmpi="$outdir/hostfile_mpich"
     [ -f "$hfds" ] || exit
@@ -90,8 +87,8 @@ setParams() {
     export WORLD_SIZE=${WORLD_SIZE:-$(wc -l < "${HOSTFILE}")}
     # ---- Llama2 7B Config ------------------------------
     export MODEL_KEY="Llama-7B"
-    export HEADS=${HEADS:-32}
-    export NLAYERS=${NLAYERS:-32}
+    export HEADS=${HEADS:-${NHEADS:-32}}
+    export NLAYERS=${NLAYERS:-${NUM_LAYERS:-32}}
     export HIDDEN=${HIDDEN:-4096}
     export NUM_KV_HEAD=${NUM_KV_HEAD:-8}
     export FFN_HIDDEN_SIZE=${FFN_HIDDEN_SIZE:-11008}
@@ -146,6 +143,10 @@ setArgs() {
     export gpt_args
 }
 
+# +---------------------------------------+
+# | 1. Git clone `ezpz` (if not found)    |
+# | 2. Install `ezpz` (if not installed)  |
+# +---------------------------------------+
 ezpz() {
     if [[ ! -d ezpz ]]; then
         git clone https://github.com/saforem2/ezpz
@@ -164,6 +165,10 @@ ezpz() {
     # source ezpz/src/ezpz/bin/getjobenv || exit
 }
 
+# +------------------------------------------------------------------------+
+# | Save important environment variables to .deepspeed_env, which will be  |
+# | forwarded to ALL ranks with DeepSpeed                                  |
+# +------------------------------------------------------------------------+
 saveDSenv() {
     echo "Saving {PATH, LD_LIBRARY_PATH, htt{p,ps}_proxy, CFLAGS, PYTHONUSERBASE} to .deepspeed_env"
     {
@@ -202,8 +207,6 @@ buildDSconfig() {
 sumWeights() {
     local file_list=$1
     weights=$(cat "${file_list}" | awk '{print $1}' | tr '\n' '\ ,\ ' | sed 's/^/[/g' | sed 's/$/]/g' | tr '\ ' "\,\ ")
-    # weights=$(echo "$weights" | tr ",]" "]")
-    # echo "weights: $weights"
     python3 -c "import numpy as np; print(np.sum(${weights}))"
 }
 
@@ -297,52 +300,6 @@ setData() {  # ---- [dfl: abbrv. for DATA_FILE_LIST] -------------------------
     printf "DATA_CACHE_PATH: %s\n" "${DATA_CACHE_PATH}"
     echo "--------------------"
 }
-
-# buildCLIargs() {  # ---- [BROKEN] -------------------------------------------
-#     custom_args=" $@"
-#     export CLI_ARGS="
-#         --$DTYPE \
-#         --num-workers 0 \
-#         --split 100,0,0 \
-#         --log-interval 1 \
-#         --use-flash-attn-v2 \
-#         --no-bias-gelu-fusion \
-#         --lr-decay-style cosine \
-#         --no-bias-dropout-fusion \
-#         --no-masked-softmax-fusion \
-#         --tokenizer-type Llama2Tokenizer \
-#         --no-gradient-accumulation-fusion \
-#         --accumulate-allreduce-grads-in-fp32 \
-#         --use-checkpoint-opt_param-scheduler \
-#         --lr ${LR} \
-#         --save ${CKPT_DIR} \
-#         --load ${CKPT_DIR} \
-#         --seq-length ${SEQ} \
-#         --num-layers ${NLAYERS} \
-#         --hidden-size ${HIDDEN} \
-#         --train-iters ${TRAIN_ITER} \
-#         --eval-iters ${EVAL_ITERS} \
-#         --distributed-backend ${BE} \
-#         --num-attention-heads ${HEADS} \
-#         --save-interval ${SAVE_INTERVAL} \
-#         --eval-interval ${EVAL_INTERVAL} \
-#         --max-position-embeddings ${SEQ} \
-#         --micro-batch-size ${MICRO_BATCH} \
-#         --data-file-list ${DATA_FILE_LIST} \
-#         --tensor-model-parallel-size ${TP} \
-#         --global-batch-size ${GLOBAL_BATCH} \
-#         --pipeline-model-parallel-size ${PP} \
-#         --num-key-value-heads ${NUM_KV_HEAD} \
-#         --data-cache-path ${DATA_CACHE_PATH} \
-#         --ffn-hidden-size ${FFN_HIDDEN_SIZE} \
-#         --tokenizer-model ${TOKENIZER_MODEL} \
-#         $ds_args \
-#         ${LLAMA_ARGS} \
-#         ${gpt_args[*]} \
-#         ${custom_args} \
-#         "
-# }
-
 
 printBlack() {
     printf "\e[1;30m%s\e[0m\n" "$@"
