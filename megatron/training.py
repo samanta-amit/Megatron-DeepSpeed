@@ -1182,21 +1182,21 @@ def training_log(loss_dict, total_loss_dict, learning_rate, iteration,
                               elapsed_time_per_iteration, args.consumed_train_samples)
             writer.add_scalar('iteration-time/iteration-time vs tokens',
                               elapsed_time_per_iteration, args.consumed_train_tokens)
-        log_string = f' iteration {iteration:8d}/{args.train_iters:8d} |'
+        log_string = f' iteration={iteration:8d}/{args.train_iters:8d} |'
         # .format( iteration, args.train_iters)
         log_string += (
-                f' consumed samples={args.consumed_train_samples:12d} |'
+                f' consumed_samples={args.consumed_train_samples:12d} |'
                 # .format(args.consumed_train_samples)
         )
-        log_string += f' consumed tokens={args.consumed_train_tokens:12d} |'
+        log_string += f' consumed_tokens={args.consumed_train_tokens:12d} |'
         # .format( args.consumed_train_tokens)
         log_string += (
-                ' elapsed time per iteration (ms): '
+                ' elapsed_time_per_iteration_ms='
                 f'{elapsed_time_per_iteration * 1000.0:.1f} |'
                 # .format( elapsed_time_per_iteration * 1000.0)
         )
-        log_string += f' learning rate={learning_rate:.3f} |'
-        log_string += f' global batch size={batch_size:5d} |'
+        log_string += f' learning_rate={learning_rate:.6f} |'
+        log_string += f' global_batch_size={batch_size:5d} |'
         # if wandb is not None and getattr(wandb, 'run', None) is not None:
         wandb_metrics |= {
             'training/iteration': iteration,
@@ -1221,28 +1221,28 @@ def training_log(loss_dict, total_loss_dict, learning_rate, iteration,
                     log_string += ' {}={:.6f} |'.format(key, avg)
                 total_loss_dict[key] = get_accelerator().FloatTensor([0.0])
         if loss_scale is not None:
-            log_string += ' loss scale={:.1f} |'.format(loss_scale)
+            log_string += ' loss_scale={:.1f} |'.format(loss_scale)
             wandb_metrics |= {'loss/loss_scale': loss_scale}
         if grad_norm is not None:
-            log_string += ' grad norm={:.3f} |'.format(grad_norm)
+            log_string += ' grad_norm={:.3f} |'.format(grad_norm)
             wandb_metrics |= {'loss/grad_norm': grad_norm}
         if num_zeros_in_grad is not None:
-            log_string += ' num zeros={:.1f} |'.format(num_zeros_in_grad)
+            log_string += ' num_zeros={:.1f} |'.format(num_zeros_in_grad)
             wandb_metrics |= {'loss/num_zeros_in_grad': num_zeros_in_grad}
         if params_norm is not None:
-            log_string += ' params norm={:.3f} |'.format(params_norm)
+            log_string += ' params_norm={:.3f} |'.format(params_norm)
             wandb_metrics |= {'loss/params_norm': params_norm}
         if args.curriculum_learning_legacy or args.data_efficiency_curriculum_learning:
-            log_string += ' curriculum seqlen={:5d} |'.format(args.curriculum_seqlen)
+            log_string += ' curriculum_seqlen={:5d} |'.format(args.curriculum_seqlen)
         if args.random_ltd:
-            log_string += ' random ltd reserved length={:5d} |'.format(args.random_ltd_reserved_length)
-        log_string += ' actual seqlen={:5d} |'.format(seq_len)
-        log_string += ' number of skipped iterations={:3d} |'.format(
+            log_string += ' random_ltd reserved_length={:5d} |'.format(args.random_ltd_reserved_length)
+        log_string += ' actual_seqlen={:5d} |'.format(seq_len)
+        log_string += ' number_of_skipped_iterations={:3d} |'.format(
             total_loss_dict[skipped_iters_key])
-        log_string += ' number of nan iterations={:3d} |'.format(
+        log_string += ' number_of_nan_iterations={:3d} |'.format(
             total_loss_dict[nan_iters_key])
-        log_string += ' samples per second={:.3f} |'.format(samples_per_sec)
-        log_string += ' tokens per gpu per second (tgs)={:.3f} |'.format(tokens_per_gpu_per_second)
+        log_string += ' samples_per_second={:.3f} |'.format(samples_per_sec)
+        log_string += ' tokens_per_gpu_per_second_tgs={:.3f} |'.format(tokens_per_gpu_per_second)
         log_string += ' TFLOPs={:.2f} |'.format(tflops)
         total_loss_dict[advanced_iters_key] = 0
         total_loss_dict[skipped_iters_key] = 0
