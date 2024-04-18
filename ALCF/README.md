@@ -152,7 +152,7 @@ DS_CONFIG: ds_stage2_mb4_gb96_pp1_bf16.json
 ZS: 2, CPU_OPTIMIZER: , MB: 4, GB: 96, PP: 1, DTYPE: bf16!!!Please see logs at logs/ds_stage2_nl32_hs4096_mb4_seq4096_gb96_pp1_tp1_bf16/0404090742_x1921c0s0b0n0
 !! Caught USE_ACTIVATION_CHECKPOINTING=1 !!
 !! Caught USE_ACTIVATION_CHECKPOINTING=1 !!
-Calling:  `setData()` with ./convergence_debug_small.txt
+Calling:  setData() with ./convergence_debug_small.txt
 --------------------
 Updated environment:
 DATA_FILE_LIST: ./convergence_debug_small.txt
@@ -172,7 +172,7 @@ DATA_CACHE_PATH: /lus/gila/projects/Aurora_deployment/foremans/q4-drop_sunspot/l
 ! Using /home/foremans/miniconda3/envs/q4-drop/bin/deepspeed
 /home/foremans/miniconda3/envs/q4-drop/bin/ds_report:4: DeprecationWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html
   __import__('pkg_resources').require('deepspeed==0.12.3+6ea44d02')
-/home/foremans/miniconda3/envs/q4-drop/lib/python3.9/site-packages/torchvision/io/image.py:13: UserWarning: Failed to load image Python extension: ''If you don't plan on using image function
+/home/foremans/miniconda3/envs/q4-drop/lib/python3.9/site-packages/torchvision/io/image.py:13: UserWarning: Failed to load image Python extension: ''If you dont plan on using image function
 ality from `torchvision.io`, you can ignore this warning. Otherwise, there might be something wrong with your environment. Did you have `libjpeg` or `libpng` installed before building `torch
 vision` from source?
   warn(
