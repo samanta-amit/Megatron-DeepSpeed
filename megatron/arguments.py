@@ -923,10 +923,15 @@ def _add_training_args(parser):
             'adam',
             'adamw',
             'sgd',
+            'ds.fusedlamb',
             'apex.adam',
             'apex.sgd',
             'adamwschedulefree',
-            'sgdschedulefree'
+            'sgdschedulefree',
+            'galoreadamw',
+            'adam8bit',
+            'galoreadamw8bit',
+            'galoreadamw8bitperlayer'
         ],
         help='Optimizer function'
     )
