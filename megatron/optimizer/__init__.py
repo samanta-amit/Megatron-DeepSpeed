@@ -3,7 +3,7 @@
 from deepspeed.accelerator import get_accelerator
 import torch
 
-from typing import Callable, Any
+from typing import Callable, Any, Iterable, Union
 from megatron import get_args
 
 from .distrib_optimizer import DistributedOptimizer
@@ -16,7 +16,7 @@ RANK = ez.get_rank()
 
 
 def get_param_groups(
-        modules: torch.nn.Module | iter[torch.nn.Module],
+        modules: Union[torch.nn.Module, Iterable[torch.nn.Module]],
         no_weight_decay_cond: Callable[[str, torch.Tensor], bool],
         scale_lr_cond: Callable[[str, torch.Tensor], bool],
         lr_mult: Any,
@@ -110,6 +110,7 @@ def get_megatron_optimizer(
         lr_mult=1.0
 ):
     args = get_args()
+    assert args is not None
 
     # Base optimizer.
     param_groups = get_param_groups(
@@ -218,6 +219,25 @@ def get_megatron_optimizer(
             if p.requires_grad:
                 p.register_post_accumulate_grad_hook(optimizer_hook)
         layer_wise_flag = True
+    elif str(args.optimizer) == 'ipex.lamb':
+        from intel_extension_for_pytorch.optim._lamb import Lamb
+        optimizer = Lamb(
+            param_groups,
+            lr=args.lr,
+            weight_decay=args.weight_decay,
+            betas=(args.adam_beta1, args.adam_beta2),
+            eps=args.adam_eps,
+        )
+    elif str(args.optimizer) == 'ipex.fusedlamb':
+        from intel_extension_for_pytorch.optim._lamb import Lamb
+        optimizer = Lamb(
+            param_groups,
+            lr=args.lr,
+            weight_decay=args.weight_decay,
+            betas=(args.adam_beta1, args.adam_beta2),
+            eps=args.adam_eps,
+            fused=True,
+        )
     elif str(args.optimizer).lower() == 'ds.fusedlamb':
         from deepspeed.ops.lamb import FusedLamb
         optimizer = FusedLamb(
