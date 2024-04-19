@@ -924,6 +924,8 @@ def _add_training_args(parser):
             'adamw',
             'sgd',
             'ds.fusedlamb',
+            'ipex.lamb',
+            'ipex.fusedlamb',
             'apex.adam',
             'apex.sgd',
             'adamwschedulefree',
