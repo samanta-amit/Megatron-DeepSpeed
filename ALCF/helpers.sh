@@ -144,12 +144,13 @@ setArgs() {
 }
 
 # +---------------------------------------+
-# | 1. Git clone `ezpz` (if not found)    |
-# | 2. Install `ezpz` (if not installed)  |
+# | 1. Git clone ezpz (if not found)    |
+# | 2. Install ezpz (if not installed)  |
 # +---------------------------------------+
 ezpz() {
-    if [[ ! -d ezpz ]]; then
-        git clone https://github.com/saforem2/ezpz
+    if [[ ! -d "${PBS_O_WORKDIR}/deps/ezpz" ]]; then
+        mkdir -p "${PBS_O_WORKDIR}/deps"
+        git clone https://github.com/saforem2/ezpz "${PBS_O_WORKDIR}/deps"
     else
         echo "Found ezpz!"
     fi
@@ -157,12 +158,12 @@ ezpz() {
         echo "Has ezpz installed. Nothing to do."
     else
         echo "Does not have ezpz installed. Installing..."
-        echo "Using $(which python3) to install \`ezpz\`:"
-        python3 -m pip install -e ezpz > ezpz-install.log 2>&1
+        echo "Using $(which python3) to install ezpz:"
+        python3 -m pip install -e "${PBS_O_WORKDIR}/edps/ezpz"  #  > ezpz-install.log 2>&1
     fi
     echo "Done with ezpz."
-    # source ezpz/src/ezpz/bin/savejobenv || exit  # > /tmp/savejobenv.log 2>&1 || exit
-    # source ezpz/src/ezpz/bin/getjobenv || exit
+    source ezpz/src/ezpz/bin/savejobenv  > /tmp/savejobenv.log 2>&1 || exit
+    source ezpz/src/ezpz/bin/getjobenv || exit
 }
 
 # +------------------------------------------------------------------------+
@@ -270,9 +271,11 @@ setData() {  # ---- [dfl: abbrv. for DATA_FILE_LIST] -------------------------
     if [[ $(hostname) == x4* ]]; then    # ---- [AURORA] ----
         dfl_fallback="/home/foremans/anl_24_release_q4/llm.devkit/Megatron-DeepSpeed/data_file_list_reweighted.txt"
     elif [[ $(hostname) == x1* ]]; then
-        dfl_fallback="/gila/Aurora_deployment/AuroraGPT/datasets/dolma/data_file_list_reweighted.txt"
+        dfl_fallback="../ALCF/data-lists/sunspot/data_file_list_books.txt"
+        # dfl_fallback="/gila/Aurora_deployment/AuroraGPT/datasets/dolma/data_file_list_reweighted.txt"
     elif [[ $(hostname) == x3* ]]; then
-        dfl_fallback="/eagle/datasets/dolma/data_file_list_reweighted.txt"
+        # dfl_fallback="/eagle/datasets/dolma/data_file_list_reweighted.txt"
+        dfl_fallback="../ALCF/data-lists/polaris/data_file_list_books.txt"
     elif [[ $(hostname) == login* || $(hostname) == nid* ]]; then
         dfl_fallback="${SLURM_SUBMIT_DIR}/genslm-subsample.txt"
     else
@@ -280,7 +283,7 @@ setData() {  # ---- [dfl: abbrv. for DATA_FILE_LIST] -------------------------
     fi
     dfl="${1:-${dfl_fallback}}"
     # dfl_fallback="/eagle/datasets/dolma/data_file_list_reweighted.txt"
-    printf "Calling:  \`setData()\` with %s\n" "${dfl}"
+    printf "Calling:  setData() with %s\n" "${dfl}"
     ndocs=$(wc -l < "${dfl}")
     ws=$(sumWeights "${dfl}")
     dfl_stem=$(echo "${dfl}" | tr "\/" "\t" | awk '{print $NF}' | sed "s/\.txt//g")
