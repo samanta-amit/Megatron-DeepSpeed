@@ -9,7 +9,7 @@ else
 fi
 
 export WORKING_DIR="${WORKING_DIR}"
-printf "Using WORKING_DIR: %s" ${WORKING_DIR}
+printf "Using WORKING_DIR: %s\n" ${WORKING_DIR}
 
 
 printJobInfo() {

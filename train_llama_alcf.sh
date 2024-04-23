@@ -29,7 +29,11 @@ sourceFile "${HERE}/ALCF/helpers.sh" || exit
 setEnv || exit                      # 1. load `conda` environment
 saveDSenv || exit                   # 2. save env vars to `.deepspeed_env`
 ezpz || exit                        # 3. determine WORLD_SIZE, etc. from `PBS_*` vars
-makeHostfiles || exit               # 4. create `deepspeed` hostfile from `$PBS_NODEFILE`
+if [[ -z "${HOSTFILE}" ]]; then
+    makeHostfiles || exit               # 4. create `deepspeed` hostfile from `$PBS_NODEFILE`
+else
+    echo "!! USING CUSTOM HOSTFILE FROM: ${HOSTFILE}"
+fi
 setParams || exit                   # 5. set command line arguments to pass to `"${EXEC}"`
 buildDSconfig || exit               # 6. create `deepspeed_config.json` from runtime params from ^
 setOutput || exit                   # 7. specify output directory for {logs, checkpoints, etc.}
@@ -65,10 +69,30 @@ mkdir -p "${TBDIR}"
 # --num-workers 0 \
 
     # aprun -n "${NGPUS}" -N "${NGPU_PER_HOST}" --pmi=pmix ${PBS_O_WORKDIR}/local_rank.sh
-    # ${DIST_LAUNCH} $(which python3) ${EXEC} \
 # yeet="${DIST_LAUNCH} ./local_rank.sh"
+    # deepspeed --hostfile $hfds --launcher MPICH ${EXEC} \
+    #
+# export MPICH_GPU_SUPPORT_ENABLED=1
+# export CUDA_DEVICE_MAX_CONNECTIONS=1
+# export NCCL_DEBUG=INFO
+    # deepspeed --hostfile $hfds --launcher MPICH ${EXEC} \
+    #
+data_cache_path="${CKPT_DIR}/${DATA_CACHE_PATH}"
+mkdir -p "${data_cache_path}"
+
+if [[ -n "${DIST_LAUNCH}" ]]; then
+    LAUNCHER="${DIST_LAUNCH} python3 ${EXEC}"
+else
+    LAUNCHER="deepspeed --hostfile $hfds --launcher MPICH ${EXEC}"
+fi
+
+rstr=$(printRed "Launching with:")
+gstr=$(printGreen " ${LAUNCHER}")
+printf "%s %s\n" "${rstr}" "${gstr}"
+
+    # ${DIST_LAUNCH} python3 ${EXEC} \
 run_cmd="
-    deepspeed --hostfile $hfds --launcher MPICH ${EXEC} \
+    ${LAUNCHER} \
     --$DTYPE \
     --optimizer ${OPT} \
     --split 100,0,0 \
@@ -103,7 +127,7 @@ run_cmd="
     --global-batch-size ${GLOBAL_BATCH} \
     --pipeline-model-parallel-size ${PP} \
     --num-key-value-heads ${NUM_KV_HEAD} \
-    --data-cache-path ${DATA_CACHE_PATH} \
+    --data-cache-path ${data_cache_path} \
     --ffn-hidden-size ${FFN_HIDDEN_SIZE} \
     --tokenizer-model ${TOKENIZER_MODEL} \
     ${LLAMA_ARGS} \
