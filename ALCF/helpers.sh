@@ -95,7 +95,11 @@ setParams() {
     export DTYPE="${DTYPE:-bf16}"
     export OPT="${OPT:-adamw}"
     export HOSTFILE="${HOSTFILE:-${PBS_NODEFILE}}"
-    export WORLD_SIZE=${WORLD_SIZE:-$(wc -l < "${HOSTFILE}")}
+    NHOSTS=$(wc -l < "${HOSTFILE}")
+    NGPU_PER_HOST=$(python3 -c 'import ezpz as ez; print(ez.get_gpus_per_node())')
+    export WORLD_SIZE="${WORLD_SIZE:-$(( NHOSTS * NGPU_PER_HOST ))}"
+    # export WORLD_SIZE="${WORLD_SIZE:-${NGPUS:-$(( ))}}"
+    # export WORLD_SIZE=${WORLD_SIZE:-$(wc -l < "${HOSTFILE}")}
     # ---- Llama2 7B Config ------------------------------
     export MODEL_KEY="Llama-7B"
     export HEADS=${HEADS:-${NHEADS:-32}}
@@ -207,11 +211,13 @@ setOutput() {
 
 buildDSconfig() {
     # ---- Build DeepSpeed Config ---------------------------------
-    export DS_CONFIG="ds_stage${ZERO_STAGE}_mb${MICRO_BATCH}_gb${GLOBAL_BATCH}_pp${PP}_${DTYPE}.json"
+    export DS_CONFIG="${WORKING_DIR}/ds-configs/ds_stage${ZERO_STAGE}_mb${MICRO_BATCH}_gb${GLOBAL_BATCH}_pp${PP}_${DTYPE}.json"
+    mkdir -p $(dirname "${DS_CONFIG}")
     echo "DS_CONFIG: ${DS_CONFIG}"
     printf "ZS: %s, CPU_OPTIMIZER: %s, MB: %s, GB: %s, PP: %s, DTYPE: %s" "${ZERO_STAGE}" "${CPU_OPTIMIZER}" "${MICRO_BATCH}" "${GLOBAL_BATCH}" "${PP}" "${DTYPE}"
-    working_dir="${PBS_O_WORKDIR:-${SLURM_SUBMIT_DIR:-$(pwd)}}"
-    bash "${working_dir}/generate_config.sh" "${DS_CONFIG}"
+    # working_dir="${PBS_O_WORKDIR:-${SLURM_SUBMIT_DIR:-$(pwd)}}"
+    generateDSconfig "${DS_CONFIG}"
+    # bash "${WORKING_DIR}/ALCF/generate_ds_config.sh" "${DS_CONFIG}"
     # -------------------------------------------------------------
 }
 
@@ -302,8 +308,8 @@ setData() {  # ---- [dfl: abbrv. for DATA_FILE_LIST] -------------------------
     ndocs=$(wc -l < "${dfl}")
     ws=$(sumWeights "${dfl}")
     dfl_stem=$(echo "${dfl}" | tr "\/" "\t" | awk '{print $NF}' | sed "s/\.txt//g")
-    dcp="${HERE}/.cache/${dfl_stem}/index-cache"
-    mkdir -p dcp
+    dcp=".cache/${dfl_stem}/index-cache"
+    # mkdir -p dcp
     export DATA_FILE_LIST="${dfl}"
     export NUM_DOCS="${ndocs}"
     export WEIGHT_SUM="${ws}"
@@ -317,6 +323,167 @@ setData() {  # ---- [dfl: abbrv. for DATA_FILE_LIST] -------------------------
     printf "DFL_STEM: %s\n" "${DFL_STEM}"
     printf "DATA_CACHE_PATH: %s\n" "${DATA_CACHE_PATH}"
     echo "--------------------"
+}
+
+generateDSconfig() {
+    for v in "$GLOBAL_BATCH" "$MICRO_BATCH" "$GRAD_ACC_STEPS" "$ZERO_STAGE" \
+             "$PP" "$DTYPE"
+    do
+      if [ -z $v ]; then
+        echo "Please export required envs before execute $0"
+        exit 1
+      fi
+    done
+    if [ $# -ne 1 ]; then
+      echo "Usage: $0 config_file"
+      exit 1
+    fi
+    # \"optimizer\": {
+    #   \"type\": \"AdamW\",
+    #   \"params\": {
+    #     \"lr\": ${LR},
+    #     \"beta1\": 0.9,
+    #     \"beta2\": 0.95,
+    #     \"eps\": 1e-5,
+    #     \"weight_decay\": 1e-1
+    #   }
+    # },
+    # \"scheduler\": {
+    #   \"type\": \"WarmupLR\",
+    #   \"params\": {
+    #       \"warmup_min_lr\": 0.00003,
+    #       \"warmup_max_lr\": 0.0003,
+    #       \"warmup_num_steps\": 5000
+    #   }
+    # },
+    extra=""
+    common="\
+        \"train_batch_size\": $GLOBAL_BATCH,
+        \"train_micro_batch_size_per_gpu\": $MICRO_BATCH,
+        \"steps_per_print\": 1,
+        \"gradient_accumulation_steps\": $GRAD_ACC_STEPS,
+        \"zero_allow_untested_optimizer\": true,
+        \"gradient_clipping\": 1.0,
+        \"activation_checkpointing\": {
+          \"partition_activations\": true,
+          \"contiguous_memory_optimization\": false
+        },
+        \"wall_clock_breakdown\": false,"
+    flops_profiler="\
+        \"flops_profiler\": {
+          \"enabled\": true,
+          \"profile_step\": 4,
+          \"module_depth\": -1,
+          \"top_modules\": 1,
+          \"detailed\": true,
+          \"output_file\": null
+        }"
+    if [[ $DTYPE == "bf16" ]]; then
+    dtype="\
+        \"communication_data_type\": \"bf16\",
+        \"fp16\": {
+          \"enabled\": false,
+          \"loss_scale\": 0,
+          \"loss_scale_window\": 1000,
+          \"hysteresis\": 2,
+          \"min_loss_scale\": 1
+        },
+        \"bfloat16\": {
+          \"enabled\": true,
+          \"loss_scale\": 1.0
+        },"
+    elif [[ $DTYPE == "fp16" ]]; then
+    dtype="\
+        \"communication_data_type\": \"fp16\",
+        \"fp16\": {
+          \"enabled\": true,
+          \"loss_scale\": 0,
+          \"loss_scale_window\": 1000,
+          \"hysteresis\": 2,
+          \"min_loss_scale\": 1
+        },
+        \"bfloat16\": {
+          \"enabled\": false,
+          \"loss_scale\": 1.0
+        },"
+    else
+      dtype="\"communication_data_type\": \"fp32\","
+    fi
+    if [ $ZERO_STAGE == 3 ]; then
+    zero="\
+        \"zero_optimization\": {
+          \"stage\": 3,
+          \"reduce_scatter\": false,
+          \"mics_shard_size\": 4,
+          \"mics_hierarchical_params_gather\": true,
+          \"stage3_max_live_parameters\": 3e9,
+          \"stage3_max_reuse_distance\": 3e9,
+          \"stage3_param_persistence_threshold\": 1e5,
+          \"stage3_prefetch_bucket_size\": 5e7,
+          \"contiguous_gradients\": true,
+          \"overlap_comm\": true,
+          \"reduce_bucket_size\": 90000000,
+          \"sub_group_size\": 1e9,
+          \"offload_optimizer\": {
+            \"device\": \"none\",
+            \"buffer_count\": 4,
+            \"pipeline_read\": false,
+            \"pipeline_write\": false,
+            \"pin_memory\": true
+          }
+        },"
+    # elif [[ $ZERO_STAGE == 2 ]]; then
+    elif [ "${ZERO_STAGE}" == 2 ] || [ "${ZERO_STAGE}" == 1 ]; then
+    if [[ -n "${CPU_OPTIMIZER}" ]]; then
+    echo "!!!! CAUGHT CPU_OPTIMIZER !!!!"
+    zero="\
+        \"zero_optimization\": {
+            \"stage\": $ZERO_STAGE,
+            \"offload_optimizer\": {
+              \"device\": \"cpu\"
+            }
+        },"
+    else
+    zero="\
+        \"zero_optimization\": {
+          \"stage\": $ZERO_STAGE
+        },"
+    fi
+    # elif [[ $ZERO_STAGE == 1 ]]; then
+    if [[ $PP > 1 ]]; then
+      extra="\
+          \"data_types\": {
+            \"grad_accum_dtype\": \"fp32\"
+          },
+          \"comms_logger\": {
+            \"enabled\": true,
+            \"verbose\": false,
+            \"prof_all\": true,
+            \"debug\": false
+          },"
+    else
+      # echo 'please add the config for zero_stage 1 without pipeline-parallelism'
+      extra="\
+          \"comms_logger\": {
+            \"enabled\": true,
+            \"verbose\": false,
+            \"prof_all\": true,
+            \"debug\": false
+          },"
+    fi
+    else
+      echo 'Please add the correct config set!!!'
+    fi
+# flops_profiler must at the end because no ',' is allowed at the end
+cat <<EOT > $1
+{
+$common
+$zero
+$dtype
+$extra
+$flops_profiler
+}
+EOT
 }
 
 printBlack() {
