@@ -1,5 +1,16 @@
 #!/bin/bash --login
 
+if [[ -n "${PBS_O_WORKDIR}" ]]; then
+    WORKING_DIR="${PBS_O_WORKDIR}"
+elif [[ -n "${SLURM_SUBMIT_DIR}" ]]; then
+    WORKING_DIR="${SLURM_SUBMIT_DIR}"
+else
+    WORKING_DIR="$(realpath $(pwd))"
+fi
+
+export WORKING_DIR="${WORKING_DIR}"
+printf "Using WORKING_DIR: %s" ${WORKING_DIR}
+
 
 printJobInfo() {
     echo "++++++++++++++++++++++++++++++++++++++++++++++++++"
@@ -50,7 +61,7 @@ setParams() {
         export BE="${CCL}"               # BE = CCL
         export DTYPE=${DTYPE:-bf16}      # DTYPE: bf16
         MICRO_BATCH=${MICRO_BATCH:-4}    # MICRO_BATCH = 4
-        export WORKING_DIR="${PBS_O_WORKDIR}"
+        # export WORKING_DIR="${PBS_O_WORKDIR}"
         if [[ -z "${NO_FLASH_ATTN}" ]]; then
             LLAMA_ARGS="${LLAMA_ARGS} --use-flash-attn"
         fi
@@ -62,7 +73,7 @@ setParams() {
         # export DTYPE=${DTYPE:-bf16}      # DTYPE: BF16 ??
         export DTYPE=${DTYPE:-fp16}      # DTYPE: FP16
         MICRO_BATCH=${MICRO_BATCH:-8}    # MICRO_BATCH = 8
-        export WORKING_DIR="${PBS_O_WORKDIR}"
+        # export WORKING_DIR="${PBS_O_WORKDIR}"
         if [[ -z "${NO_FLASH_ATTN}" ]]; then
             LLAMA_ARGS="${LLAMA_ARGS} --use-flash-attn-v2"
         fi
@@ -73,7 +84,7 @@ setParams() {
         export BE="${NCCL}"
         export DTYPE="${DTYPE:-bf16}"
         MICRO_BATCH="${MICRO_BATCH:-8}"
-        export WORKING_DIR="${SLURM_SUBMIT_DIR}"
+        # export WORKING_DIR="${SLURM_SUBMIT_DIR}"
         if [[ -z "${NO_FLASH_ATTN}" ]]; then
             LLAMA_ARGS="${LLAMA_ARGS} --use-flash-attn-v2"
         fi
@@ -162,8 +173,8 @@ ezpz() {
         python3 -m pip install -e "${PBS_O_WORKDIR}/edps/ezpz"  #  > ezpz-install.log 2>&1
     fi
     echo "Done with ezpz."
-    source ezpz/src/ezpz/bin/savejobenv  > /tmp/savejobenv.log 2>&1 || exit
-    source ezpz/src/ezpz/bin/getjobenv || exit
+    source "${WORKING_DIR}/deps/ezpz/src/ezpz/bin/savejobenv"  > /tmp/savejobenv.log 2>&1 || exit
+    source "${WORKING_DIR}/deps/ezpz/src/ezpz/bin/getjobenv" || exit
 }
 
 # +------------------------------------------------------------------------+
@@ -236,11 +247,15 @@ setEnv() {
         fi
     # ----- [Polaris] ---------------------------------------
     elif [[ $(hostname) == x3* ]]; then
-        echo "Running on Polaris !!"
-        # ---- [load conda] ---------------------
-        module load conda/2023-10-04; conda activate cu118-pt221 ; unset PYTHONUSERBASE
-        if [[ -d "${PBS_O_WORKDIR}/venvs/polaris/cu118-pt221" ]]; then
-            source "${PBS_O_WORKDIR}/venvs/polaris/cu118-pt221/bin/activate"
+        if [[ "${PBS_O_HOST}" == sirius* ]]; then
+            export MACHINE="Running on Sirius !!"
+        else
+            echo "Running on Polaris !!"
+            # ---- [load conda] ---------------------
+            # module load conda/2023-10-04; conda activate cu118-pt221 ; unset PYTHONUSERBASE
+            if [[ -d "${PBS_O_WORKDIR}/venvs/polaris/cu118-pt221" ]]; then
+                source "${PBS_O_WORKDIR}/venvs/polaris/cu118-pt221/bin/activate"
+            fi
         fi
     elif [[ $(hostname) == login* || $(hostname) == nid* ]]; then
         echo "Running on Perlmutter !!"
@@ -254,8 +269,8 @@ setEnv() {
 }
 
 makeHostfiles() {
-    source ezpz/src/ezpz/bin/savejobenv || exit #> /tmp/savejobenv.log 2>&1 &
-    source ezpz/src/ezpz/bin/getjobenv || exit
+    # source "${WORKING_DIR}/deps/ezpz/src/ezpz/bin/savejobenv" || exit #> /tmp/savejobenv.log 2>&1 &
+    # source "${WORKING_DIR}/deps/ezpz/src/ezpz/bin/getjobenv" || exit
     export GPUS_PER_NODE="${GPUS_PER_NODE:-${NGPU_PER_HOST:-${SLURM_GPUS_ON_NODE:-$(nvidia-smi -L | wc -l)}}}"
     # ---- Make MPICH hostfile ----------------
     hf="${HOSTFILE:-${PBS_NODEFILE}}"
@@ -271,11 +286,11 @@ setData() {  # ---- [dfl: abbrv. for DATA_FILE_LIST] -------------------------
     if [[ $(hostname) == x4* ]]; then    # ---- [AURORA] ----
         dfl_fallback="/home/foremans/anl_24_release_q4/llm.devkit/Megatron-DeepSpeed/data_file_list_reweighted.txt"
     elif [[ $(hostname) == x1* ]]; then
-        dfl_fallback="../ALCF/data-lists/sunspot/data_file_list_books.txt"
+        dfl_fallback="${WORKING_DIR}/ALCF/data-lists/sunspot/data_file_list_books.txt"
         # dfl_fallback="/gila/Aurora_deployment/AuroraGPT/datasets/dolma/data_file_list_reweighted.txt"
     elif [[ $(hostname) == x3* ]]; then
         # dfl_fallback="/eagle/datasets/dolma/data_file_list_reweighted.txt"
-        dfl_fallback="../ALCF/data-lists/polaris/data_file_list_books.txt"
+        dfl_fallback="${WORKING_DIR}/ALCF/data-lists/polaris/data_file_list_books.txt"
     elif [[ $(hostname) == login* || $(hostname) == nid* ]]; then
         dfl_fallback="${SLURM_SUBMIT_DIR}/genslm-subsample.txt"
     else
