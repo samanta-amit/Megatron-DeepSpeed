@@ -5,6 +5,8 @@
 #PBS -l select=48
 #PBS -l filesystems=eagle:home
 
+set -euxo pipefail
+
 function sourceFile() {
     fp="$1"
     echo "source-ing ${fp}"
@@ -125,7 +127,8 @@ run_cmd="
     |& tee ${OUTPUT_LOG}
     "
 
-echo "! Using $(which deepspeed)"
+# ds_exec
+# echo "! Using $(which deepspeed)"
 ds_report
 
 echo "${run_cmd}"

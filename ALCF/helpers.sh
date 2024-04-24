@@ -1,11 +1,15 @@
 #!/bin/bash --login
+#
+# set -euxo pipefail
 
 if [[ -n "${PBS_O_WORKDIR}" ]]; then
     WORKING_DIR="${PBS_O_WORKDIR}"
 elif [[ -n "${SLURM_SUBMIT_DIR}" ]]; then
     WORKING_DIR="${SLURM_SUBMIT_DIR}"
 else
-    WORKING_DIR="$(realpath $(pwd))"
+    echo "Unable to detect PBS or SLURM working directory info..."
+    WORKING_DIR=$(python3 -c 'import os; print(os.getcwd())')
+    echo "Using ${WORKING_DIR} as working directory..."
 fi
 
 export WORKING_DIR="${WORKING_DIR}"
@@ -14,7 +18,7 @@ printf "Using WORKING_DIR: %s\n" ${WORKING_DIR}
 
 printJobInfo() {
     echo "++++++++++++++++++++++++++++++++++++++++++++++++++"
-    echo "- MPICH_DIR=$MPICH_DIR"
+    echo "- MPICH_DIR=${MPICH_DIR:-${MPI_ROOT}}"
     echo "- Using $(which python3)"
     echo "- WORLD_SIZE:${WORLD_SIZE}"
     echo "- NCCL: ${NCCL:-nccl}"
@@ -68,6 +72,7 @@ setParams() {
     LLAMA_ARGS=""
     # ---- [Parallelism Settings] --------------------------------------------
     # -------- [Aurora] ---- || ----- [SunSpot] ------------
+    NO_FLASH_ATTN="${NO_FLASH_ATTN:-0}"
     if [[ $(hostname) == x4* || $(hostname) == x1* ]]; then
         TP=${TP:-1}                      # TP = 1
         export CCL=${CCL:-ccl}           # CCL
@@ -75,7 +80,7 @@ setParams() {
         export DTYPE=${DTYPE:-bf16}      # DTYPE: bf16
         MICRO_BATCH=${MICRO_BATCH:-4}    # MICRO_BATCH = 4
         # export WORKING_DIR="${PBS_O_WORKDIR}"
-        if [[ -z "${NO_FLASH_ATTN}" ]]; then
+        if [[ "${NO_FLASH_ATTN}" != 0 ]]; then
             LLAMA_ARGS="${LLAMA_ARGS} --use-flash-attn"
         fi
     # -------- [Polaris] -----------------------------------
@@ -87,7 +92,8 @@ setParams() {
         export DTYPE=${DTYPE:-fp16}      # DTYPE: FP16
         MICRO_BATCH=${MICRO_BATCH:-8}    # MICRO_BATCH = 8
         # export WORKING_DIR="${PBS_O_WORKDIR}"
-        if [[ -z "${NO_FLASH_ATTN}" ]]; then
+        # if [[ -z "${NO_FLASH_ATTN}" ]]; then
+        if [[ "${NO_FLASH_ATTN}" != 0 ]]; then
             LLAMA_ARGS="${LLAMA_ARGS} --use-flash-attn-v2"
         fi
     # -------- [Perlmutter] ---------------------------------
@@ -98,7 +104,8 @@ setParams() {
         export DTYPE="${DTYPE:-bf16}"
         MICRO_BATCH="${MICRO_BATCH:-8}"
         # export WORKING_DIR="${SLURM_SUBMIT_DIR}"
-        if [[ -z "${NO_FLASH_ATTN}" ]]; then
+        # if [[ -z "${NO_FLASH_ATTN}" ]]; then
+        if [[ "${NO_FLASH_ATTN}" != 0 ]]; then
             LLAMA_ARGS="${LLAMA_ARGS} --use-flash-attn-v2"
         fi
     fi
@@ -192,20 +199,21 @@ function make_ds_hostfile() {
 ezpz() {
     if [[ ! -d "${WORKING_DIR}/deps/ezpz" ]]; then
         mkdir -p "${WORKING_DIR}/deps"
-        git clone https://github.com/saforem2/ezpz "${WORKING_DIR}/deps"
+        git clone https://github.com/saforem2/ezpz "${WORKING_DIR}/deps/ezpz"
     else
         echo "Found ezpz!"
     fi
+    echo "Done with clone. Now, checking if ezpz is installed..."
     if python3 -c 'import ezpz; print(ezpz.__file__)' 2> '/dev/null'; then
         echo "Has ezpz installed. Nothing to do."
     else
         echo "Does not have ezpz installed. Installing..."
         echo "Using $(which python3) to install ezpz:"
-        python3 -m pip install -e "${WORKING_DIR}/edps/ezpz"  #  > ezpz-install.log 2>&1
+        python3 -m pip install -e "${WORKING_DIR}/deps/ezpz"  #  > ezpz-install.log 2>&1
     fi
     echo "Done with ezpz."
-    source "${WORKING_DIR}/deps/ezpz/src/ezpz/bin/savejobenv"  > /tmp/savejobenv.log 2>&1 || exit
-    source "${WORKING_DIR}/deps/ezpz/src/ezpz/bin/getjobenv" || exit
+    source ${WORKING_DIR}/deps/ezpz/src/ezpz/bin/savejobenv  #   >  /dev/null 2>&1 #> /tmp/savejobenv.log 2>&1 || exit
+    source ${WORKING_DIR}/deps/ezpz/src/ezpz/bin/getjobenv || exit
     make_ds_hostfile || exit
 }
 
@@ -240,10 +248,11 @@ setOutput() {
 
 buildDSconfig() {
     # ---- Build DeepSpeed Config ---------------------------------
+    export CPU_OPTIMIZER="${CPU_OPTIMIZER:-0}"
     export DS_CONFIG="${WORKING_DIR}/ds-configs/ds_stage${ZERO_STAGE}_mb${MICRO_BATCH}_gb${GLOBAL_BATCH}_pp${PP}_${DTYPE}.json"
     mkdir -p $(dirname "${DS_CONFIG}")
     echo "DS_CONFIG: ${DS_CONFIG}"
-    printf "ZS: %s, CPU_OPTIMIZER: %s, MB: %s, GB: %s, PP: %s, DTYPE: %s" "${ZERO_STAGE}" "${CPU_OPTIMIZER}" "${MICRO_BATCH}" "${GLOBAL_BATCH}" "${PP}" "${DTYPE}"
+    printf "ZS: %s, , MB: %s, GB: %s, PP: %s, DTYPE: %s" "${ZERO_STAGE}" "${CPU_OPTIMIZER}" "${MICRO_BATCH}" "${GLOBAL_BATCH}" "${PP}" "${DTYPE}"
     # working_dir="${PBS_O_WORKDIR:-${SLURM_SUBMIT_DIR:-$(pwd)}}"
     generateDSconfig "${DS_CONFIG}"
     # bash "${WORKING_DIR}/ALCF/generate_ds_config.sh" "${DS_CONFIG}"
@@ -269,16 +278,19 @@ sumFiles() {
 setEnv() {
     # ---- [SunSpot] ------- || ---- [Aurora] --------------
     if [[ $(hostname) == x1* || $(hostname) == x4* ]]; then
-        PBS_PARENT=$(dirname ${PBS_O_WORKDIR})
-        echo "Sourcing ${PBS_PARENT}/setenv.sh..."
-        source "${PBS_PARENT}/setenv.sh" || exit
+        # PBS_PARENT=$(dirname ${PBS_O_WORKDIR})
+        # echo "Sourcing ${PBS_PARENT}/setenv.sh..."
+        # source "${PBS_PARENT}/setenv.sh" || exit
+        source "${WORKING_DIR}/ALCF/sunspot-env.sh" || exit
         # ----- [Aurora] -----------------------------------
-        if [[ $(hostname) == x4* ]]; then
-            eval "$(/home/foremans/miniconda3/bin/conda shell.zsh hook)" && conda activate anl_release_q4v2
-        # ----- [SunSpot] ----------------------------------
-        elif [[ $(hostname) == x1* ]]; then
-            echo "Running on SunSpot !!"
-            eval "$(/home/foremans/miniconda3/bin/conda shell.zsh hook)" && conda activate q4-drop
+        if [[ -z "${CONDA_PREFIX}" && -z "${VIRTUAL_ENV}" ]]; then
+            if [[ $(hostname) == x4* ]]; then
+                eval "$(conda shell.zsh hook)" && conda activate anl_release_q4v2
+            # ----- [SunSpot] ----------------------------------
+            elif [[ $(hostname) == x1* ]]; then
+                echo "Running on SunSpot !!"
+                eval "$(/home/foremans/miniconda3/bin/conda shell.zsh hook)" && conda activate q4-drop
+            fi
         fi
     # ----- [Polaris] ---------------------------------------
     elif [[ $(hostname) == x3* ]]; then
@@ -460,7 +472,8 @@ generateDSconfig() {
         },"
     # elif [[ $ZERO_STAGE == 2 ]]; then
     elif [ "${ZERO_STAGE}" == 2 ] || [ "${ZERO_STAGE}" == 1 ]; then
-    if [[ -n "${CPU_OPTIMIZER}" ]]; then
+    # if [[ -n "${CPU_OPTIMIZER}" ]]; then
+    if [[ "${CPU_OPTIMIZER}" != 0 ]]; then
     echo "!!!! CAUGHT CPU_OPTIMIZER !!!!"
     zero="\
         \"zero_optimization\": {
