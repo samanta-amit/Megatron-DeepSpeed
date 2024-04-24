@@ -36,6 +36,19 @@ function setupSrun() {
 }
 
 
+function setupLauncher() {
+    # outdir=$1
+    if [[ -n "${DIST_LAUNCH}" && ${LAUNCH_CMD:-"MPICH"} != "deepspeed" ]]; then
+        export LAUNCH_CMD="${DIST_LAUNCH} python3 -Wignore ${EXEC}"
+    else
+        # Assert `./hostfile_deepspeed` exists
+        export hfds="${WORKING_DIR}/hostfile_deepspeed" && [ -f "${hfds}" ] || exit
+        export LAUNCH_CMD="deepspeed --hostfile $hfds --launcher MPICH ${EXEC}"
+    fi
+    printf "%s" "$(printRed 'Launching with:')"
+    printf " %s" "$(printMagenta ${LAUNCH_CMD})"
+}
+
 function setDSlauncher() {
     # launcher setting
     outdir=$1
@@ -159,14 +172,27 @@ setArgs() {
     export gpt_args
 }
 
+
+function make_ds_hostfile() {
+    export GPUS_PER_NODE="${GPUS_PER_NODE:-${NGPU_PER_HOST:-${SLURM_GPUS_ON_NODE:-$(nvidia-smi -L | wc -l)}}}"
+    # ---- Make MPICH hostfile ----------------
+    hf="${HOSTFILE:-${PBS_NODEFILE}}"
+    export hostfile_mpich=hostfile_mpich
+    cat "${hf}" > "${hostfile_mpich}"
+    # ---- Make DeepSpeed hostfile -------------------
+    export hostfile_deepspeed=hostfile_deepspeed
+    cat "${hf}" > "${hostfile_deepspeed}"
+    sed -e "s/$/ slots=${GPUS_PER_NODE}/" -i "${hostfile_deepspeed}"
+}
+
 # +---------------------------------------+
 # | 1. Git clone ezpz (if not found)    |
 # | 2. Install ezpz (if not installed)  |
 # +---------------------------------------+
 ezpz() {
-    if [[ ! -d "${PBS_O_WORKDIR}/deps/ezpz" ]]; then
-        mkdir -p "${PBS_O_WORKDIR}/deps"
-        git clone https://github.com/saforem2/ezpz "${PBS_O_WORKDIR}/deps"
+    if [[ ! -d "${WORKING_DIR}/deps/ezpz" ]]; then
+        mkdir -p "${WORKING_DIR}/deps"
+        git clone https://github.com/saforem2/ezpz "${WORKING_DIR}/deps"
     else
         echo "Found ezpz!"
     fi
@@ -175,11 +201,12 @@ ezpz() {
     else
         echo "Does not have ezpz installed. Installing..."
         echo "Using $(which python3) to install ezpz:"
-        python3 -m pip install -e "${PBS_O_WORKDIR}/edps/ezpz"  #  > ezpz-install.log 2>&1
+        python3 -m pip install -e "${WORKING_DIR}/edps/ezpz"  #  > ezpz-install.log 2>&1
     fi
     echo "Done with ezpz."
     source "${WORKING_DIR}/deps/ezpz/src/ezpz/bin/savejobenv"  > /tmp/savejobenv.log 2>&1 || exit
     source "${WORKING_DIR}/deps/ezpz/src/ezpz/bin/getjobenv" || exit
+    make_ds_hostfile || exit
 }
 
 # +------------------------------------------------------------------------+
@@ -201,7 +228,8 @@ saveDSenv() {
 setOutput() {
     # ---- Specify output location --------------------------------
     export OUTPUT_PREFIX="ds_stage${ZERO_STAGE}_nl${NLAYERS}_hs${HIDDEN}_mb${MICRO_BATCH}_seq${SEQ}_gb${GLOBAL_BATCH}_pp${PP}_tp${TP}_${DTYPE}_opt${OPT}"
-    OUTPUT_DIR="logs/${OUTPUT_PREFIX}/$(date +%m%d%H%M%S)_${HOSTNAME}"
+    # OUTPUT_DIR="logs/${OUTPUT_PREFIX}/$(date +%m%d%H%M%S)_${HOSTNAME}"
+    OUTPUT_DIR="logs/${OUTPUT_PREFIX}/$(date +%Y%m%d-%H%M%S)_${WORLD_SIZE}_${HOSTNAME}"
     export OUTPUT_DIR="${OUTPUT_DIR}"
     export OUTPUT_LOG="${OUTPUT_DIR}/output.log"
     export CKPT_DIR="checkpoints/${OUTPUT_PREFIX}"
@@ -275,18 +303,15 @@ setEnv() {
     echo "[python] Using: $(which python3)"
 }
 
+
 makeHostfiles() {
-    # source "${WORKING_DIR}/deps/ezpz/src/ezpz/bin/savejobenv" || exit #> /tmp/savejobenv.log 2>&1 &
-    # source "${WORKING_DIR}/deps/ezpz/src/ezpz/bin/getjobenv" || exit
-    export GPUS_PER_NODE="${GPUS_PER_NODE:-${NGPU_PER_HOST:-${SLURM_GPUS_ON_NODE:-$(nvidia-smi -L | wc -l)}}}"
-    # ---- Make MPICH hostfile ----------------
-    hf="${HOSTFILE:-${PBS_NODEFILE}}"
-    export hostfile_mpich=hostfile_mpich
-    cat "${hf}" > "${hostfile_mpich}"
-    # ---- Make DeepSpeed hostfile -------------------
-    export hostfile_deepspeed=hostfile_deepspeed
-    cat "${hf}" > "${hostfile_deepspeed}"
-    sed -e "s/$/ slots=${GPUS_PER_NODE}/" -i "${hostfile_deepspeed}"
+    if [[ -n "${HOSTFILE}" ]]; then
+        printf "!! USING CUSTOM HOSTFILE FROM: %s"  "${HOSTFILE}"
+    else
+        make_ds_hostfile
+        # source "${WORKING_DIR}/deps/ezpz/src/ezpz/bin/savejobenv" || exit #> /tmp/savejobenv.log 2>&1 &
+        # source "${WORKING_DIR}/deps/ezpz/src/ezpz/bin/getjobenv" || exit
+    fi
 }
 
 setData() {  # ---- [dfl: abbrv. for DATA_FILE_LIST] -------------------------

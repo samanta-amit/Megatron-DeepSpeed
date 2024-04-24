@@ -30,29 +30,24 @@ sourceFile "${HERE}/ALCF/helpers.sh" || exit
 
 # ----[3. Call fns from `./ALCF/helpers_alcf.sh`]------------------------------
 setEnv || exit                      # 1. load `conda` environment
-saveDSenv || exit                   # 2. save env vars to `.deepspeed_env`
+# saveDSenv || exit                   # 2. save env vars to `.deepspeed_env`
 ezpz || exit                        # 3. determine WORLD_SIZE, etc. from `PBS_*` vars
-if [[ -z "${HOSTFILE}" ]]; then
-    makeHostfiles || exit               # 4. create `deepspeed` hostfile from `$PBS_NODEFILE`
-else
-    echo "!! USING CUSTOM HOSTFILE FROM: ${HOSTFILE}"
-fi
+
+# if [[ -z "${HOSTFILE}" ]]; then
+#     makeHostfiles || exit               # 4. create `deepspeed` hostfile from `$PBS_NODEFILE`
+# else
+#     echo "!! USING CUSTOM HOSTFILE FROM: ${HOSTFILE}"
+# fi
 setParams || exit                   # 5. set command line arguments to pass to `"${EXEC}"`
 buildDSconfig || exit               # 6. create `deepspeed_config.json` from runtime params from ^
 setOutput || exit                   # 7. specify output directory for {logs, checkpoints, etc.}
 setArgs || exit                     # 8. specify additional `deepspeed` arguments
 setData "${DATA_FILE_LIST}"|| exit  # 9. specify `DATA_FILE_LIST` for dolma dataset
-setDSlauncher "${HERE}" || exit     # 10. set `launcher` args for `deepspeed ${launcher} ${EXEC} ${args}`
+# setDSlauncher "${HERE}" || exit     # 10. set `launcher` args for `deepspeed ${launcher} ${EXEC} ${args}`
 printJobInfo || exit                # 11. print job info
+setupLauncher || exit
 # -----------------------------------------------------------------------------
 
-# Take custom args
-custom_args=" $@"
-
-# Assert `./hostfile_deepspeed` exists
-export hfds="${HERE}/hostfile_deepspeed" && [ -f "${hfds}" ] || exit
-TBDIR="${CKPT_DIR}/tensorboard"
-mkdir -p "${TBDIR}"
 
 # TORCH_DEVICE=$(python3 -c 'import ezpz as ez; print(ez.get_torch_device())')
 # printf %s "Using TORCH_DEVICE=${TORCH_DEVICE}"
@@ -63,44 +58,27 @@ mkdir -p "${TBDIR}"
 # fi
 
 
-# source "${HERE}/venvs/polaris/2024-03-14/bin/activate" || exit
-# echo "Using $(which python3)"
-# --launcher_args='--pmi=pmix'
-# deepspeed --hostfile $hfds --launcher ${LAUNCHER} ${EXEC} \
-# ${launch_cmd} \
-# --use-flash-attn-v2 \
-# --num-workers 0 \
-
-    # aprun -n "${NGPUS}" -N "${NGPU_PER_HOST}" --pmi=pmix ${PBS_O_WORKDIR}/local_rank.sh
-# yeet="${DIST_LAUNCH} ./local_rank.sh"
-    # deepspeed --hostfile $hfds --launcher MPICH ${EXEC} \
-    #
 # export MPICH_GPU_SUPPORT_ENABLED=1
 # export CUDA_DEVICE_MAX_CONNECTIONS=1
 # export NCCL_DEBUG=INFO
-    # deepspeed --hostfile $hfds --launcher MPICH ${EXEC} \
-    #
+#
+#
+# Assert TBDIR exists inside our $CKPT_DIR
+TBDIR="${CKPT_DIR}/tensorboard"
+mkdir -p "${TBDIR}"
+
 data_cache_path="${CKPT_DIR}/${DATA_CACHE_PATH}"
 mkdir -p "${data_cache_path}"
+module list
 
-if [[ -n "${DIST_LAUNCH}" ]]; then
-    LAUNCHER="${DIST_LAUNCH} python3 -Wignore ${EXEC}"
-else
-    LAUNCHER="deepspeed --hostfile $hfds --launcher MPICH ${EXEC}"
-fi
+# Take custom args
+custom_args=" $@"
 
-rstr=$(printRed "Launching with:\n")
-mstr=$(printBlue " ${LAUNCHER}")
-printf "%s" "${rstr}'"
-printf " %s" "${mstr}"
-# printf "%s %s\n" "${rstr}" "${mstr}"
-
-    # ${DIST_LAUNCH} python3 ${EXEC} \
     # --log-num-zeros-in-grad \
     # --log-memory-to-tensorboard \
 run_cmd="
-    ${LAUNCHER} \
-    --$DTYPE \
+    ${LAUNCH_CMD} \
+    --${DTYPE} \
     --optimizer ${OPT} \
     --split 100,0,0 \
     --log-interval 1 \
