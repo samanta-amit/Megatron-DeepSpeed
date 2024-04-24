@@ -43,7 +43,7 @@ function setupSrun() {
 function setupLauncher() {
     # outdir=$1
     if [[ -n "${DIST_LAUNCH}" && ${LAUNCH_CMD:-"MPICH"} != "deepspeed" ]]; then
-        export LAUNCH_CMD="${DIST_LAUNCH} python3 -Wignore ${EXEC}"
+        export LAUNCH_CMD="${DIST_LAUNCH} --cpu-bind depth -d 16 python3 -Wignore ${EXEC}"
     else
         # Assert `./hostfile_deepspeed` exists
         export hfds="${WORKING_DIR}/hostfile_deepspeed" && [ -f "${hfds}" ] || exit
