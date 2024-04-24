@@ -20,11 +20,14 @@ function sourceFile() {
 cd "${PBS_O_WORKDIR}" || exit
 HERE=$(python3 -c 'import os; print(os.getcwd())')
 export HERE
+
 # ----[1. Assert `./pretrain_gpt_alcf.py` exists:]-----------------------------
 export EXEC="${HERE}/pretrain_gpt_alcf.py"
 [ -f "${EXEC}" ] || exit
+
 # ----[2. `source ./ALCF/helpers_alcf.sh`:]------------------------------------
 sourceFile "${HERE}/ALCF/helpers.sh" || exit
+
 # ----[3. Call fns from `./ALCF/helpers_alcf.sh`]------------------------------
 setEnv || exit                      # 1. load `conda` environment
 saveDSenv || exit                   # 2. save env vars to `.deepspeed_env`
@@ -81,16 +84,20 @@ data_cache_path="${CKPT_DIR}/${DATA_CACHE_PATH}"
 mkdir -p "${data_cache_path}"
 
 if [[ -n "${DIST_LAUNCH}" ]]; then
-    LAUNCHER="${DIST_LAUNCH} python3 ${EXEC}"
+    LAUNCHER="${DIST_LAUNCH} python3 -Wignore ${EXEC}"
 else
     LAUNCHER="deepspeed --hostfile $hfds --launcher MPICH ${EXEC}"
 fi
 
-rstr=$(printRed "Launching with:")
-gstr=$(printGreen " ${LAUNCHER}")
-printf "%s %s\n" "${rstr}" "${gstr}"
+rstr=$(printRed "Launching with:\n")
+mstr=$(printBlue " ${LAUNCHER}")
+printf "%s" "${rstr}'"
+printf " %s" "${mstr}"
+# printf "%s %s\n" "${rstr}" "${mstr}"
 
     # ${DIST_LAUNCH} python3 ${EXEC} \
+    # --log-num-zeros-in-grad \
+    # --log-memory-to-tensorboard \
 run_cmd="
     ${LAUNCHER} \
     --$DTYPE \
@@ -130,6 +137,9 @@ run_cmd="
     --data-cache-path ${data_cache_path} \
     --ffn-hidden-size ${FFN_HIDDEN_SIZE} \
     --tokenizer-model ${TOKENIZER_MODEL} \
+    --timing-log-level ${TIMING_LOG_LEVEL} \
+    --log-timers-to-tensorboard \
+    --log-optimizer-states-to-tensorboard \
     ${LLAMA_ARGS} \
     $ds_args \
     ${gpt_args[*]} \
