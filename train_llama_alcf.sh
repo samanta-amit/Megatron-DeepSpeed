@@ -5,7 +5,10 @@
 #PBS -l select=48
 #PBS -l filesystems=eagle:home
 
-set -euxo pipefail
+if [[ -n "${DEBUG-}" ]]; then
+    printf "\e[1;31m%s\e[0m\n" "!! RUNNING IN DEBUG MODE !!"
+    set -euxo pipefail
+fi
 
 function sourceFile() {
     fp="$1"

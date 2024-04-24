@@ -28,7 +28,7 @@ printJobInfo() {
 }
 
 
-function setupSrun() {
+setupSrun() {
     if [[ $(hostname) == login* || $(hostname) == nid* ]]; then
         export NHOSTS="${SLURM_NNODES:-1}"
         export NGPU_PER_HOST="${SLURM_GPUS_ON_NODE:-$(nvidia-smi -L | wc -l)}"
@@ -40,7 +40,7 @@ function setupSrun() {
 }
 
 
-function setupLauncher() {
+setupLauncher() {
     # outdir=$1
     if [[ -n "${DIST_LAUNCH}" && ${LAUNCH_CMD:-"MPICH"} != "deepspeed" ]]; then
         export LAUNCH_CMD="${DIST_LAUNCH} --cpu-bind depth -d 16 python3 -Wignore ${EXEC}"
@@ -53,7 +53,7 @@ function setupLauncher() {
     printf " %s" "$(printMagenta ${LAUNCH_CMD})"
 }
 
-function setDSlauncher() {
+setDSlauncher() {
     # launcher setting
     outdir=$1
     export hfds="$outdir/hostfile_deepspeed"
@@ -70,20 +70,23 @@ function setDSlauncher() {
 
 setParams() {
     LLAMA_ARGS=""
-    # ---- [Parallelism Settings] --------------------------------------------
-    # -------- [Aurora] ---- || ----- [SunSpot] ------------
-    NO_FLASH_ATTN="${NO_FLASH_ATTN:-0}"
+    # +----[Parallelism Settings] -------------------------------------------+
+    # +------[Aurora]--------||-------[SunSpot]-------------+
     if [[ $(hostname) == x4* || $(hostname) == x1* ]]; then
         TP=${TP:-1}                      # TP = 1
         export CCL=${CCL:-ccl}           # CCL
         export BE="${CCL}"               # BE = CCL
         export DTYPE=${DTYPE:-bf16}      # DTYPE: bf16
         MICRO_BATCH=${MICRO_BATCH:-4}    # MICRO_BATCH = 4
-        # export WORKING_DIR="${PBS_O_WORKDIR}"
-        if [[ "${NO_FLASH_ATTN}" != 0 ]]; then
-            LLAMA_ARGS="${LLAMA_ARGS} --use-flash-attn"
+        #######################################################
+        # if NO_FLASH_ATTN is NON-empty; then NO FLASH ATTN !!
+        if [[ -n "${NO_FLASH_ATTN-}" ]]; then
+            echo "Not using flash-attn!!"
+        else
+            LLAMA_ARGS="${LLAMA_ARGS} --use-flash-attn-builder"
         fi
-    # -------- [Polaris] -----------------------------------
+        #######################################################
+    # +--------[Polaris]-----------------------------------+
     elif [[ $(hostname) == x3* ]]; then
         TP=${TP:-2}                      # TP = 2
         export NCCL=${NCCL:-nccl}        # NCCL
@@ -91,61 +94,64 @@ setParams() {
         # export DTYPE=${DTYPE:-bf16}      # DTYPE: BF16 ??
         export DTYPE=${DTYPE:-fp16}      # DTYPE: FP16
         MICRO_BATCH=${MICRO_BATCH:-8}    # MICRO_BATCH = 8
-        # export WORKING_DIR="${PBS_O_WORKDIR}"
-        # if [[ -z "${NO_FLASH_ATTN}" ]]; then
-        if [[ "${NO_FLASH_ATTN}" != 0 ]]; then
+        if [[ -n "${NO_FLASH_ATTN-}" ]]; then
+            echo "Not using flash-attn!!"
+        else
             LLAMA_ARGS="${LLAMA_ARGS} --use-flash-attn-v2"
         fi
-    # -------- [Perlmutter] ---------------------------------
+    # +--------[Perlmutter]---------------------------------+
     elif [[ $(hostname) == login* || $(hostname) == nid* ]]; then
         TP="${TP:-2}"
         export NCCL="${NCCL:-nccl}"
         export BE="${NCCL}"
         export DTYPE="${DTYPE:-bf16}"
         MICRO_BATCH="${MICRO_BATCH:-8}"
-        # export WORKING_DIR="${SLURM_SUBMIT_DIR}"
-        # if [[ -z "${NO_FLASH_ATTN}" ]]; then
-        if [[ "${NO_FLASH_ATTN}" != 0 ]]; then
+        if [[ -n "${NO_FLASH_ATTN-}" ]]; then
+            echo "Not using flash-attn!!"
+        else
             LLAMA_ARGS="${LLAMA_ARGS} --use-flash-attn-v2"
         fi
     fi
-    # ------------------------------------------------------------------------
+    # +----------------------------------------------------------------------+
     export TP="${TP}"
     export PP="${PP:-1}"
     export DTYPE="${DTYPE:-bf16}"
     export OPT="${OPT:-adamw}"
     export HOSTFILE="${HOSTFILE:-${PBS_NODEFILE}}"
     NHOSTS=$(wc -l < "${HOSTFILE}")
-    NGPU_PER_HOST=$(python3 -c 'import ezpz as ez; print(ez.get_gpus_per_node())')
+    if [[ -z "${NGPU_PER_HOST-}" ]]; then
+        NGPU_PER_HOST=$(python3 -c 'import ezpz as ez; print(ez.get_gpus_per_node())')
+    fi
     export WORLD_SIZE="${WORLD_SIZE:-$(( NHOSTS * NGPU_PER_HOST ))}"
     # export WORLD_SIZE="${WORLD_SIZE:-${NGPUS:-$(( ))}}"
     # export WORLD_SIZE=${WORLD_SIZE:-$(wc -l < "${HOSTFILE}")}
-    # ---- Llama2 7B Config ------------------------------
+    # +---[Llama2 7B Config]-----------------------------+
     export MODEL_KEY="Llama-7B"
     export HEADS=${HEADS:-${NHEADS:-32}}
     export NLAYERS=${NLAYERS:-${NUM_LAYERS:-32}}
     export HIDDEN=${HIDDEN:-4096}
     export NUM_KV_HEAD=${NUM_KV_HEAD:-8}
     export FFN_HIDDEN_SIZE=${FFN_HIDDEN_SIZE:-11008}
-    # ---- Run Settings ----------------------------------
-    export LR=${LR:-0.0003}
+    # +---[Run Settings]------------------------------------------------------+
+    export LR=${LR:-0.0003}                       # LEARNING_RATE
     export SEQ=${SEQ:-4096}                       # SEQ_LEN: 4096
-    export ZERO_STAGE=${ZERO_STAGE:-2}
-    export MICRO_BATCH=${MICRO_BATCH:-8}
-    export GRAD_ACC_STEPS=${GRAD_ACC_STEPS:-1}
-    export EVAL_ITERS="${EVAL_ITERS:-10}"
-    export TRAIN_ITER=${TRAIN_ITER:-317892}
-    export EVAL_INTERVAL="${EVAL_INTERVAL:-50000}"
-    export SAVE_INTERVAL=${SAVE_INTERVAL:-200}
-    export TIMING_LOG_LEVEL="${TIMING_LOG_LEVEL:-1}"
-    export USE_ACTIVATION_CHECKPOINTING=${USE_ACTIVATION_CHECKPOINTING:-1}
-    export GLOBAL_BATCH_MAX=$(( $WORLD_SIZE * $MICRO_BATCH * $GRAD_ACC_STEPS / $TP / $PP ))
-    export GLOBAL_BATCH="${GLOBAL_BATCH:-${GLOBAL_BATCH_MAX}}"
-    tm="${WORKING_DIR}/ALCF/tokenizer.model"
-    export TOKENIZER_MODEL="${TOKENIZER_MODEL:-${tm}}"
-    export MODEL_TYPE="llama-seq${SEQ}-pp${PP}-tp${TP}-${NLAYERS}layers-${HEADS}heads-${HIDDEN}hidden"
+    export ZERO_STAGE=${ZERO_STAGE:-2}            # ZERO OFFLOADING STAGE
+    export MICRO_BATCH=${MICRO_BATCH:-8}          # MICRO BATCH SIZE
+    export GRAD_ACC_STEPS=${GRAD_ACC_STEPS:-1}    # GRADIENT ACCUMULATION STEPS
+    export EVAL_ITERS="${EVAL_ITERS:-10}"         # NUMBER OF EVAL ITERS TO RUN
+    export TRAIN_ITER=${TRAIN_ITER:-317892}       # NUMBER OF TRAIN ITERS
+    export EVAL_INTERVAL="${EVAL_INTERVAL:-50000}"  # HOW FREQUENTLY TO RUN EVAL
+    export SAVE_INTERVAL=${SAVE_INTERVAL:-200}    # HOW FREQUENTLY TO SAVE CKPTS
+    export TIMING_LOG_LEVEL="${TIMING_LOG_LEVEL:-1}"  # TIMING VERBOSITY IN LOGS
+    export USE_ACTIVATION_CHECKPOINTING=${USE_ACTIVATION_CHECKPOINTING:-1}  # USE ACTIVATION CHECKPOINTING ?
+    export GLOBAL_BATCH_MAX=$(( $WORLD_SIZE * $MICRO_BATCH * $GRAD_ACC_STEPS / $TP / $PP ))  # MAX GLOBAL BATCH SIZE
+    export GLOBAL_BATCH="${GLOBAL_BATCH:-${GLOBAL_BATCH_MAX}}"  # WILL USE MAX IF NOT SET IN ENVIRONMENT
+    tm="${WORKING_DIR}/ALCF/tokenizer.model"      # fallback: Megatron-DeepSpeed/ALCF/tokenizer.model
+    export TOKENIZER_MODEL="${TOKENIZER_MODEL:-${tm}}"  # USE TOKENIZER_MODEL from env, else fallback from ^
+    export MODEL_TYPE="llama-seq${SEQ}-pp${PP}-tp${TP}-${NLAYERS}layers-${HEADS}heads-${HIDDEN}hidden"  # STRING FOR IDENTIFYING MODEL
+    # +----[ADDITIONAL LLAMA SPECIFIC ARGUMENTS]------------------------------
     export LLAMA_ARGS="${LLAMA_ARGS} --no-query-key-layer-scaling --use-rotary-position-embeddings --untie-embeddings-and-output-weights --swiglu --normalization rmsnorm --disable-bias-linear"
-    # ----------------------------------------------------
+    # +----------------------------------------------------------------------+
 }
 
 
@@ -180,7 +186,7 @@ setArgs() {
 }
 
 
-function make_ds_hostfile() {
+make_ds_hostfile() {
     export GPUS_PER_NODE="${GPUS_PER_NODE:-${NGPU_PER_HOST:-${SLURM_GPUS_ON_NODE:-$(nvidia-smi -L | wc -l)}}}"
     # ---- Make MPICH hostfile ----------------
     hf="${HOSTFILE:-${PBS_NODEFILE}}"
@@ -213,7 +219,7 @@ ezpz() {
         python3 -m pip install -e "${WORKING_DIR}/deps/ezpz"  #  > ezpz-install.log 2>&1
     fi
     echo "Done with ezpz."
-    source ${WORKING_DIR}/deps/ezpz/src/ezpz/bin/savejobenv  #   >  /dev/null 2>&1 #> /tmp/savejobenv.log 2>&1 || exit
+    source ${WORKING_DIR}/deps/ezpz/src/ezpz/bin/savejobenv  >  /dev/null 2>&1 #> /tmp/savejobenv.log 2>&1 || exit
     source ${WORKING_DIR}/deps/ezpz/src/ezpz/bin/getjobenv || exit
     make_ds_hostfile || exit
 }
