@@ -204,7 +204,8 @@ ezpz() {
         echo "Found ezpz!"
     fi
     echo "Done with clone. Now, checking if ezpz is installed..."
-    if python3 -c 'import ezpz; print(ezpz.__file__)' 2> '/dev/null'; then
+    # if python3 -c 'import ezpz; print(ezpz.__file__)' 2> '/dev/null'; then
+    if python3 -c "import sys; any(['ezpz' in s for s in sys.path])" 2> '/dev/null'; then
         echo "Has ezpz installed. Nothing to do."
     else
         echo "Does not have ezpz installed. Installing..."
