@@ -3,9 +3,18 @@
 # Run complete test of
 # https://github.com/argonne-lcf/Megatron-DeepSpeed
 # on Sunspot @ ALCF
+# to launch (inside an interactive `qsub -I` job) on Sirius:
+#
+# ```bash
+# $ git clone https://github.com/argonne-lcf/Megatron-DeepSpeed
+# $ cd Megatron-DeepSpeed/ALCF
+# $ bash test_sunspot.sh
+# ````
 
 # EXIT ON ERROR(s)
 set -euxo pipefail
+
+NOW="$(date "+%Y-%m-%d-%H%M%S")"
 
 ########################################################
 # Setup / activate conda environment,
@@ -26,23 +35,30 @@ setup_conda() {
 # does not already exist
 ########################################
 setup_megatron_deepspeed() {
-    mkdir tmp && cd tmp
+    OUTDIR="OUTPUTS/test-sunspot-${NOW}" && mkdir -p "${OUTDIR}" && cd "${OUTDIR}"
+    echo "Running test in: ${OUTDIR}"
+    echo "WORKING DIRECTORY: $(realpath $(pwd .))"
     if [[ -d "Megatron-DeepSpeed" ]]; then
-        # rm -rfv Megatron-DeepSpeed/
-        echo "Found existing Megatron-DeepSpeed.
-        Remove existing directory to run test."
+        echo "Found existing Megatron-DeepSpeed in ${OUTDIR}"
+        echo "Remove Megatron-DeepSpeed from ${OUTDIR} to run test."
         exit
     fi
     git clone https://github.com/argonne-lcf/Megatron-DeepSpeed && cd Megatron-DeepSpeed
-    git checkout remove-apex-deps
 }
 
 
 main() {
     setup_conda
     setup_megatron_deepspeed
-    # NOTE: to use OPT=adamwschedulefree, you will need to pip install schedulefree
-    DEBUG=1 PBS_O_WORKDIR="$(pwd)" DATA_FILE_LIST=./ALCF/data-lists/sunspot/books.txt LR=0.0008 GRAD_ACC_STEPS=8 ZERO_STAGE=1 NUM_LAYERS=10 MICRO_BATCH=8 OPT=adamwschedulefree TIMING_LOG_LEVEL=1 bash train_llama_alcf.sh
+    export DEBUG=1
+    export PBS_O_WORKDIR="$(pwd)"
+    export DATA_FILE_LIST=./ALCF/data-lists/sunspot/books.txt
+    export ZERO_STAGE=1
+    export NUM_LAYERS=10
+    export MICRO_BATCH=8
+    export TRAIN_ITER=20
+    export TIMING_LOG_LEVEL=1
+    bash train_llama_alcf.sh |& tee "test-sunspot-${NOW}.log"
 }
 
 main
