@@ -8,7 +8,7 @@ import torch
 import math
 from functools import partial
 from megatron import get_args
-from megatron import print_rank_0
+from megatron import log.info
 from megatron import get_timers
 from megatron import get_tokenizer
 from megatron.core import mpu, tensor_parallel
@@ -74,7 +74,7 @@ if RANK == 0 and not DISABLE_WANDB:
 
 def model_provider(pre_process=True, post_process=True):
     """Build the model."""
-    print_rank_0('building GPT model ...')
+    log.info('building GPT model ...')
     see_memory_usage("Before Building Model", force=True)
     args = get_args()
     config = core_transformer_config_from_args(args)
@@ -118,7 +118,7 @@ def model_provider(pre_process=True, post_process=True):
             # We need to call model.set_batch_fn after deepspeed.initialize
             model._megatron_batch_fn = get_batch_pipe
 
-            # Predompute the attention mask and store it in args.
+            # Precompute the attention mask and store it in args.
             # This avoids having to pipeline it
             # as an activation during training.
             # The mask is constant, and thus we can reuse it.
@@ -154,12 +154,9 @@ def model_provider(pre_process=True, post_process=True):
             )
 
     num_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    # print_rank_0('\n ------------------------ ')
-    # print_rank_0(f'num of parameters {num_params}')
-    # print_rank_0('------------------------\n ')
-    print_rank_0(80 * '-')
-    print_rank_0(f"Number of parameters in model: {num_params}")
-    print_rank_0(80 * '-')
+    log.info(80 * '-')
+    log.info(f"Number of parameters in model: {num_params}")
+    log.info(80 * '-')
     see_memory_usage("After Building Model", force=True)
     if wandb.run is not None:
         tbdir = args.tensorboard_dir
@@ -342,7 +339,7 @@ def loss_func(loss_mask, moe_loss, mos_loss, output_tensor):
                 'moe loss': moe_loss,
                 'kd loss': mos_loss
             }
-        print_rank_0(
+        log.info(
             f'>>> total loss: {loss}, '
             f'lm loss {averaged_loss[0]}, '
             f'kd loss {mos_loss}'
@@ -419,7 +416,8 @@ def forward_step(data_iterator, model):
     # Get the batch.
     timers('batch-generator', log_level=2).start()
     tokens, labels, loss_mask, attention_mask, position_ids = get_batch(
-        data_iterator)
+        data_iterator
+    )
     timers('batch-generator').stop()
 
     if args.data_efficiency_curriculum_learning:
@@ -492,11 +490,12 @@ def train_valid_test_datasets_provider(train_val_test_num_samples):
     """Build train, valid, and test datasets."""
     args = get_args()
 
-    print_rank_0('> building train, validation, and test datasets '
-                 'for GPT ...')
+    log.info(
+        '> building train, validation, and test datasets for GPT ...'
+    )
     files = []
     if args.data_file_list is not None:
-        print_rank_0(f"Reading datasets from {args.data_file_list}")
+        log.info(f"Reading datasets from {args.data_file_list}")
         with open(args.data_file_list, 'r') as flist:
             for f in flist.readlines():
                 w, fname = f.split()
@@ -523,8 +522,9 @@ def train_valid_test_datasets_provider(train_val_test_num_samples):
         train_data_prefix=args.train_data_path,
         valid_data_prefix=args.valid_data_path,
         test_data_prefix=args.test_data_path,
-        data_cache_path=args.data_cache_path)
-    print_rank_0("> finished creating GPT datasets ...")
+        data_cache_path=args.data_cache_path,
+    )
+    log.info("> finished creating GPT datasets ...")
 
     return train_ds, valid_ds, test_ds
 
@@ -566,8 +566,6 @@ def git_ds_info():
 
 
 def main():
-    # if RANK == 0:
-    #     setup_wandb()
     if os.getenv('TORCH_PROFILER_ENABLED') == '1':
         from torch.profiler import profile, record_function, ProfilerActivity
         with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA]) as prof:
@@ -593,17 +591,26 @@ def main():
             # args_defaults={'tokenizer_type': 'GPT2BPETokenizer'},
             data_post_process=data_post_process
         )
-    try:
-        from megatron.text_generation import generate_and_post_process
-        with torch.autocast(device_type=ez.get_torch_device(), dtype=torch.float16):
-            response, _, _, _ = generate_and_post_process(model, prompts=["Hello world", "Nature is", "Turing test comprises", "Explain solar eclipse"], tokens_to_generate=32)
-        if RANK == 0:
-            log.info(f'generation completed..\n response:{response}')
-    except ValueError as ve:
-        log.critical(f'ValueError: {ve}')
-        pass
+    # try:
+    #     from megatron.text_generation import generate_and_post_process
+    #     with torch.autocast(device_type=DEVICE, dtype=args.dtype):
+    #         response, _, _, _ = generate_and_post_process(
+    #             model,
+    #             prompts=[
+    #                 "Hello world",
+    #                 "Nature is",
+    #                 "Turing test comprises",
+    #                 "Explain solar eclipse"
+    #             ],
+    #             tokens_to_generate=32
+    #         )
+    #     if RANK == 0:
+    #         log.info(f'generation completed..\n response:{response}')
+    # except ValueError as ve:
+    #     log.critical(f'ValueError: {ve}')
+    #     pass
     # dist.barrier()
-    model.train()
+    # model.train()
     return model
 
 
@@ -623,4 +630,4 @@ if __name__ == "__main__":
         print(f"wandb.run.name: {wandb.run.name}")
         print(f"wandb.run.url: {wandb.run.url}")
         wandb.finish()
-    sys.exit()
+    sys.exit(0)
