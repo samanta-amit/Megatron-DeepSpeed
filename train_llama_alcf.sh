@@ -132,7 +132,7 @@ run_cmd="
 
 # ds_exec
 # echo "! Using $(which deepspeed)"
-ds_report
+# ds_report
 
 echo "${run_cmd}"
 
