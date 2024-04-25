@@ -8,7 +8,7 @@ import torch
 import math
 from functools import partial
 from megatron import get_args
-from megatron import log.info
+# from megatron import print_rank_0
 from megatron import get_timers
 from megatron import get_tokenizer
 from megatron.core import mpu, tensor_parallel
@@ -19,12 +19,12 @@ from megatron.training import pretrain
 from megatron.utils import get_ltor_masks_and_position_ids
 from megatron.utils import average_losses_across_data_parallel_group, update_rotary_pos_emb
 from megatron.arguments import core_transformer_config_from_args
-from megatron.utils import (
-    report_memory,
-    throughput_calculator,
-    checkpoint_throughput_calculator
-)
-from pathlib import Path
+# from megatron.utils import (
+#     # report_memory,
+#     # throughput_calculator,
+#     # checkpoint_throughput_calculator
+# )
+# from pathlib import Path
 from enrich import get_logger
 
 import deepspeed
@@ -33,7 +33,7 @@ from deepspeed.accelerator.real_accelerator import get_accelerator
 import subprocess
 import wandb
 
-import time
+# import time
 from torch import nn
 import torch.nn.functional as F
 import ezpz as ez
