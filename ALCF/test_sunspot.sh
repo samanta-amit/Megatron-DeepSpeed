@@ -39,12 +39,11 @@ setup_megatron_deepspeed() {
     echo "Running test in: ${OUTDIR}"
     echo "WORKING DIRECTORY: $(realpath $(pwd .))"
     if [[ -d "Megatron-DeepSpeed" ]]; then
-        echo "Found existing Megatron-DeepSpeed.
-        Remove existing directory to run test."
+        echo "Found existing Megatron-DeepSpeed in ${OUTDIR}"
+        echo "Remove Megatron-DeepSpeed from ${OUTDIR} to run test."
         exit
     fi
     git clone https://github.com/argonne-lcf/Megatron-DeepSpeed && cd Megatron-DeepSpeed
-    git checkout alcf-tests
 }
 
 

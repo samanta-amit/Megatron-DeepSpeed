@@ -37,13 +37,11 @@ setup_megatron_deepspeed() {
     echo "Running test in: ${OUTDIR}"
     echo "WORKING DIRECTORY: $(realpath $(pwd .))"
     if [[ -d "Megatron-DeepSpeed" ]]; then
-        # rm -rfv Megatron-DeepSpeed/
-        echo "Found existing Megatron-DeepSpeed.
-        Remove existing directory to run test."
+        echo "Found existing Megatron-DeepSpeed in ${OUTDIR}"
+        echo "Remove Megatron-DeepSpeed from ${OUTDIR} to run test."
         exit
     fi
     git clone https://github.com/argonne-lcf/Megatron-DeepSpeed && cd Megatron-DeepSpeed
-    git checkout alcf-tests
 }
 
 
@@ -53,8 +51,6 @@ main() {
     export DEBUG=1
     export PBS_O_WORKDIR="$(pwd)"
     export DATA_FILE_LIST=./ALCF/data-lists/sirius/books.txt
-    # LR=0.0008
-    # GRAD_ACC_STEPS=8
     export ZERO_STAGE=1
     export NUM_LAYERS=10
     export MICRO_BATCH=8
