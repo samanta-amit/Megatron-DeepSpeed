@@ -43,7 +43,7 @@ setup_megatron_deepspeed() {
         exit
     fi
     git clone https://github.com/argonne-lcf/Megatron-DeepSpeed && cd Megatron-DeepSpeed
-    git checkout remove-apex-deps
+    git checkout alcf-tests
 }
 
 
@@ -58,7 +58,7 @@ main() {
     export ZERO_STAGE=1
     export NUM_LAYERS=10
     export MICRO_BATCH=8
-    export TRAIN_ITERS=20
+    export TRAIN_ITER=20
     export TIMING_LOG_LEVEL=1
     bash train_llama_alcf.sh |& tee "test-sirius-${NOW}".log
 }

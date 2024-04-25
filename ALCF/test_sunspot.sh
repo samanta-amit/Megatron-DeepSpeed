@@ -5,7 +5,7 @@
 # on Sunspot @ ALCF
 # to launch (inside an interactive `qsub -I` job) on Sirius:
 #
-# ```bash`
+# ```bash
 # $ git clone https://github.com/argonne-lcf/Megatron-DeepSpeed
 # $ cd Megatron-DeepSpeed/ALCF
 # $ bash test_sunspot.sh
@@ -44,7 +44,7 @@ setup_megatron_deepspeed() {
         exit
     fi
     git clone https://github.com/argonne-lcf/Megatron-DeepSpeed && cd Megatron-DeepSpeed
-    git checkout remove-apex-deps
+    git checkout alcf-tests
 }
 
 
@@ -59,7 +59,7 @@ main() {
     export MICRO_BATCH=8
     export TRAIN_ITER=20
     export TIMING_LOG_LEVEL=1
-    bash train_llama_alcf.sh |& tee "test-suntpot-${NOW}".log
+    bash train_llama_alcf.sh |& tee "test-sunspot-${NOW}.log"
 }
 
 main
