@@ -39,20 +39,19 @@ import torch.nn.functional as F
 import ezpz as ez
 
 
-# ---- SETUP DISTRIBUTED COMMS ----
-# RANK = ez.setup_torch(
-#     backend='deepspeed',
-#     port='5432',
-# )
-RANK = ez.get_rank()
+# ---- [SETUP COMMS] ------------------------
+RANK = ez.setup_torch(backend="deepspeed")
+# RANK = ez.get_rank()
 WORLD_SIZE = ez.get_world_size()
+LOCAL_RANK = ez.get_local_rank()
 DEVICE = ez.get_torch_device()
-
-# --- TURN OFF LOGGER ON ALL RANK != 0 ----
+if torch.cuda.is_available():
+    torch.cuda.set_device(LOCAL_RANK)
+# -------------------------------------------
+# --- [TURN OFF LOGGER ON ALL RANK != 0] ----
 log = get_logger(__name__)
 log.setLevel("INFO") if RANK == 0 else log.setLevel("CRITICAL")
-
-# ---- SETUP WANDB FROM RANK 0 ----------------
+# ---- [SETUP WANDB FROM RANK 0] --------------
 WANDB_MODE = os.environ.get('WANDB_MODE', None)
 DISABLE_WANDB = (
     WANDB_MODE is not None and str(WANDB_MODE).lower() == 'disabled'
@@ -70,7 +69,7 @@ if RANK == 0 and not DISABLE_WANDB:
     print('--------------------------------------------------')
     print(f"Setting up W&B from: {RANK} with {project_name}")
     print('--------------------------------------------------')
-    ez.setup_wandb(project_name=project_name)
+    _ = ez.setup_wandb(project_name=project_name)
 
 
 def model_provider(pre_process=True, post_process=True):
@@ -163,6 +162,12 @@ def model_provider(pre_process=True, post_process=True):
     print_rank_0(80 * '-')
     see_memory_usage("After Building Model", force=True)
     if wandb.run is not None:
+        tbdir = args.tensorboard_dir
+        # tbdir = args.getattr('tensorboard_dir', None)
+        if tbdir is not None:
+            log.info(f'Patching tensorboard from {tbdir}')
+            wandb.tensorboard.patch(root_logdir=tbdir)
+
         wandb.run.config.update({'num_params': num_params})
         if "args" not in wandb.run.config:
             log.info(

@@ -5,6 +5,11 @@
 #PBS -l select=48
 #PBS -l filesystems=eagle:home
 
+if [[ -n "${DEBUG-}" ]]; then
+    printf "\e[1;31m%s\e[0m\n" "!! RUNNING IN DEBUG MODE !!"
+    set -euxo pipefail
+fi
+
 function sourceFile() {
     fp="$1"
     echo "source-ing ${fp}"
@@ -20,32 +25,34 @@ function sourceFile() {
 cd "${PBS_O_WORKDIR}" || exit
 HERE=$(python3 -c 'import os; print(os.getcwd())')
 export HERE
+
 # ----[1. Assert `./pretrain_gpt_alcf.py` exists:]-----------------------------
 export EXEC="${HERE}/pretrain_gpt_alcf.py"
 [ -f "${EXEC}" ] || exit
+
 # ----[2. `source ./ALCF/helpers_alcf.sh`:]------------------------------------
 sourceFile "${HERE}/ALCF/helpers.sh" || exit
+
 # ----[3. Call fns from `./ALCF/helpers_alcf.sh`]------------------------------
 setEnv || exit                      # 1. load `conda` environment
-saveDSenv || exit                   # 2. save env vars to `.deepspeed_env`
+# saveDSenv || exit                   # 2. save env vars to `.deepspeed_env`
 ezpz || exit                        # 3. determine WORLD_SIZE, etc. from `PBS_*` vars
-makeHostfiles || exit               # 4. create `deepspeed` hostfile from `$PBS_NODEFILE`
+
+# if [[ -z "${HOSTFILE}" ]]; then
+#     makeHostfiles || exit               # 4. create `deepspeed` hostfile from `$PBS_NODEFILE`
+# else
+#     echo "!! USING CUSTOM HOSTFILE FROM: ${HOSTFILE}"
+# fi
 setParams || exit                   # 5. set command line arguments to pass to `"${EXEC}"`
 buildDSconfig || exit               # 6. create `deepspeed_config.json` from runtime params from ^
 setOutput || exit                   # 7. specify output directory for {logs, checkpoints, etc.}
 setArgs || exit                     # 8. specify additional `deepspeed` arguments
 setData "${DATA_FILE_LIST}"|| exit  # 9. specify `DATA_FILE_LIST` for dolma dataset
-setDSlauncher "${HERE}" || exit     # 10. set `launcher` args for `deepspeed ${launcher} ${EXEC} ${args}`
+# setDSlauncher "${HERE}" || exit     # 10. set `launcher` args for `deepspeed ${launcher} ${EXEC} ${args}`
 printJobInfo || exit                # 11. print job info
+setupLauncher || exit
 # -----------------------------------------------------------------------------
 
-# Take custom args
-custom_args=" $@"
-
-# Assert `./hostfile_deepspeed` exists
-export hfds="${HERE}/hostfile_deepspeed" && [ -f "${hfds}" ] || exit
-TBDIR="${CKPT_DIR}/tensorboard"
-mkdir -p "${TBDIR}"
 
 # TORCH_DEVICE=$(python3 -c 'import ezpz as ez; print(ez.get_torch_device())')
 # printf %s "Using TORCH_DEVICE=${TORCH_DEVICE}"
@@ -56,20 +63,27 @@ mkdir -p "${TBDIR}"
 # fi
 
 
-# source "${HERE}/venvs/polaris/2024-03-14/bin/activate" || exit
-# echo "Using $(which python3)"
-# --launcher_args='--pmi=pmix'
-# deepspeed --hostfile $hfds --launcher ${LAUNCHER} ${EXEC} \
-# ${launch_cmd} \
-# --use-flash-attn-v2 \
-# --num-workers 0 \
+# export MPICH_GPU_SUPPORT_ENABLED=1
+# export CUDA_DEVICE_MAX_CONNECTIONS=1
+# export NCCL_DEBUG=INFO
+#
+#
+# Assert TBDIR exists inside our $CKPT_DIR
+TBDIR="${CKPT_DIR}/tensorboard"
+mkdir -p "${TBDIR}"
 
-    # aprun -n "${NGPUS}" -N "${NGPU_PER_HOST}" --pmi=pmix ${PBS_O_WORKDIR}/local_rank.sh
-    # ${DIST_LAUNCH} $(which python3) ${EXEC} \
-# yeet="${DIST_LAUNCH} ./local_rank.sh"
+data_cache_path="${CKPT_DIR}/${DATA_CACHE_PATH}"
+mkdir -p "${data_cache_path}"
+module list
+
+# Take custom args
+custom_args=" $@"
+
+    # --log-num-zeros-in-grad \
+    # --log-memory-to-tensorboard \
 run_cmd="
-    deepspeed --hostfile $hfds --launcher MPICH ${EXEC} \
-    --$DTYPE \
+    ${LAUNCH_CMD} \
+    --${DTYPE} \
     --optimizer ${OPT} \
     --split 100,0,0 \
     --log-interval 1 \
@@ -103,9 +117,12 @@ run_cmd="
     --global-batch-size ${GLOBAL_BATCH} \
     --pipeline-model-parallel-size ${PP} \
     --num-key-value-heads ${NUM_KV_HEAD} \
-    --data-cache-path ${DATA_CACHE_PATH} \
+    --data-cache-path ${data_cache_path} \
     --ffn-hidden-size ${FFN_HIDDEN_SIZE} \
     --tokenizer-model ${TOKENIZER_MODEL} \
+    --timing-log-level ${TIMING_LOG_LEVEL} \
+    --log-timers-to-tensorboard \
+    --log-optimizer-states-to-tensorboard \
     ${LLAMA_ARGS} \
     $ds_args \
     ${gpt_args[*]} \
@@ -113,7 +130,8 @@ run_cmd="
     |& tee ${OUTPUT_LOG}
     "
 
-echo "! Using $(which deepspeed)"
+# ds_exec
+# echo "! Using $(which deepspeed)"
 ds_report
 
 echo "${run_cmd}"
