@@ -35,39 +35,38 @@ sourceFile "${HERE}/ALCF/helpers.sh" || exit
 
 # ----[3. Call fns from `./ALCF/helpers_alcf.sh`]------------------------------
 setEnv || exit                      # 1. load `conda` environment
-# saveDSenv || exit                   # 2. save env vars to `.deepspeed_env`
+# saveDSenv || exit                 # 2. save env vars to `.deepspeed_env`
 ezpz || exit                        # 3. determine WORLD_SIZE, etc. from `PBS_*` vars
-
-# if [[ -z "${HOSTFILE}" ]]; then
-#     makeHostfiles || exit               # 4. create `deepspeed` hostfile from `$PBS_NODEFILE`
-# else
-#     echo "!! USING CUSTOM HOSTFILE FROM: ${HOSTFILE}"
-# fi
 setParams || exit                   # 5. set command line arguments to pass to `"${EXEC}"`
 buildDSconfig || exit               # 6. create `deepspeed_config.json` from runtime params from ^
 setOutput || exit                   # 7. specify output directory for {logs, checkpoints, etc.}
 setArgs || exit                     # 8. specify additional `deepspeed` arguments
 setData "${DATA_FILE_LIST}"|| exit  # 9. specify `DATA_FILE_LIST` for dolma dataset
-# setDSlauncher "${HERE}" || exit     # 10. set `launcher` args for `deepspeed ${launcher} ${EXEC} ${args}`
 printJobInfo || exit                # 11. print job info
 setupLauncher || exit
 # -----------------------------------------------------------------------------
 
-
+#### [DEPRECATED] ###########################################################
+# if [[ -z "${HOSTFILE}" ]]; then
+#     makeHostfiles || exit         # 4. create `deepspeed` hostfile from `$PBS_NODEFILE`
+# else
+#     echo "!! USING CUSTOM HOSTFILE FROM: ${HOSTFILE}"
+# fi
+# ----------------------------------------------------------------------------
+# setDSlauncher "${HERE}" || exit   # 10. set `launcher` args for `deepspeed ${launcher} ${EXEC} ${args}`
+# ----------------------------------------------------------------------------
 # TORCH_DEVICE=$(python3 -c 'import ezpz as ez; print(ez.get_torch_device())')
 # printf %s "Using TORCH_DEVICE=${TORCH_DEVICE}"
-#
 # if [[ "${TORCH_DEVICE}" == "cuda" ]]; then
 #     printf %s "Setting PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True"
 #     PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 # fi
-
-
+# ----------------------------------------------------------------------------
 # export MPICH_GPU_SUPPORT_ENABLED=1
 # export CUDA_DEVICE_MAX_CONNECTIONS=1
 # export NCCL_DEBUG=INFO
-#
-#
+#############################################################################
+
 # Assert TBDIR exists inside our $CKPT_DIR
 TBDIR="${CKPT_DIR}/tensorboard"
 mkdir -p "${TBDIR}"
@@ -130,12 +129,7 @@ run_cmd="
     |& tee ${OUTPUT_LOG}
     "
 
-# ds_exec
-# echo "! Using $(which deepspeed)"
-# ds_report
-
 echo "${run_cmd}"
-
 printf "[!! \e[1;31m%s\e[0m] View output at:\n" "NOTE"
 printf "\e[1;34m%s\e[0m\n" "${OUTPUT_LOG}"
 eval "${run_cmd}"
