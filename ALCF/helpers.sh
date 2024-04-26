@@ -306,13 +306,46 @@ function sumFiles() {
     done
 }
 
+########################################################
+# Setup / activate conda environment,
+# mine is called q4-drop
+########################################################
+setup_conda_sunspot() {
+    if [[ -z "${CONDA_PREFIX}" && -z "${VIRTUAL_ENV}" ]]; then
+        shell_name=$(echo "${SHELL}" | tr "\/" "\t" | awk '{print $NF}')
+        eval "$(~/miniconda3/bin/conda shell hook -s posix)"
+        conda activate q4-drop
+    else
+        echo "Found existing python at: $(which python3)"
+    fi
+}
+
+setup_conda_sirius() {
+    if [[ -z "${CONDA_PREFIX}" && -z "${VIRTUAL_ENV}" ]]; then
+        export MAMBA_ROOT_PREFIX=/lus/tegu/projects/PolarisAT/foremans/micromamba
+        shell_name=$(echo "${SHELL}" | tr "\/" "\t" | awk '{print $NF}')
+        eval "$("${MAMBA_ROOT_PREFIX}/bin/micromamba" shell hook --shell ${shell_name})"
+        micromamba activate 2024-04-23
+    else
+        echo "Found existing python at: $(which python3)"
+    fi
+}
+
+setup_conda_polaris() {
+    if [[ -z "${CONDA_PREFIX}" && -z "${VIRTUAL_ENV}" ]]; then
+        export MAMBA_ROOT_PREFIX=/eagle/argonne_tpc/micromamba
+        shell_name=$(echo "${SHELL}" | tr "\/" "\t" | awk '{print $NF}')
+        eval "$("${MAMBA_ROOT_PREFIX}/bin/micromamba" shell hook -s posix)"
+        micromamba activate 2024-04-25
+    else
+        echo "Found existing python at: $(which python3)"
+    fi
+}
+
 
 function setEnv() {
     # ---- [SunSpot] ------- || ---- [Aurora] --------------
     if [[ $(hostname) == x1* || $(hostname) == x4* ]]; then
-        # PBS_PARENT=$(dirname ${PBS_O_WORKDIR})
-        # echo "Sourcing ${PBS_PARENT}/setenv.sh..."
-        # source "${PBS_PARENT}/setenv.sh" || exit
         source "${WORKING_DIR}/ALCF/sunspot-env.sh" || exit
         # ----- [Aurora] -----------------------------------
         if [[ -z "${CONDA_PREFIX}" && -z "${VIRTUAL_ENV}" ]]; then
@@ -321,20 +354,22 @@ function setEnv() {
             # ----- [SunSpot] ----------------------------------
             elif [[ $(hostname) == x1* ]]; then
                 echo "Running on SunSpot !!"
-                eval "$(/home/foremans/miniconda3/bin/conda shell.zsh hook)" && conda activate q4-drop
+                setup_conda_sunspot
+                # eval "$(/home/foremans/miniconda3/bin/conda shell.zsh hook)" && conda activate q4-drop
             fi
         fi
     # ----- [Polaris] ---------------------------------------
     elif [[ $(hostname) == x3* ]]; then
         if [[ "${PBS_O_HOST}" == sirius* ]]; then
             export MACHINE="Running on Sirius !!"
+            setup_conda_sirius
         else
             echo "Running on Polaris !!"
             # ---- [load conda] ---------------------
-            # module load conda/2023-10-04; conda activate cu118-pt221 ; unset PYTHONUSERBASE
-            if [[ -d "${PBS_O_WORKDIR}/venvs/polaris/cu118-pt221" ]]; then
-                source "${PBS_O_WORKDIR}/venvs/polaris/cu118-pt221/bin/activate"
-            fi
+            setup_conda_polaris
+            # if [[ -d "${PBS_O_WORKDIR}/venvs/polaris/cu118-pt221" ]]; then
+            #     source "${PBS_O_WORKDIR}/venvs/polaris/cu118-pt221/bin/activate"
+            # fi
         fi
     elif [[ $(hostname) == login* || $(hostname) == nid* ]]; then
         echo "Running on Perlmutter !!"
@@ -353,8 +388,6 @@ function makeHostfiles() {
         printf "!! USING CUSTOM HOSTFILE FROM: %s"  "${HOSTFILE}"
     else
         make_ds_hostfile
-        # source "${WORKING_DIR}/deps/ezpz/src/ezpz/bin/savejobenv" || exit #> /tmp/savejobenv.log 2>&1 &
-        # source "${WORKING_DIR}/deps/ezpz/src/ezpz/bin/getjobenv" || exit
     fi
 }
 
@@ -362,24 +395,27 @@ function setData() {  # ---- [dfl: abbrv. for DATA_FILE_LIST] ------------------
     if [[ $(hostname) == x4* ]]; then    # ---- [AURORA] ----
         dfl_fallback="/home/foremans/anl_24_release_q4/llm.devkit/Megatron-DeepSpeed/data_file_list_reweighted.txt"
     elif [[ $(hostname) == x1* ]]; then
-        dfl_fallback="${WORKING_DIR}/ALCF/data-lists/sunspot/data_file_list_books.txt"
-        # dfl_fallback="/gila/Aurora_deployment/AuroraGPT/datasets/dolma/data_file_list_reweighted.txt"
+        # shellcheck: source ./data-lists/sunspot/books.txt
+        dfl_fallback="${WORKING_DIR}/ALCF/data-lists/sunspot/books.txt"
     elif [[ $(hostname) == x3* ]]; then
-        # dfl_fallback="/eagle/datasets/dolma/data_file_list_reweighted.txt"
-        dfl_fallback="${WORKING_DIR}/ALCF/data-lists/polaris/data_file_list_books.txt"
+        if [[ "${PBS_O_HOST}" == sirius* ]]; then
+            # shellcheck: source ./data-lists/sirius/books.txt
+            dfl_fallback="${WORKING_DIR}/ALCF/data-lists/sirius/books.txt"
+        elif [[ "${PBS_O_HOST}" == polaris* ]]; then
+            # shellcheck: source ./data-lists/polaris/books.txt
+            dfl_fallback="${WORKING_DIR}/ALCF/data-lists/polaris/books.txt"
+        fi
     elif [[ $(hostname) == login* || $(hostname) == nid* ]]; then
         dfl_fallback="${SLURM_SUBMIT_DIR}/genslm-subsample.txt"
     else
         echo "Unknown hostname. Must manually specify DATA_FILE_LIST."
     fi
     dfl="${1:-${dfl_fallback}}"
-    # dfl_fallback="/eagle/datasets/dolma/data_file_list_reweighted.txt"
     printf "Calling:  setData() with %s\n" "${dfl}"
     ndocs=$(wc -l < "${dfl}")
     ws=$(sumWeights "${dfl}")
     dfl_stem=$(echo "${dfl}" | tr "\/" "\t" | awk '{print $NF}' | sed "s/\.txt//g")
     dcp=".cache/${dfl_stem}/index-cache"
-    # mkdir -p dcp
     export DATA_FILE_LIST="${dfl}"
     export NUM_DOCS="${ndocs}"
     export WEIGHT_SUM="${ws}"
