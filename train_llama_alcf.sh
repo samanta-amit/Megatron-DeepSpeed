@@ -41,7 +41,7 @@ setParams || exit                   # 5. set command line arguments to pass to `
 buildDSconfig || exit               # 6. create `deepspeed_config.json` from runtime params from ^
 setOutput || exit                   # 7. specify output directory for {logs, checkpoints, etc.}
 setArgs || exit                     # 8. specify additional `deepspeed` arguments
-setData "${DATA_FILE_LIST}"|| exit  # 9. specify `DATA_FILE_LIST` for dolma dataset
+setData "${DATA_FILE_LIST-}" || exit  # 9. specify `DATA_FILE_LIST` for dolma dataset
 printJobInfo || exit                # 11. print job info
 setupLauncher || exit
 # -----------------------------------------------------------------------------
@@ -75,6 +75,17 @@ data_cache_path="${CKPT_DIR}/${DATA_CACHE_PATH}"
 mkdir -p "${data_cache_path}"
 module list
 
+if [[ "${TIMING_LOG_LEVEL}" -ge 1 ]]; then
+    TIMING_STR="\
+        --timing-log-level ${TIMING_LOG_LEVEL} \
+        --log-timers-to-tensorboard \
+        --log-optimizer-states-to-tensorboard \
+    "
+else
+    TIMING_STR=""
+fi
+
+
 # Take custom args
 custom_args=" $@"
 
@@ -83,7 +94,6 @@ custom_args=" $@"
 run_cmd="
     ${LAUNCH_CMD} \
     --${DTYPE} \
-    --optimizer ${OPT} \
     --split 100,0,0 \
     --log-interval 1 \
     --no-bias-gelu-fusion \
@@ -94,16 +104,17 @@ run_cmd="
     --no-gradient-accumulation-fusion \
     --accumulate-allreduce-grads-in-fp32 \
     --use-checkpoint-opt_param-scheduler \
-    --tensorboard-dir ${TBDIR} \
     --log-timers-to-tensorboard \
     --log-optimizer-states-to-tensorboard \
     --lr ${LR} \
+    --optimizer ${OPT} \
     --save ${CKPT_DIR} \
     --load ${CKPT_DIR} \
     --seq-length ${SEQ} \
     --num-layers ${NLAYERS} \
     --hidden-size ${HIDDEN} \
     --train-iters ${TRAIN_ITER} \
+    --tensorboard-dir ${TBDIR} \
     --eval-iters ${EVAL_ITERS} \
     --distributed-backend ${BE} \
     --num-attention-heads ${HEADS} \
@@ -119,16 +130,16 @@ run_cmd="
     --data-cache-path ${data_cache_path} \
     --ffn-hidden-size ${FFN_HIDDEN_SIZE} \
     --tokenizer-model ${TOKENIZER_MODEL} \
-    --timing-log-level ${TIMING_LOG_LEVEL} \
-    --log-timers-to-tensorboard \
-    --log-optimizer-states-to-tensorboard \
+    --lr-warmup-fraction ${LR_WARMUP_FRAC} \
     ${LLAMA_ARGS} \
+    ${TIMING_STR} \
     $ds_args \
     ${gpt_args[*]} \
     $custom_args \
     |& tee ${OUTPUT_LOG}
     "
 
+check_and_kill_if_running || exit
 echo "${run_cmd}"
 printf "[!! \e[1;31m%s\e[0m] View output at:\n" "NOTE"
 printf "\e[1;34m%s\e[0m\n" "${OUTPUT_LOG}"
