@@ -113,12 +113,13 @@ function setParams() {
         #######################################################
     # +--------[Polaris]-----------------------------------+
     elif [[ $(hostname) == x3* ]]; then
-        TP=${TP:-2}                      # TP = 2
+        TP=${TP:-1}                      # TP = 2
         export NCCL=${NCCL:-nccl}        # NCCL
         export BE="${NCCL}"              # BE = NCCL
         # export DTYPE=${DTYPE:-bf16}      # DTYPE: BF16 ??
         export DTYPE=${DTYPE:-fp16}      # DTYPE: FP16
-        MICRO_BATCH=${MICRO_BATCH:-8}    # MICRO_BATCH = 8
+        export GRAD_ACC_STEPS=4          # GRADIENT_ACCUMULATION_STEPS
+        MICRO_BATCH=${MICRO_BATCH:-2}    # MICRO_BATCH = 8
         if [[ -n "${NO_FLASH_ATTN-}" ]]; then
             echo "Not using flash-attn!!"
         else
@@ -160,7 +161,7 @@ function setParams() {
     # +---[Run Settings]------------------------------------------------------+
     export LR=${LR:-0.0003}                       # LEARNING_RATE
     export SEQ=${SEQ:-4096}                       # SEQ_LEN: 4096
-    export ZERO_STAGE=${ZERO_STAGE:-2}            # ZERO OFFLOADING STAGE
+    export ZERO_STAGE=${ZERO_STAGE:-1}            # ZERO OFFLOADING STAGE
     export MICRO_BATCH=${MICRO_BATCH:-8}          # MICRO BATCH SIZE
     export GRAD_ACC_STEPS=${GRAD_ACC_STEPS:-1}    # GRADIENT ACCUMULATION STEPS
     export EVAL_ITERS="${EVAL_ITERS:-10}"         # NUMBER OF EVAL ITERS TO RUN
