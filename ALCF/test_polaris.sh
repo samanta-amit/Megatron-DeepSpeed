@@ -22,7 +22,7 @@ NOW="$(date "+%Y-%m-%d-%H%M%S")"
 ########################################################
 setup_conda() {
     if [[ -z "${CONDA_PREFIX}" && -z "${VIRTUAL_ENV}" ]]; then
-        export MAMBA_ROOT_PREFIX=/eagle/argonne_tpc/micromamba 
+        export MAMBA_ROOT_PREFIX=/eagle/argonne_tpc/micromamba
         shell_name=$(echo "${SHELL}" | tr "\/" "\t" | awk '{print $NF}')
         eval "$("${MAMBA_ROOT_PREFIX}/bin/micromamba" shell hook -s posix)"
         micromamba activate 2024-04-25
@@ -46,7 +46,7 @@ setup_megatron_deepspeed() {
         exit
     fi
     git clone https://github.com/argonne-lcf/Megatron-DeepSpeed && cd Megatron-DeepSpeed
-    if [[ -z "${GIT_BRANCH-}" ]]; then
+    if [[ -n "${GIT_BRANCH-}" ]]; then
         git checkout "${GIT_BRANCH}"
     fi
 }
@@ -72,7 +72,11 @@ main() {
     setup_megatron_deepspeed
     export DEBUG=1
     export PBS_O_WORKDIR="$(pwd)"
-    export DATA_FILE_LIST=./ALCF/data-lists/polaris/books.txt
+    export DATA_FILE_LIST="${PBS_O_WORKDIR}/ALCF/data-lists/polaris/books.txt"
+    if [[ ! -f "${DATA_FILE_LIST}" ]]; then
+        echo "Unable to find / use ${DATA_FILE_LIST}. Exiting."
+        exit 1
+    fi
     export ZERO_STAGE=1
     export NUM_LAYERS=10
     export MICRO_BATCH=8
