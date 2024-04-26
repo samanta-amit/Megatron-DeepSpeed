@@ -361,7 +361,7 @@ function setEnv() {
     # ----- [Polaris] ---------------------------------------
     elif [[ $(hostname) == x3* ]]; then
         if [[ "${PBS_O_HOST}" == sirius* ]]; then
-            export MACHINE="Running on Sirius !!"
+            echo "Running on Sirius !!"
             setup_conda_sirius
         else
             echo "Running on Polaris !!"
