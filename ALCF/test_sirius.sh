@@ -54,7 +54,7 @@ setup_megatron_deepspeed() {
 
 main() {
     local virtual_env="${VIRTUAL_ENV-}"
-    local conda_prefix="${CONDA_PREFIX}"
+    local conda_prefix="${CONDA_PREFIX-}"
     if [[ -n "${conda_prefix}" && -z "${virtual_env}" ]]; then
         echo "Using conda from: ${conda_prefix}"
     elif [[ -n "${virtual_env}" && -z "${conda_prefix}" ]]; then

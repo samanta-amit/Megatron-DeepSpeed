@@ -21,7 +21,7 @@ NOW="$(date "+%Y-%m-%d-%H%M%S")"
 # mine is called q4-drop
 ########################################################
 setup_conda() {
-    if [[ -z "${CONDA_PREFIX}" && -z "${VIRTUAL_ENV}" ]]; then
+    if [[ -z "${CONDA_PREFIX-}" && -z "${VIRTUAL_ENV-}" ]]; then
         export MAMBA_ROOT_PREFIX=/eagle/argonne_tpc/micromamba
         shell_name=$(echo "${SHELL}" | tr "\/" "\t" | awk '{print $NF}')
         eval "$("${MAMBA_ROOT_PREFIX}/bin/micromamba" shell hook -s posix)"
@@ -54,7 +54,7 @@ setup_megatron_deepspeed() {
 
 main() {
     local virtual_env="${VIRTUAL_ENV-}"
-    local conda_prefix="${CONDA_PREFIX}"
+    local conda_prefix="${CONDA_PREFIX-}"
     if [[ -n "${conda_prefix}" && -z "${virtual_env}" ]]; then
         echo "Using conda from: ${conda_prefix}"
     elif [[ -n "${virtual_env}" && -z "${conda_prefix}" ]]; then
