@@ -16,6 +16,17 @@ export WORKING_DIR="${WORKING_DIR}"
 printf "Using WORKING_DIR: %s\n" ${WORKING_DIR}
 
 
+function check_and_kill_if_running() {
+    # kill $(ps aux | grep -E "$USER.+(mpi|main.py)" | grep -v grep | awk '{print $2}')
+    RUNNING_PIDS=$(lsof -i:29500 -Fp | head -n 1 | sed 's/^p//')
+    if [[ -n "${RUNNING_PIDS}" ]];
+        then echo "Caught ${RUNNING_PIDS}" && kill "${RUNNING_PIDS}";
+    else
+        echo "Not currently running. Continuing!"
+    fi
+}
+
+
 function setupSrun() {
     if [[ $(hostname) == login* || $(hostname) == nid* ]]; then
         export NHOSTS="${SLURM_NNODES:-1}"
@@ -100,26 +111,27 @@ function setParams() {
     if [[ $(hostname) == x4* || $(hostname) == x1* ]]; then
         TP=${TP:-1}                      # TP = 1
         export CCL=${CCL:-ccl}           # CCL
-        export BE="${CCL}"               # BE = CCL
+        export BE="${CCL}"               # COMMUNICATION BACKEND = CCL
         export DTYPE=${DTYPE:-bf16}      # DTYPE: bf16
         MICRO_BATCH=${MICRO_BATCH:-4}    # MICRO_BATCH = 4
-        #######################################################
-        # if NO_FLASH_ATTN is NON-empty; then NO FLASH ATTN !!
+        ##############################################################
+        # NOTE: if NO_FLASH_ATTN is NON-empty; then NO FLASH ATTN !!
         if [[ -n "${NO_FLASH_ATTN-}" ]]; then
             echo "Not using flash-attn!!"
         else
             LLAMA_ARGS="${LLAMA_ARGS} --use-flash-attn-builder"
         fi
-        #######################################################
+        ##############################################################
     # +--------[Polaris]-----------------------------------+
     elif [[ $(hostname) == x3* ]]; then
-        TP=${TP:-1}                      # TP = 2
-        export NCCL=${NCCL:-nccl}        # NCCL
-        export BE="${NCCL}"              # BE = NCCL
-        # export DTYPE=${DTYPE:-bf16}      # DTYPE: BF16 ??
-        export DTYPE=${DTYPE:-fp16}      # DTYPE: FP16
-        export GRAD_ACC_STEPS=4          # GRADIENT_ACCUMULATION_STEPS
-        MICRO_BATCH=${MICRO_BATCH:-2}    # MICRO_BATCH = 8
+        TP=${TP:-1}                                     # TP = 2
+        export NCCL=${NCCL:-nccl}                       # NCCL
+        export BE="${NCCL}"                             # BE = NCCL
+        # export DTYPE=${DTYPE:-bf16}                   # DTYPE: BF16 ??
+        export DTYPE=${DTYPE:-fp16}                     # DTYPE: FP16
+        export GRAD_ACC_STEPS=${GRAD_ACC_STEPS:-16}     # GRADIENT_ACC_STEPS
+        # NOTE: MICRO_BATCH is exported below
+        MICRO_BATCH=${MICRO_BATCH:-1}    # MICRO_BATCH = 8
         if [[ -n "${NO_FLASH_ATTN-}" ]]; then
             echo "Not using flash-attn!!"
         else
@@ -142,42 +154,40 @@ function setParams() {
     export TP="${TP}"
     export PP="${PP:-1}"
     export DTYPE="${DTYPE:-bf16}"
-    export OPT="${OPT:-adamw}"
+    export OPT="${OPT:-adamwschedulefree}"
     export HOSTFILE="${HOSTFILE:-${PBS_NODEFILE}}"
     NHOSTS=$(wc -l < "${HOSTFILE}")
     if [[ -z "${NGPU_PER_HOST-}" ]]; then
         NGPU_PER_HOST=$(python3 -c 'import ezpz as ez; print(ez.get_gpus_per_node())')
     fi
     export WORLD_SIZE="${WORLD_SIZE:-$(( NHOSTS * NGPU_PER_HOST ))}"
-    # export WORLD_SIZE="${WORLD_SIZE:-${NGPUS:-$(( ))}}"
-    # export WORLD_SIZE=${WORLD_SIZE:-$(wc -l < "${HOSTFILE}")}
-    # +---[Llama2 7B Config]-----------------------------+
+    # +---[Llama2 7B Config]--------------------------------------------------+
     export MODEL_KEY="Llama-7B"
-    export HEADS=${HEADS:-${NHEADS:-32}}
-    export NLAYERS=${NLAYERS:-${NUM_LAYERS:-32}}
-    export HIDDEN=${HIDDEN:-4096}
-    export NUM_KV_HEAD=${NUM_KV_HEAD:-8}
-    export FFN_HIDDEN_SIZE=${FFN_HIDDEN_SIZE:-11008}
+    export HEADS=${HEADS:-${NHEADS:-32}}                # NUMBER OF ATEN HEADS
+    export NLAYERS=${NLAYERS:-${NUM_LAYERS:-32}}        # NUMBER OF LAYERS
+    export HIDDEN=${HIDDEN:-4096}                       # HIDDEN SIZE
+    export NUM_KV_HEAD=${NUM_KV_HEAD:-8}                # GROUP ATTENTION
+    export FFN_HIDDEN_SIZE=${FFN_HIDDEN_SIZE:-11008}    # FFN HIDDEN SIZE
     # +---[Run Settings]------------------------------------------------------+
-    export LR=${LR:-0.0003}                       # LEARNING_RATE
-    export SEQ=${SEQ:-4096}                       # SEQ_LEN: 4096
-    export ZERO_STAGE=${ZERO_STAGE:-1}            # ZERO OFFLOADING STAGE
-    export MICRO_BATCH=${MICRO_BATCH:-8}          # MICRO BATCH SIZE
-    export GRAD_ACC_STEPS=${GRAD_ACC_STEPS:-1}    # GRADIENT ACCUMULATION STEPS
-    export EVAL_ITERS="${EVAL_ITERS:-10}"         # NUMBER OF EVAL ITERS TO RUN
-    export TRAIN_ITER=${TRAIN_ITER:-317892}       # NUMBER OF TRAIN ITERS
-    export EVAL_INTERVAL="${EVAL_INTERVAL:-50000}"  # HOW FREQUENTLY TO RUN EVAL
-    export SAVE_INTERVAL=${SAVE_INTERVAL:-200}    # HOW FREQUENTLY TO SAVE CKPTS
-    export TIMING_LOG_LEVEL="${TIMING_LOG_LEVEL:-1}"  # TIMING VERBOSITY IN LOGS
+    export LR=${LR:-0.0003}                             # LEARNING_RATE
+    export LR_WARMUP_FRAC=${LR_WARMUP_FRAC:-0.05}       # LEARNING RATE WARMUP
+    export SEQ=${SEQ:-4096}                             # SEQ_LEN: 4096
+    export ZERO_STAGE=${ZERO_STAGE:-1}                  # ZERO OFFLOADING STAGE
+    export MICRO_BATCH=${MICRO_BATCH:-8}                # MICRO BATCH SIZE
+    export GRAD_ACC_STEPS=${GRAD_ACC_STEPS:-1}          # GRADIENT ACCUMULATION STEPS
+    export EVAL_ITERS="${EVAL_ITERS:-10}"               # NUMBER OF EVAL ITERS TO RUN
+    export TRAIN_ITER=${TRAIN_ITER:-317892}             # NUMBER OF TRAIN ITERS
+    export EVAL_INTERVAL="${EVAL_INTERVAL:-50000}"      # HOW FREQUENTLY TO RUN EVAL
+    export SAVE_INTERVAL=${SAVE_INTERVAL:-200}          # HOW FREQUENTLY TO SAVE CKPTS
+    export TIMING_LOG_LEVEL="${TIMING_LOG_LEVEL:-1}"    # TIMING VERBOSITY IN LOGS
     export USE_ACTIVATION_CHECKPOINTING=${USE_ACTIVATION_CHECKPOINTING:-1}  # USE ACTIVATION CHECKPOINTING ?
     export GLOBAL_BATCH_MAX=$(( $WORLD_SIZE * $MICRO_BATCH * $GRAD_ACC_STEPS / $TP / $PP ))  # MAX GLOBAL BATCH SIZE
     export GLOBAL_BATCH="${GLOBAL_BATCH:-${GLOBAL_BATCH_MAX}}"  # WILL USE MAX IF NOT SET IN ENVIRONMENT
-    tm="${WORKING_DIR}/ALCF/tokenizer.model"      # fallback: Megatron-DeepSpeed/ALCF/tokenizer.model
+    tm="${WORKING_DIR}/ALCF/tokenizer.model"            # fallback: Megatron-DeepSpeed/ALCF/tokenizer.model
     export TOKENIZER_MODEL="${TOKENIZER_MODEL:-${tm}}"  # USE TOKENIZER_MODEL from env, else fallback from ^
     export MODEL_TYPE="llama-seq${SEQ}-pp${PP}-tp${TP}-${NLAYERS}layers-${HEADS}heads-${HIDDEN}hidden"  # STRING FOR IDENTIFYING MODEL
     # +----[ADDITIONAL LLAMA SPECIFIC ARGUMENTS]------------------------------
     export LLAMA_ARGS="${LLAMA_ARGS} --no-query-key-layer-scaling --use-rotary-position-embeddings --untie-embeddings-and-output-weights --swiglu --normalization rmsnorm --disable-bias-linear"
-    # +----------------------------------------------------------------------+
 }
 
 
@@ -312,7 +322,7 @@ function sumFiles() {
 # mine is called q4-drop
 ########################################################
 setup_conda_sunspot() {
-    if [[ -z "${CONDA_PREFIX}" && -z "${VIRTUAL_ENV}" ]]; then
+    if [[ -z "${CONDA_PREFIX-}" && -z "${VIRTUAL_ENV-}" ]]; then
         shell_name=$(echo "${SHELL}" | tr "\/" "\t" | awk '{print $NF}')
         eval "$(~/miniconda3/bin/conda shell hook -s posix)"
         conda activate q4-drop
@@ -322,7 +332,7 @@ setup_conda_sunspot() {
 }
 
 setup_conda_sirius() {
-    if [[ -z "${CONDA_PREFIX}" && -z "${VIRTUAL_ENV}" ]]; then
+    if [[ -z "${CONDA_PREFIX-}" && -z "${VIRTUAL_ENV-}" ]]; then
         export MAMBA_ROOT_PREFIX=/lus/tegu/projects/PolarisAT/foremans/micromamba
         shell_name=$(echo "${SHELL}" | tr "\/" "\t" | awk '{print $NF}')
         eval "$("${MAMBA_ROOT_PREFIX}/bin/micromamba" shell hook --shell ${shell_name})"
@@ -333,7 +343,9 @@ setup_conda_sirius() {
 }
 
 setup_conda_polaris() {
-    if [[ -z "${CONDA_PREFIX}" && -z "${VIRTUAL_ENV}" ]]; then
+    if [[ -z "${CONDA_PREFIX-}" && -z "${VIRTUAL_ENV-}" ]]; then
+        # export CUDA_HOME=/soft/compilers/cudatoolkit/cuda-12.2.2
+        # && export MAMBA_ROOT_PREFIX=/eagle/argonne_tpc/micromamba && eval "$("${MAMBA_ROOT_PREFIX}/bin/micromamba" shell hook -s posix)" ; mm activate 2024-04-25
         export MAMBA_ROOT_PREFIX=/eagle/argonne_tpc/micromamba
         shell_name=$(echo "${SHELL}" | tr "\/" "\t" | awk '{print $NF}')
         eval "$("${MAMBA_ROOT_PREFIX}/bin/micromamba" shell hook -s posix)"
@@ -345,39 +357,55 @@ setup_conda_polaris() {
 
 
 function setEnv() {
-    # ---- [SunSpot] ------- || ---- [Aurora] --------------
-    if [[ $(hostname) == x1* || $(hostname) == x4* ]]; then
-        source "${WORKING_DIR}/ALCF/sunspot-env.sh" || exit
-        # ----- [Aurora] -----------------------------------
-        if [[ -z "${CONDA_PREFIX}" && -z "${VIRTUAL_ENV}" ]]; then
-            if [[ $(hostname) == x4* ]]; then
-                eval "$(conda shell.zsh hook)" && conda activate anl_release_q4v2
-            # ----- [SunSpot] ----------------------------------
-            elif [[ $(hostname) == x1* ]]; then
-                echo "Running on SunSpot !!"
-                setup_conda_sunspot
-                # eval "$(/home/foremans/miniconda3/bin/conda shell.zsh hook)" && conda activate q4-drop
+    local virtual_env="${VIRTUAL_ENV-}"
+    local conda_prefix="${CONDA_PREFIX-}"
+    if [[ -n "${conda_prefix}" && -z "${virtual_env}" ]]; then
+        echo "Using conda from: ${conda_prefix}"
+    elif [[ -n "${virtual_env}" && -z "${conda_prefix}" ]]; then
+        echo "Using virtual_env from: ${virtual_env}"
+    elif [[ -n "${virtual_env}" && -n "${conda_prefix}" ]]; then
+        echo "Using virtual_env: ${virtual_env} on top of CONDA: ${conda_prefix}"
+    elif [[ -z "${conda_prefix}" && -z "${virtual_env}" ]]; then
+        echo "No conda_prefix or virtual_env found in environment..."
+        echo "Setting up conda"
+        # setup_conda
+        # ---- [SunSpot] ------- || ---- [Aurora] --------------
+        if [[ $(hostname) == x1* || $(hostname) == x4* ]]; then
+            source "${WORKING_DIR}/ALCF/sunspot-env.sh" || exit
+            # ----- [Aurora] -----------------------------------
+            if [[ -z "${conda_prefix}" && -z "${virtual_env}" ]]; then
+                if [[ $(hostname) == x4* ]]; then
+                    eval "$(conda shell.zsh hook)" && conda activate anl_release_q4v2
+                # ----- [SunSpot] ----------------------------------
+                elif [[ $(hostname) == x1* ]]; then
+                    echo "Running on SunSpot !!"
+                    setup_conda_sunspot
+                    # eval "$(/home/foremans/miniconda3/bin/conda shell.zsh hook)" && conda activate q4-drop
+                fi
             fi
+        # ----- [Polaris] ---------------------------------------
+        elif [[ $(hostname) == x3* ]]; then
+            if [[ "${PBS_O_HOST}" == sirius* ]]; then
+                echo "Running on Sirius !!"
+                setup_conda_sirius
+            else
+                echo "Running on Polaris !!"
+                # ---- [load conda] ---------------------
+                setup_conda_polaris
+                # if [[ -d "${PBS_O_WORKDIR}/venvs/polaris/cu118-pt221" ]]; then
+                #     source "${PBS_O_WORKDIR}/venvs/polaris/cu118-pt221/bin/activate"
+                # fi
+            fi
+        elif [[ $(hostname) == login* || $(hostname) == nid* ]]; then
+            echo "Running on Perlmutter !!"
+            module load pytorch
+            source "${SLURM_SUBMIT_DIR}/venvs/perlmutter/pytorch-2.1.0-cu12/bin/activate"
+        else # ------------------------------------- [Unknown] -------------------
+            echo "Unknown hostname $(hostname)"
+            exit 1
         fi
-    # ----- [Polaris] ---------------------------------------
-    elif [[ $(hostname) == x3* ]]; then
-        if [[ "${PBS_O_HOST}" == sirius* ]]; then
-            echo "Running on Sirius !!"
-            setup_conda_sirius
-        else
-            echo "Running on Polaris !!"
-            # ---- [load conda] ---------------------
-            setup_conda_polaris
-            # if [[ -d "${PBS_O_WORKDIR}/venvs/polaris/cu118-pt221" ]]; then
-            #     source "${PBS_O_WORKDIR}/venvs/polaris/cu118-pt221/bin/activate"
-            # fi
-        fi
-    elif [[ $(hostname) == login* || $(hostname) == nid* ]]; then
-        echo "Running on Perlmutter !!"
-        module load pytorch
-        source "${SLURM_SUBMIT_DIR}/venvs/perlmutter/pytorch-2.1.0-cu12/bin/activate"
-    else # ------------------------------------- [Unknown] -------------------
-        echo "Unknown hostname $(hostname)"
+    else
+        echo "Unable to setup python environment. Exiting"
         exit 1
     fi
     echo "[python] Using: $(which python3)"
@@ -473,7 +501,7 @@ function generateDSconfig() {
         \"gradient_clipping\": 1.0,
         \"activation_checkpointing\": {
           \"partition_activations\": true,
-          \"contiguous_memory_optimization\": false
+          \"contiguous_memory_optimization\": true
         },
         \"wall_clock_breakdown\": false,"
     flops_profiler="\
