@@ -16,19 +16,7 @@ export WORKING_DIR="${WORKING_DIR}"
 printf "Using WORKING_DIR: %s\n" ${WORKING_DIR}
 
 
-printJobInfo() {
-    echo "++++++++++++++++++++++++++++++++++++++++++++++++++"
-    echo "- MPICH_DIR=${MPICH_DIR:-${MPI_ROOT}}"
-    echo "- Using $(which python3)"
-    echo "- WORLD_SIZE:${WORLD_SIZE}"
-    echo "- NCCL: ${NCCL:-nccl}"
-    echo "- MODEL_TYPE: ${MODEL_TYPE}"
-    echo "- Using DATA_FILE_LIST: ${DATA_FILE_LIST}"
-    echo "++++++++++++++++++++++++++++++++++++++++++++++++++"
-}
-
-
-setupSrun() {
+function setupSrun() {
     if [[ $(hostname) == login* || $(hostname) == nid* ]]; then
         export NHOSTS="${SLURM_NNODES:-1}"
         export NGPU_PER_HOST="${SLURM_GPUS_ON_NODE:-$(nvidia-smi -L | wc -l)}"
@@ -40,7 +28,44 @@ setupSrun() {
 }
 
 
-setupLauncher() {
+function printJobInfo() {
+    echo "++++++++++++++++++++++++++++++++++++++++++++++++++"
+    echo "- MPICH_DIR=${MPICH_DIR:-${MPI_ROOT}}"
+    echo "- Using $(which python3)"
+    echo "- WORLD_SIZE:${WORLD_SIZE}"
+    echo "- NCCL: ${NCCL:-nccl}"
+    echo "- MODEL_TYPE: ${MODEL_TYPE}"
+    echo "- Using DATA_FILE_LIST: ${DATA_FILE_LIST}"
+    echo "++++++++++++++++++++++++++++++++++++++++++++++++++"
+}
+
+function setupVenv() {
+    VENV_DIR="$1"
+    if [[ -d "${VENV_DIR}" ]]; then
+        echo "Found venv at: ${VENV_DIR}"
+        source "${VENV_DIR}/bin/activate"
+    else
+        echo "Skipping setupVenv() on $(hostname)"
+    fi
+}
+
+function loadCondaEnv() {
+    if [[ "${CONDA_EXE}" ]]; then
+        echo "Already inside ${CONDA_EXE}, exiting!"
+    else
+        MODULE_STR="$1"
+        module load "conda/${MODULE_STR}"
+        nargs="$#"
+        if [[ "${nargs}" -ge 2 ]]; then
+            conda activate "$2"
+        else
+            conda activate base
+        fi
+    fi
+}
+
+
+function setupLauncher() {
     # outdir=$1
     if [[ -n "${DIST_LAUNCH}" && ${LAUNCH_CMD:-"MPICH"} != "deepspeed" ]]; then
         export LAUNCH_CMD="${DIST_LAUNCH} --cpu-bind depth -d 16 python3 -Wignore ${EXEC}"
@@ -53,7 +78,7 @@ setupLauncher() {
     printf " %s" "$(printMagenta ${LAUNCH_CMD})"
 }
 
-setDSlauncher() {
+function setDSlauncher() {
     # launcher setting
     outdir=$1
     export hfds="$outdir/hostfile_deepspeed"
@@ -68,7 +93,7 @@ setDSlauncher() {
     fi
 }
 
-setParams() {
+function setParams() {
     LLAMA_ARGS=""
     # +----[Parallelism Settings] -------------------------------------------+
     # +------[Aurora]--------||-------[SunSpot]-------------+
@@ -155,7 +180,7 @@ setParams() {
 }
 
 
-setArgs() {
+function setArgs() {
     # ---- Set DeepSpeed arguments --------------------------------
     ds_args=" "
     ds_args=" --deepspeed ${ds_args}"
@@ -186,7 +211,7 @@ setArgs() {
 }
 
 
-make_ds_hostfile() {
+function make_ds_hostfile() {
     export GPUS_PER_NODE="${GPUS_PER_NODE:-${NGPU_PER_HOST:-${SLURM_GPUS_ON_NODE:-$(nvidia-smi -L | wc -l)}}}"
     # ---- Make MPICH hostfile ----------------
     hf="${HOSTFILE:-${PBS_NODEFILE}}"
@@ -202,7 +227,7 @@ make_ds_hostfile() {
 # | 1. Git clone ezpz (if not found)    |
 # | 2. Install ezpz (if not installed)  |
 # +---------------------------------------+
-ezpz() {
+function ezpz() {
     if [[ ! -d "${WORKING_DIR}/deps/ezpz" ]]; then
         mkdir -p "${WORKING_DIR}/deps"
         git clone https://github.com/saforem2/ezpz "${WORKING_DIR}/deps/ezpz"
@@ -228,7 +253,7 @@ ezpz() {
 # | Save important environment variables to .deepspeed_env, which will be  |
 # | forwarded to ALL ranks with DeepSpeed                                  |
 # +------------------------------------------------------------------------+
-saveDSenv() {
+function saveDSenv() {
     echo "Saving {PATH, LD_LIBRARY_PATH, htt{p,ps}_proxy, CFLAGS, PYTHONUSERBASE} to .deepspeed_env"
     {
         echo "PATH=${PATH}" ;
@@ -240,7 +265,7 @@ saveDSenv() {
     } > .deepspeed_env
 }
 
-setOutput() {
+function setOutput() {
     # ---- Specify output location --------------------------------
     export OUTPUT_PREFIX="ds_stage${ZERO_STAGE}_nl${NLAYERS}_hs${HIDDEN}_mb${MICRO_BATCH}_seq${SEQ}_gb${GLOBAL_BATCH}_pp${PP}_tp${TP}_${DTYPE}_opt${OPT}"
     # OUTPUT_DIR="logs/${OUTPUT_PREFIX}/$(date +%m%d%H%M%S)_${HOSTNAME}"
@@ -253,7 +278,7 @@ setOutput() {
     echo "!!!Please see logs at ${OUTPUT_DIR}"
 }
 
-buildDSconfig() {
+function buildDSconfig() {
     # ---- Build DeepSpeed Config ---------------------------------
     export CPU_OPTIMIZER="${CPU_OPTIMIZER:-0}"
     export DS_CONFIG="${WORKING_DIR}/ds-configs/ds_stage${ZERO_STAGE}_mb${MICRO_BATCH}_gb${GLOBAL_BATCH}_pp${PP}_${DTYPE}.json"
@@ -267,13 +292,13 @@ buildDSconfig() {
 }
 
 
-sumWeights() {
+function sumWeights() {
     local file_list=$1
     weights=$(cat "${file_list}" | awk '{print $1}' | tr '\n' '\ ,\ ' | sed 's/^/[/g' | sed 's/$/]/g' | tr '\ ' "\,\ ")
     python3 -c "import numpy as np; print(np.sum(${weights}))"
 }
 
-sumFiles() {
+function sumFiles() {
     local rd=$1
     for f in $("${rd}/*.txt"); do
         ws=$(sumWeights "${rd}/${f}")
@@ -282,7 +307,7 @@ sumFiles() {
 }
 
 
-setEnv() {
+function setEnv() {
     # ---- [SunSpot] ------- || ---- [Aurora] --------------
     if [[ $(hostname) == x1* || $(hostname) == x4* ]]; then
         # PBS_PARENT=$(dirname ${PBS_O_WORKDIR})
@@ -323,7 +348,7 @@ setEnv() {
 }
 
 
-makeHostfiles() {
+function makeHostfiles() {
     if [[ -n "${HOSTFILE}" ]]; then
         printf "!! USING CUSTOM HOSTFILE FROM: %s"  "${HOSTFILE}"
     else
@@ -333,7 +358,7 @@ makeHostfiles() {
     fi
 }
 
-setData() {  # ---- [dfl: abbrv. for DATA_FILE_LIST] -------------------------
+function setData() {  # ---- [dfl: abbrv. for DATA_FILE_LIST] -------------------------
     if [[ $(hostname) == x4* ]]; then    # ---- [AURORA] ----
         dfl_fallback="/home/foremans/anl_24_release_q4/llm.devkit/Megatron-DeepSpeed/data_file_list_reweighted.txt"
     elif [[ $(hostname) == x1* ]]; then
@@ -370,7 +395,7 @@ setData() {  # ---- [dfl: abbrv. for DATA_FILE_LIST] -------------------------
     echo "--------------------"
 }
 
-generateDSconfig() {
+function generateDSconfig() {
     for v in "$GLOBAL_BATCH" "$MICRO_BATCH" "$GRAD_ACC_STEPS" "$ZERO_STAGE" \
              "$PP" "$DTYPE"
     do
@@ -532,33 +557,34 @@ $flops_profiler
 EOT
 }
 
-printBlack() {
+function printBlack() {
     printf "\e[1;30m%s\e[0m\n" "$@"
 }
 
-printRed() {
+function printRed() {
     printf "\e[1;31m%s\e[0m\n" "$@"
 }
 
-printGreen() {
+function printGreen() {
     printf "\e[1;32m%s\e[0m\n" "$@"
 }
 
-printYellow() {
+function printYellow() {
     printf "\e[1;33m%s\e[0m\n" "$@"
 }
 
-printBlue() {
+function printBlue() {
     printf "\e[1;34m%s\e[0m\n" "$@"
 }
 
-printMagenta() {
+function printMagenta() {
     printf "\e[1;35m%s\e[0m\n" "$@"
 }
 
-printCyan() {
+function printCyan() {
     printf "\e[1;36m%s\e[0m\n" "$@"
 }
-printWhite() {
+
+function printWhite() {
     printf "\e[1;37m%s\e[0m\n" "$@"
 }
