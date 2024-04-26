@@ -1,4 +1,7 @@
 # User Added
+deps/*
+OUTPUTS/*
+ALCF/OUTPUTS/*
 *tmp*
 *core.*
 *old*
