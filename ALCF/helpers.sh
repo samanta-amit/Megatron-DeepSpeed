@@ -129,9 +129,9 @@ function setParams() {
         export BE="${NCCL}"                             # BE = NCCL
         # export DTYPE=${DTYPE:-bf16}                   # DTYPE: BF16 ??
         export DTYPE=${DTYPE:-fp16}                     # DTYPE: FP16
-        export GRAD_ACC_STEPS=${GRAD_ACC_STEPS:-16}     # GRADIENT_ACC_STEPS
+        export GRAD_ACC_STEPS=${GRAD_ACC_STEPS:-8}     # GRADIENT_ACC_STEPS
         # NOTE: MICRO_BATCH is exported below
-        MICRO_BATCH=${MICRO_BATCH:-1}    # MICRO_BATCH = 8
+        MICRO_BATCH=${MICRO_BATCH:-2}    # MICRO_BATCH = 8
         if [[ -n "${NO_FLASH_ATTN-}" ]]; then
             echo "Not using flash-attn!!"
         else
@@ -180,6 +180,7 @@ function setParams() {
     export EVAL_INTERVAL="${EVAL_INTERVAL:-50000}"      # HOW FREQUENTLY TO RUN EVAL
     export SAVE_INTERVAL=${SAVE_INTERVAL:-200}          # HOW FREQUENTLY TO SAVE CKPTS
     export TIMING_LOG_LEVEL="${TIMING_LOG_LEVEL:-1}"    # TIMING VERBOSITY IN LOGS
+    export ACT_CKPT_NUM_LAYERS="${ACT_CKPT_NUM_LAYERS:-1}"                  # NUM LAYERS TO CHECKPOINT ACTIVATIONS
     export USE_ACTIVATION_CHECKPOINTING=${USE_ACTIVATION_CHECKPOINTING:-1}  # USE ACTIVATION CHECKPOINTING ?
     export GLOBAL_BATCH_MAX=$(( $WORLD_SIZE * $MICRO_BATCH * $GRAD_ACC_STEPS / $TP / $PP ))  # MAX GLOBAL BATCH SIZE
     export GLOBAL_BATCH="${GLOBAL_BATCH:-${GLOBAL_BATCH_MAX}}"  # WILL USE MAX IF NOT SET IN ENVIRONMENT
@@ -215,7 +216,7 @@ function setArgs() {
         echo "!! Caught USE_ACTIVATION_CHECKPOINTING=${USE_ACTIVATION_CHECKPOINTING} !!"
         gpt_args+=(
             "--checkpoint-activations"
-            "--checkpoint-num-layers 1"
+            "--checkpoint-num-layers ${ACT_CKPT_NUM_LAYERS}"
         )
     fi
     export gpt_args
@@ -432,7 +433,7 @@ function setData() {  # ---- [dfl: abbrv. for DATA_FILE_LIST] ------------------
             dfl_fallback="${WORKING_DIR}/ALCF/data-lists/sirius/books.txt"
         elif [[ "${PBS_O_HOST}" == polaris* ]]; then
             # shellcheck: source ./data-lists/polaris/books.txt
-            dfl_fallback="${WORKING_DIR}/ALCF/data-lists/polaris/books.txt"
+            dfl_fallback="${WORKING_DIR}/ALCF/data-lists/polaris/dolma_v1_7_file_list.txt"
         fi
     elif [[ $(hostname) == login* || $(hostname) == nid* ]]; then
         dfl_fallback="${SLURM_SUBMIT_DIR}/genslm-subsample.txt"
