@@ -2,6 +2,7 @@
 
 """Pretrain GPT"""
 
+from mpi4py import MPI
 import os
 from rich import print
 import torch
@@ -40,8 +41,10 @@ import ezpz as ez
 
 
 # ---- [SETUP COMMS] ------------------------
+# if str(os.environ.get('LAUNCH_CMD', 'mpich')).lower() == 'mpich':
 RANK = ez.setup_torch(backend="deepspeed")
-# RANK = ez.get_rank()
+# else:
+#     RANK = ez.get_rank()
 WORLD_SIZE = ez.get_world_size()
 LOCAL_RANK = ez.get_local_rank()
 DEVICE = ez.get_torch_device()

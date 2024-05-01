@@ -79,7 +79,7 @@ function loadCondaEnv() {
 function setupLauncher() {
     # outdir=$1
     if [[ -n "${DIST_LAUNCH}" && ${LAUNCH_CMD:-"MPICH"} != "deepspeed" ]]; then
-        export LAUNCH_CMD="${DIST_LAUNCH} --cpu-bind depth -d 16 python3 -Wignore ${EXEC}"
+        export LAUNCH_CMD="${DIST_LAUNCH} --genvall --cpu-bind depth -d 16 $(which python3) -Wignore ${EXEC}"
     else
         # Assert `./hostfile_deepspeed` exists
         export hfds="${WORKING_DIR}/hostfile_deepspeed" && [ -f "${hfds}" ] || exit
@@ -124,6 +124,7 @@ function setParams() {
         ##############################################################
     # +--------[Polaris]-----------------------------------+
     elif [[ $(hostname) == x3* ]]; then
+        # export LAUNCH_CMD="${LAUNCH_CMD:-deepspeed}"
         TP=${TP:-1}                                     # TP = 2
         export NCCL=${NCCL:-nccl}                       # NCCL
         export BE="${NCCL}"                             # BE = NCCL
@@ -347,10 +348,16 @@ setup_conda_polaris() {
     if [[ -z "${CONDA_PREFIX-}" && -z "${VIRTUAL_ENV-}" ]]; then
         # export CUDA_HOME=/soft/compilers/cudatoolkit/cuda-12.2.2
         # && export MAMBA_ROOT_PREFIX=/eagle/argonne_tpc/micromamba && eval "$("${MAMBA_ROOT_PREFIX}/bin/micromamba" shell hook -s posix)" ; mm activate 2024-04-25
-        export MAMBA_ROOT_PREFIX=/eagle/argonne_tpc/micromamba
-        shell_name=$(echo "${SHELL}" | tr "\/" "\t" | awk '{print $NF}')
-        eval "$("${MAMBA_ROOT_PREFIX}/bin/micromamba" shell hook -s posix)"
-        micromamba activate 2024-04-25
+        # export MAMBA_ROOT_PREFIX=/eagle/argonne_tpc/micromamba
+        # shell_name=$(echo "${SHELL}" | tr "\/" "\t" | awk '{print $NF}')
+        # eval "$("${MAMBA_ROOT_PREFIX}/bin/micromamba" shell hook -s posix)"
+        # micromamba activate 2024-04-25
+        module use /soft/modulefiles
+        module load conda/2024-04-29 ; conda activate base
+        # unset MPICH_GPU_SUPPORT_ENABLED
+        # if [[ -d "${WORKING_DIR}/venvs/polaris/2024-04-29" ]]; then
+        #     source "${WORKING_DIR}/venvs/polaris/2024-04-29/bin/activate"
+        # fi
     else
         echo "Found existing python at: $(which python3)"
     fi
