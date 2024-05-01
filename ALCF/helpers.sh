@@ -113,6 +113,7 @@ function setParams() {
         export CCL=${CCL:-ccl}           # CCL
         export BE="${CCL}"               # COMMUNICATION BACKEND = CCL
         export DTYPE=${DTYPE:-bf16}      # DTYPE: bf16
+        export GRAD_ACC_STEPS=${GRAD_ACC_STEPS:-8}     # GRADIENT_ACC_STEPS
         MICRO_BATCH=${MICRO_BATCH:-4}    # MICRO_BATCH = 4
         ##############################################################
         # NOTE: if NO_FLASH_ATTN is NON-empty; then NO FLASH ATTN !!
@@ -326,7 +327,7 @@ function sumFiles() {
 setup_conda_sunspot() {
     if [[ -z "${CONDA_PREFIX-}" && -z "${VIRTUAL_ENV-}" ]]; then
         shell_name=$(echo "${SHELL}" | tr "\/" "\t" | awk '{print $NF}')
-        eval "$(~/miniconda3/bin/conda shell hook -s posix)"
+        eval "$(~/miniconda3/bin/conda shell.${shell_name} hook)"
         conda activate q4-drop
     else
         echo "Found existing python at: $(which python3)"
