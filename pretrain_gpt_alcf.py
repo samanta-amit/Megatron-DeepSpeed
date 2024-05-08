@@ -2,6 +2,7 @@
 
 """Pretrain GPT"""
 
+from mpi4py import MPI
 import os
 from rich import print
 import torch
@@ -25,7 +26,7 @@ from megatron.arguments import core_transformer_config_from_args
 #     # checkpoint_throughput_calculator
 # )
 # from pathlib import Path
-from enrich import get_logger
+import logging
 
 import deepspeed
 from deepspeed.runtime.utils import see_memory_usage
@@ -40,8 +41,10 @@ import ezpz as ez
 
 
 # ---- [SETUP COMMS] ------------------------
+# if str(os.environ.get('LAUNCH_CMD', 'mpich')).lower() == 'mpich':
 RANK = ez.setup_torch(backend="deepspeed")
-# RANK = ez.get_rank()
+# else:
+#     RANK = ez.get_rank()
 WORLD_SIZE = ez.get_world_size()
 LOCAL_RANK = ez.get_local_rank()
 DEVICE = ez.get_torch_device()
@@ -49,7 +52,7 @@ if torch.cuda.is_available():
     torch.cuda.set_device(LOCAL_RANK)
 # -------------------------------------------
 # --- [TURN OFF LOGGER ON ALL RANK != 0] ----
-log = get_logger(__name__)
+log = logging.getLogger(__name__)
 log.setLevel("INFO") if RANK == 0 else log.setLevel("CRITICAL")
 # ---- [SETUP WANDB FROM RANK 0] --------------
 WANDB_MODE = os.environ.get('WANDB_MODE', None)

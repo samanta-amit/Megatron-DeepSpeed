@@ -21,12 +21,13 @@ NOW="$(date "+%Y-%m-%d-%H%M%S")"
 # mine is called q4-drop
 ########################################################
 setup_conda() {
-    if [[ "${SHELL}" = "/bin/zsh" ]]; then
-        eval "$(~/miniconda3/bin/conda shell.zsh hook)"
+    if [[ -z "${CONDA_PREFIX}" && -z "${VIRTUAL_ENV}" ]]; then
+        shell_name=$(echo "${SHELL}" | tr "\/" "\t" | awk '{print $NF}')
+        eval "$(~/miniconda3/bin/conda shell hook -s posix)"
+        conda activate q4-drop
     else
-        eval "$(~/miniconda3/bin/conda shell.bash hook)"
+        echo "Found existing python at: $(which python3)"
     fi
-    conda activate q4-drop
 }
 
 
@@ -44,15 +45,37 @@ setup_megatron_deepspeed() {
         exit
     fi
     git clone https://github.com/argonne-lcf/Megatron-DeepSpeed && cd Megatron-DeepSpeed
+    if [[ -n "${GIT_BRANCH-}" ]]; then
+        git checkout "${GIT_BRANCH}"
+    fi
 }
 
 
 main() {
-    setup_conda
+    local virtual_env="${VIRTUAL_ENV-}"
+    local conda_prefix="${CONDA_PREFIX-}"
+    if [[ -n "${conda_prefix}" && -z "${virtual_env}" ]]; then
+        echo "Using conda from: ${conda_prefix}"
+    elif [[ -n "${virtual_env}" && -z "${conda_prefix}" ]]; then
+        echo "Using virtual_env from: ${virtual_env}"
+    elif [[ -n "${virtual_env}" && -n "${conda_prefix}" ]]; then
+        echo "Using virtual_env: ${virtual_env} on top of CONDA: ${conda_prefix}"
+    elif [[ -z "${conda_prefix}" && -z "${virtual_env}" ]]; then
+        echo "No conda_prefix or virtual_env found in environment..."
+        echo "Setting up conda"
+        setup_conda
+    else
+        echo "Unable to setup python. Exiting"
+        exit 1
+    fi
     setup_megatron_deepspeed
     export DEBUG=1
     export PBS_O_WORKDIR="$(pwd)"
-    export DATA_FILE_LIST=./ALCF/data-lists/sunspot/books.txt
+    export DATA_FILE_LIST="${PBS_O_WORKDIR}/ALCF/data-lists/sunspot/books.txt"
+    if [[ ! -f "${DATA_FILE_LIST}" ]]; then
+        echo "Unable to find / use ${DATA_FILE_LIST}. Exiting."
+        exit 1
+    fi
     export ZERO_STAGE=1
     export NUM_LAYERS=10
     export MICRO_BATCH=8

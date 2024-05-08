@@ -2,13 +2,13 @@
 #
 # Run complete test of
 # https://github.com/argonne-lcf/Megatron-DeepSpeed
-# on Sirius @ ALCF
-# to launch (inside an interactive `qsub -I` job) on Sirius:
+# on Polaris @ ALCF
+# to launch (inside an interactive `qsub -I` job) on Polaris:
 #
 # ```bash`
 # $ git clone https://github.com/argonne-lcf/Megatron-DeepSpeed
 # $ cd Megatron-DeepSpeed/ALCF
-# $ bash test_sirius.sh
+# $ bash test_polaris.sh
 # ````
 
 # EXIT ON ERROR(s)
@@ -21,11 +21,11 @@ NOW="$(date "+%Y-%m-%d-%H%M%S")"
 # mine is called q4-drop
 ########################################################
 setup_conda() {
-    if [[ -z "${CONDA_PREFIX}" && -z "${VIRTUAL_ENV}" ]]; then
-        export MAMBA_ROOT_PREFIX=/lus/tegu/projects/PolarisAT/foremans/micromamba
+    if [[ -z "${CONDA_PREFIX-}" && -z "${VIRTUAL_ENV-}" ]]; then
+        export MAMBA_ROOT_PREFIX=/eagle/argonne_tpc/micromamba
         shell_name=$(echo "${SHELL}" | tr "\/" "\t" | awk '{print $NF}')
-        eval "$("${MAMBA_ROOT_PREFIX}/bin/micromamba" shell hook --shell ${shell_name})"
-        micromamba activate 2024-04-23
+        eval "$("${MAMBA_ROOT_PREFIX}/bin/micromamba" shell hook -s posix)"
+        micromamba activate 2024-04-25
     else
         echo "Found existing python at: $(which python3)"
     fi
@@ -37,7 +37,7 @@ setup_conda() {
 # does not already exist
 ########################################
 setup_megatron_deepspeed() {
-    OUTDIR="OUTPUTS/test-sirius-${NOW}" && mkdir -p "${OUTDIR}" && cd "${OUTDIR}"
+    OUTDIR="OUTPUTS/test-polaris-${NOW}" && mkdir -p "${OUTDIR}" && cd "${OUTDIR}"
     echo "Running test in: ${OUTDIR}"
     echo "WORKING DIRECTORY: $(realpath $(pwd .))"
     if [[ -d "Megatron-DeepSpeed" ]]; then
@@ -72,7 +72,7 @@ main() {
     setup_megatron_deepspeed
     export DEBUG=1
     export PBS_O_WORKDIR="$(pwd)"
-    export DATA_FILE_LIST="${PBS_O_WORKDIR}/ALCF/data-lists/sirius/books.txt"
+    export DATA_FILE_LIST="${PBS_O_WORKDIR}/ALCF/data-lists/polaris/books.txt"
     if [[ ! -f "${DATA_FILE_LIST}" ]]; then
         echo "Unable to find / use ${DATA_FILE_LIST}. Exiting."
         exit 1
@@ -82,7 +82,7 @@ main() {
     export MICRO_BATCH=8
     export TRAIN_ITER=20
     export TIMING_LOG_LEVEL=1
-    bash train_llama_alcf.sh |& tee "test-sirius-${NOW}".log
+    bash train_llama_alcf.sh |& tee "test-polaris-${NOW}".log
 }
 
 main

@@ -16,19 +16,18 @@ export WORKING_DIR="${WORKING_DIR}"
 printf "Using WORKING_DIR: %s\n" ${WORKING_DIR}
 
 
-printJobInfo() {
-    echo "++++++++++++++++++++++++++++++++++++++++++++++++++"
-    echo "- MPICH_DIR=${MPICH_DIR:-${MPI_ROOT}}"
-    echo "- Using $(which python3)"
-    echo "- WORLD_SIZE:${WORLD_SIZE}"
-    echo "- NCCL: ${NCCL:-nccl}"
-    echo "- MODEL_TYPE: ${MODEL_TYPE}"
-    echo "- Using DATA_FILE_LIST: ${DATA_FILE_LIST}"
-    echo "++++++++++++++++++++++++++++++++++++++++++++++++++"
+function check_and_kill_if_running() {
+    # kill $(ps aux | grep -E "$USER.+(mpi|main.py)" | grep -v grep | awk '{print $2}')
+    RUNNING_PIDS=$(lsof -i:29500 -Fp | head -n 1 | sed 's/^p//')
+    if [[ -n "${RUNNING_PIDS}" ]];
+        then echo "Caught ${RUNNING_PIDS}" && kill "${RUNNING_PIDS}";
+    else
+        echo "Not currently running. Continuing!"
+    fi
 }
 
 
-setupSrun() {
+function setupSrun() {
     if [[ $(hostname) == login* || $(hostname) == nid* ]]; then
         export NHOSTS="${SLURM_NNODES:-1}"
         export NGPU_PER_HOST="${SLURM_GPUS_ON_NODE:-$(nvidia-smi -L | wc -l)}"
@@ -40,10 +39,47 @@ setupSrun() {
 }
 
 
-setupLauncher() {
+function printJobInfo() {
+    echo "++++++++++++++++++++++++++++++++++++++++++++++++++"
+    echo "- MPICH_DIR=${MPICH_DIR:-${MPI_ROOT}}"
+    echo "- Using $(which python3)"
+    echo "- WORLD_SIZE:${WORLD_SIZE}"
+    echo "- NCCL: ${NCCL:-nccl}"
+    echo "- MODEL_TYPE: ${MODEL_TYPE}"
+    echo "- Using DATA_FILE_LIST: ${DATA_FILE_LIST}"
+    echo "++++++++++++++++++++++++++++++++++++++++++++++++++"
+}
+
+function setupVenv() {
+    VENV_DIR="$1"
+    if [[ -d "${VENV_DIR}" ]]; then
+        echo "Found venv at: ${VENV_DIR}"
+        source "${VENV_DIR}/bin/activate"
+    else
+        echo "Skipping setupVenv() on $(hostname)"
+    fi
+}
+
+function loadCondaEnv() {
+    if [[ "${CONDA_EXE}" ]]; then
+        echo "Already inside ${CONDA_EXE}, exiting!"
+    else
+        MODULE_STR="$1"
+        module load "conda/${MODULE_STR}"
+        nargs="$#"
+        if [[ "${nargs}" -ge 2 ]]; then
+            conda activate "$2"
+        else
+            conda activate base
+        fi
+    fi
+}
+
+
+function setupLauncher() {
     # outdir=$1
     if [[ -n "${DIST_LAUNCH}" && ${LAUNCH_CMD:-"MPICH"} != "deepspeed" ]]; then
-        export LAUNCH_CMD="${DIST_LAUNCH} --cpu-bind depth -d 16 python3 -Wignore ${EXEC}"
+        export LAUNCH_CMD="${DIST_LAUNCH} --genvall --cpu-bind depth -d 16 $(which python3) -Wignore ${EXEC}"
     else
         # Assert `./hostfile_deepspeed` exists
         export hfds="${WORKING_DIR}/hostfile_deepspeed" && [ -f "${hfds}" ] || exit
@@ -53,7 +89,7 @@ setupLauncher() {
     printf " %s" "$(printMagenta ${LAUNCH_CMD})"
 }
 
-setDSlauncher() {
+function setDSlauncher() {
     # launcher setting
     outdir=$1
     export hfds="$outdir/hostfile_deepspeed"
@@ -68,32 +104,36 @@ setDSlauncher() {
     fi
 }
 
-setParams() {
+function setParams() {
     LLAMA_ARGS=""
     # +----[Parallelism Settings] -------------------------------------------+
     # +------[Aurora]--------||-------[SunSpot]-------------+
     if [[ $(hostname) == x4* || $(hostname) == x1* ]]; then
         TP=${TP:-1}                      # TP = 1
         export CCL=${CCL:-ccl}           # CCL
-        export BE="${CCL}"               # BE = CCL
+        export BE="${CCL}"               # COMMUNICATION BACKEND = CCL
         export DTYPE=${DTYPE:-bf16}      # DTYPE: bf16
+        export GRAD_ACC_STEPS=${GRAD_ACC_STEPS:-8}     # GRADIENT_ACC_STEPS
         MICRO_BATCH=${MICRO_BATCH:-4}    # MICRO_BATCH = 4
-        #######################################################
-        # if NO_FLASH_ATTN is NON-empty; then NO FLASH ATTN !!
+        ##############################################################
+        # NOTE: if NO_FLASH_ATTN is NON-empty; then NO FLASH ATTN !!
         if [[ -n "${NO_FLASH_ATTN-}" ]]; then
             echo "Not using flash-attn!!"
         else
             LLAMA_ARGS="${LLAMA_ARGS} --use-flash-attn-builder"
         fi
-        #######################################################
+        ##############################################################
     # +--------[Polaris]-----------------------------------+
     elif [[ $(hostname) == x3* ]]; then
-        TP=${TP:-2}                      # TP = 2
-        export NCCL=${NCCL:-nccl}        # NCCL
-        export BE="${NCCL}"              # BE = NCCL
-        # export DTYPE=${DTYPE:-bf16}      # DTYPE: BF16 ??
-        export DTYPE=${DTYPE:-fp16}      # DTYPE: FP16
-        MICRO_BATCH=${MICRO_BATCH:-8}    # MICRO_BATCH = 8
+        # export LAUNCH_CMD="${LAUNCH_CMD:-deepspeed}"
+        TP=${TP:-1}                                     # TP = 2
+        export NCCL=${NCCL:-nccl}                       # NCCL
+        export BE="${NCCL}"                             # BE = NCCL
+        # export DTYPE=${DTYPE:-bf16}                   # DTYPE: BF16 ??
+        export DTYPE=${DTYPE:-fp16}                     # DTYPE: FP16
+        export GRAD_ACC_STEPS=${GRAD_ACC_STEPS:-8}     # GRADIENT_ACC_STEPS
+        # NOTE: MICRO_BATCH is exported below
+        MICRO_BATCH=${MICRO_BATCH:-2}    # MICRO_BATCH = 8
         if [[ -n "${NO_FLASH_ATTN-}" ]]; then
             echo "Not using flash-attn!!"
         else
@@ -116,46 +156,45 @@ setParams() {
     export TP="${TP}"
     export PP="${PP:-1}"
     export DTYPE="${DTYPE:-bf16}"
-    export OPT="${OPT:-adamw}"
+    export OPT="${OPT:-adamwschedulefree}"
     export HOSTFILE="${HOSTFILE:-${PBS_NODEFILE}}"
     NHOSTS=$(wc -l < "${HOSTFILE}")
     if [[ -z "${NGPU_PER_HOST-}" ]]; then
         NGPU_PER_HOST=$(python3 -c 'import ezpz as ez; print(ez.get_gpus_per_node())')
     fi
     export WORLD_SIZE="${WORLD_SIZE:-$(( NHOSTS * NGPU_PER_HOST ))}"
-    # export WORLD_SIZE="${WORLD_SIZE:-${NGPUS:-$(( ))}}"
-    # export WORLD_SIZE=${WORLD_SIZE:-$(wc -l < "${HOSTFILE}")}
-    # +---[Llama2 7B Config]-----------------------------+
+    # +---[Llama2 7B Config]--------------------------------------------------+
     export MODEL_KEY="Llama-7B"
-    export HEADS=${HEADS:-${NHEADS:-32}}
-    export NLAYERS=${NLAYERS:-${NUM_LAYERS:-32}}
-    export HIDDEN=${HIDDEN:-4096}
-    export NUM_KV_HEAD=${NUM_KV_HEAD:-8}
-    export FFN_HIDDEN_SIZE=${FFN_HIDDEN_SIZE:-11008}
+    export HEADS=${HEADS:-${NHEADS:-32}}                # NUMBER OF ATEN HEADS
+    export NLAYERS=${NLAYERS:-${NUM_LAYERS:-32}}        # NUMBER OF LAYERS
+    export HIDDEN=${HIDDEN:-4096}                       # HIDDEN SIZE
+    export NUM_KV_HEAD=${NUM_KV_HEAD:-8}                # GROUP ATTENTION
+    export FFN_HIDDEN_SIZE=${FFN_HIDDEN_SIZE:-11008}    # FFN HIDDEN SIZE
     # +---[Run Settings]------------------------------------------------------+
-    export LR=${LR:-0.0003}                       # LEARNING_RATE
-    export SEQ=${SEQ:-4096}                       # SEQ_LEN: 4096
-    export ZERO_STAGE=${ZERO_STAGE:-2}            # ZERO OFFLOADING STAGE
-    export MICRO_BATCH=${MICRO_BATCH:-8}          # MICRO BATCH SIZE
-    export GRAD_ACC_STEPS=${GRAD_ACC_STEPS:-1}    # GRADIENT ACCUMULATION STEPS
-    export EVAL_ITERS="${EVAL_ITERS:-10}"         # NUMBER OF EVAL ITERS TO RUN
-    export TRAIN_ITER=${TRAIN_ITER:-317892}       # NUMBER OF TRAIN ITERS
-    export EVAL_INTERVAL="${EVAL_INTERVAL:-50000}"  # HOW FREQUENTLY TO RUN EVAL
-    export SAVE_INTERVAL=${SAVE_INTERVAL:-200}    # HOW FREQUENTLY TO SAVE CKPTS
-    export TIMING_LOG_LEVEL="${TIMING_LOG_LEVEL:-1}"  # TIMING VERBOSITY IN LOGS
+    export LR=${LR:-0.0003}                             # LEARNING_RATE
+    export LR_WARMUP_FRAC=${LR_WARMUP_FRAC:-0.05}       # LEARNING RATE WARMUP
+    export SEQ=${SEQ:-4096}                             # SEQ_LEN: 4096
+    export ZERO_STAGE=${ZERO_STAGE:-1}                  # ZERO OFFLOADING STAGE
+    export MICRO_BATCH=${MICRO_BATCH:-8}                # MICRO BATCH SIZE
+    export GRAD_ACC_STEPS=${GRAD_ACC_STEPS:-1}          # GRADIENT ACCUMULATION STEPS
+    export EVAL_ITERS="${EVAL_ITERS:-10}"               # NUMBER OF EVAL ITERS TO RUN
+    export TRAIN_ITER=${TRAIN_ITER:-317892}             # NUMBER OF TRAIN ITERS
+    export EVAL_INTERVAL="${EVAL_INTERVAL:-50000}"      # HOW FREQUENTLY TO RUN EVAL
+    export SAVE_INTERVAL=${SAVE_INTERVAL:-200}          # HOW FREQUENTLY TO SAVE CKPTS
+    export TIMING_LOG_LEVEL="${TIMING_LOG_LEVEL:-1}"    # TIMING VERBOSITY IN LOGS
+    export ACT_CKPT_NUM_LAYERS="${ACT_CKPT_NUM_LAYERS:-1}"                  # NUM LAYERS TO CHECKPOINT ACTIVATIONS
     export USE_ACTIVATION_CHECKPOINTING=${USE_ACTIVATION_CHECKPOINTING:-1}  # USE ACTIVATION CHECKPOINTING ?
     export GLOBAL_BATCH_MAX=$(( $WORLD_SIZE * $MICRO_BATCH * $GRAD_ACC_STEPS / $TP / $PP ))  # MAX GLOBAL BATCH SIZE
     export GLOBAL_BATCH="${GLOBAL_BATCH:-${GLOBAL_BATCH_MAX}}"  # WILL USE MAX IF NOT SET IN ENVIRONMENT
-    tm="${WORKING_DIR}/ALCF/tokenizer.model"      # fallback: Megatron-DeepSpeed/ALCF/tokenizer.model
+    tm="${WORKING_DIR}/ALCF/tokenizer.model"            # fallback: Megatron-DeepSpeed/ALCF/tokenizer.model
     export TOKENIZER_MODEL="${TOKENIZER_MODEL:-${tm}}"  # USE TOKENIZER_MODEL from env, else fallback from ^
     export MODEL_TYPE="llama-seq${SEQ}-pp${PP}-tp${TP}-${NLAYERS}layers-${HEADS}heads-${HIDDEN}hidden"  # STRING FOR IDENTIFYING MODEL
     # +----[ADDITIONAL LLAMA SPECIFIC ARGUMENTS]------------------------------
     export LLAMA_ARGS="${LLAMA_ARGS} --no-query-key-layer-scaling --use-rotary-position-embeddings --untie-embeddings-and-output-weights --swiglu --normalization rmsnorm --disable-bias-linear"
-    # +----------------------------------------------------------------------+
 }
 
 
-setArgs() {
+function setArgs() {
     # ---- Set DeepSpeed arguments --------------------------------
     ds_args=" "
     ds_args=" --deepspeed ${ds_args}"
@@ -179,14 +218,14 @@ setArgs() {
         echo "!! Caught USE_ACTIVATION_CHECKPOINTING=${USE_ACTIVATION_CHECKPOINTING} !!"
         gpt_args+=(
             "--checkpoint-activations"
-            "--checkpoint-num-layers 1"
+            "--checkpoint-num-layers ${ACT_CKPT_NUM_LAYERS}"
         )
     fi
     export gpt_args
 }
 
 
-make_ds_hostfile() {
+function make_ds_hostfile() {
     export GPUS_PER_NODE="${GPUS_PER_NODE:-${NGPU_PER_HOST:-${SLURM_GPUS_ON_NODE:-$(nvidia-smi -L | wc -l)}}}"
     # ---- Make MPICH hostfile ----------------
     hf="${HOSTFILE:-${PBS_NODEFILE}}"
@@ -202,7 +241,7 @@ make_ds_hostfile() {
 # | 1. Git clone ezpz (if not found)    |
 # | 2. Install ezpz (if not installed)  |
 # +---------------------------------------+
-ezpz() {
+function ezpz() {
     if [[ ! -d "${WORKING_DIR}/deps/ezpz" ]]; then
         mkdir -p "${WORKING_DIR}/deps"
         git clone https://github.com/saforem2/ezpz "${WORKING_DIR}/deps/ezpz"
@@ -228,7 +267,7 @@ ezpz() {
 # | Save important environment variables to .deepspeed_env, which will be  |
 # | forwarded to ALL ranks with DeepSpeed                                  |
 # +------------------------------------------------------------------------+
-saveDSenv() {
+function saveDSenv() {
     echo "Saving {PATH, LD_LIBRARY_PATH, htt{p,ps}_proxy, CFLAGS, PYTHONUSERBASE} to .deepspeed_env"
     {
         echo "PATH=${PATH}" ;
@@ -240,7 +279,7 @@ saveDSenv() {
     } > .deepspeed_env
 }
 
-setOutput() {
+function setOutput() {
     # ---- Specify output location --------------------------------
     export OUTPUT_PREFIX="ds_stage${ZERO_STAGE}_nl${NLAYERS}_hs${HIDDEN}_mb${MICRO_BATCH}_seq${SEQ}_gb${GLOBAL_BATCH}_pp${PP}_tp${TP}_${DTYPE}_opt${OPT}"
     # OUTPUT_DIR="logs/${OUTPUT_PREFIX}/$(date +%m%d%H%M%S)_${HOSTNAME}"
@@ -253,7 +292,7 @@ setOutput() {
     echo "!!!Please see logs at ${OUTPUT_DIR}"
 }
 
-buildDSconfig() {
+function buildDSconfig() {
     # ---- Build DeepSpeed Config ---------------------------------
     export CPU_OPTIMIZER="${CPU_OPTIMIZER:-0}"
     export DS_CONFIG="${WORKING_DIR}/ds-configs/ds_stage${ZERO_STAGE}_mb${MICRO_BATCH}_gb${GLOBAL_BATCH}_pp${PP}_${DTYPE}.json"
@@ -267,13 +306,13 @@ buildDSconfig() {
 }
 
 
-sumWeights() {
+function sumWeights() {
     local file_list=$1
     weights=$(cat "${file_list}" | awk '{print $1}' | tr '\n' '\ ,\ ' | sed 's/^/[/g' | sed 's/$/]/g' | tr '\ ' "\,\ ")
     python3 -c "import numpy as np; print(np.sum(${weights}))"
 }
 
-sumFiles() {
+function sumFiles() {
     local rd=$1
     for f in $("${rd}/*.txt"); do
         ws=$(sumWeights "${rd}/${f}")
@@ -281,80 +320,140 @@ sumFiles() {
     done
 }
 
+########################################################
+# Setup / activate conda environment,
+# mine is called q4-drop
+########################################################
+setup_conda_sunspot() {
+    if [[ -z "${CONDA_PREFIX-}" && -z "${VIRTUAL_ENV-}" ]]; then
+        shell_name=$(echo "${SHELL}" | tr "\/" "\t" | awk '{print $NF}')
+        eval "$(~/miniconda3/bin/conda shell.${shell_name} hook)"
+        conda activate q4-drop
+    else
+        echo "Found existing python at: $(which python3)"
+    fi
+}
 
-setEnv() {
-    # ---- [SunSpot] ------- || ---- [Aurora] --------------
-    if [[ $(hostname) == x1* || $(hostname) == x4* ]]; then
-        # PBS_PARENT=$(dirname ${PBS_O_WORKDIR})
-        # echo "Sourcing ${PBS_PARENT}/setenv.sh..."
-        # source "${PBS_PARENT}/setenv.sh" || exit
-        source "${WORKING_DIR}/ALCF/sunspot-env.sh" || exit
-        # ----- [Aurora] -----------------------------------
-        if [[ -z "${CONDA_PREFIX}" && -z "${VIRTUAL_ENV}" ]]; then
-            if [[ $(hostname) == x4* ]]; then
-                eval "$(conda shell.zsh hook)" && conda activate anl_release_q4v2
-            # ----- [SunSpot] ----------------------------------
-            elif [[ $(hostname) == x1* ]]; then
-                echo "Running on SunSpot !!"
-                eval "$(/home/foremans/miniconda3/bin/conda shell.zsh hook)" && conda activate q4-drop
+setup_conda_sirius() {
+    if [[ -z "${CONDA_PREFIX-}" && -z "${VIRTUAL_ENV-}" ]]; then
+        export MAMBA_ROOT_PREFIX=/lus/tegu/projects/PolarisAT/foremans/micromamba
+        shell_name=$(echo "${SHELL}" | tr "\/" "\t" | awk '{print $NF}')
+        eval "$("${MAMBA_ROOT_PREFIX}/bin/micromamba" shell hook --shell ${shell_name})"
+        micromamba activate 2024-04-23
+    else
+        echo "Found existing python at: $(which python3)"
+    fi
+}
+
+setup_conda_polaris() {
+    if [[ -z "${CONDA_PREFIX-}" && -z "${VIRTUAL_ENV-}" ]]; then
+        # export CUDA_HOME=/soft/compilers/cudatoolkit/cuda-12.2.2
+        # && export MAMBA_ROOT_PREFIX=/eagle/argonne_tpc/micromamba && eval "$("${MAMBA_ROOT_PREFIX}/bin/micromamba" shell hook -s posix)" ; mm activate 2024-04-25
+        # export MAMBA_ROOT_PREFIX=/eagle/argonne_tpc/micromamba
+        # shell_name=$(echo "${SHELL}" | tr "\/" "\t" | awk '{print $NF}')
+        # eval "$("${MAMBA_ROOT_PREFIX}/bin/micromamba" shell hook -s posix)"
+        # micromamba activate 2024-04-25
+        module use /soft/modulefiles
+        module load conda/2024-04-29 ; conda activate base
+        # unset MPICH_GPU_SUPPORT_ENABLED
+        # if [[ -d "${WORKING_DIR}/venvs/polaris/2024-04-29" ]]; then
+        #     source "${WORKING_DIR}/venvs/polaris/2024-04-29/bin/activate"
+        # fi
+    else
+        echo "Found existing python at: $(which python3)"
+    fi
+}
+
+
+function setEnv() {
+    local virtual_env="${VIRTUAL_ENV-}"
+    local conda_prefix="${CONDA_PREFIX-}"
+    if [[ -n "${conda_prefix}" && -z "${virtual_env}" ]]; then
+        echo "Using conda from: ${conda_prefix}"
+    elif [[ -n "${virtual_env}" && -z "${conda_prefix}" ]]; then
+        echo "Using virtual_env from: ${virtual_env}"
+    elif [[ -n "${virtual_env}" && -n "${conda_prefix}" ]]; then
+        echo "Using virtual_env: ${virtual_env} on top of CONDA: ${conda_prefix}"
+    elif [[ -z "${conda_prefix}" && -z "${virtual_env}" ]]; then
+        echo "No conda_prefix or virtual_env found in environment..."
+        echo "Setting up conda"
+        # setup_conda
+        # ---- [SunSpot] ------- || ---- [Aurora] --------------
+        if [[ $(hostname) == x1* || $(hostname) == x4* ]]; then
+            source "${WORKING_DIR}/ALCF/sunspot-env.sh" || exit
+            # ----- [Aurora] -----------------------------------
+            if [[ -z "${conda_prefix}" && -z "${virtual_env}" ]]; then
+                if [[ $(hostname) == x4* ]]; then
+                    eval "$(conda shell.zsh hook)" && conda activate anl_release_q4v2
+                # ----- [SunSpot] ----------------------------------
+                elif [[ $(hostname) == x1* ]]; then
+                    echo "Running on SunSpot !!"
+                    setup_conda_sunspot
+                    # eval "$(/home/foremans/miniconda3/bin/conda shell.zsh hook)" && conda activate q4-drop
+                fi
             fi
-        fi
-    # ----- [Polaris] ---------------------------------------
-    elif [[ $(hostname) == x3* ]]; then
-        if [[ "${PBS_O_HOST}" == sirius* ]]; then
-            export MACHINE="Running on Sirius !!"
-        else
-            echo "Running on Polaris !!"
-            # ---- [load conda] ---------------------
-            # module load conda/2023-10-04; conda activate cu118-pt221 ; unset PYTHONUSERBASE
-            if [[ -d "${PBS_O_WORKDIR}/venvs/polaris/cu118-pt221" ]]; then
-                source "${PBS_O_WORKDIR}/venvs/polaris/cu118-pt221/bin/activate"
+        # ----- [Polaris] ---------------------------------------
+        elif [[ $(hostname) == x3* ]]; then
+            if [[ "${PBS_O_HOST}" == sirius* ]]; then
+                echo "Running on Sirius !!"
+                setup_conda_sirius
+            else
+                echo "Running on Polaris !!"
+                # ---- [load conda] ---------------------
+                setup_conda_polaris
+                # if [[ -d "${PBS_O_WORKDIR}/venvs/polaris/cu118-pt221" ]]; then
+                #     source "${PBS_O_WORKDIR}/venvs/polaris/cu118-pt221/bin/activate"
+                # fi
             fi
+        elif [[ $(hostname) == login* || $(hostname) == nid* ]]; then
+            echo "Running on Perlmutter !!"
+            module load pytorch
+            source "${SLURM_SUBMIT_DIR}/venvs/perlmutter/pytorch-2.1.0-cu12/bin/activate"
+        else # ------------------------------------- [Unknown] -------------------
+            echo "Unknown hostname $(hostname)"
+            exit 1
         fi
-    elif [[ $(hostname) == login* || $(hostname) == nid* ]]; then
-        echo "Running on Perlmutter !!"
-        module load pytorch
-        source "${SLURM_SUBMIT_DIR}/venvs/perlmutter/pytorch-2.1.0-cu12/bin/activate"
-    else # ------------------------------------- [Unknown] -------------------
-        echo "Unknown hostname $(hostname)"
+    else
+        echo "Unable to setup python environment. Exiting"
         exit 1
     fi
     echo "[python] Using: $(which python3)"
 }
 
 
-makeHostfiles() {
+function makeHostfiles() {
     if [[ -n "${HOSTFILE}" ]]; then
         printf "!! USING CUSTOM HOSTFILE FROM: %s"  "${HOSTFILE}"
     else
         make_ds_hostfile
-        # source "${WORKING_DIR}/deps/ezpz/src/ezpz/bin/savejobenv" || exit #> /tmp/savejobenv.log 2>&1 &
-        # source "${WORKING_DIR}/deps/ezpz/src/ezpz/bin/getjobenv" || exit
     fi
 }
 
-setData() {  # ---- [dfl: abbrv. for DATA_FILE_LIST] -------------------------
+function setData() {  # ---- [dfl: abbrv. for DATA_FILE_LIST] -------------------------
     if [[ $(hostname) == x4* ]]; then    # ---- [AURORA] ----
         dfl_fallback="/home/foremans/anl_24_release_q4/llm.devkit/Megatron-DeepSpeed/data_file_list_reweighted.txt"
     elif [[ $(hostname) == x1* ]]; then
-        dfl_fallback="${WORKING_DIR}/ALCF/data-lists/sunspot/data_file_list_books.txt"
-        # dfl_fallback="/gila/Aurora_deployment/AuroraGPT/datasets/dolma/data_file_list_reweighted.txt"
+        # shellcheck: source ./data-lists/sunspot/books.txt
+        dfl_fallback="${WORKING_DIR}/ALCF/data-lists/sunspot/books.txt"
     elif [[ $(hostname) == x3* ]]; then
-        # dfl_fallback="/eagle/datasets/dolma/data_file_list_reweighted.txt"
-        dfl_fallback="${WORKING_DIR}/ALCF/data-lists/polaris/data_file_list_books.txt"
+        if [[ "${PBS_O_HOST}" == sirius* ]]; then
+            # shellcheck: source ./data-lists/sirius/books.txt
+            dfl_fallback="${WORKING_DIR}/ALCF/data-lists/sirius/books.txt"
+        elif [[ "${PBS_O_HOST}" == polaris* ]]; then
+            # shellcheck: source ./data-lists/polaris/books.txt
+            dfl_fallback="${WORKING_DIR}/ALCF/data-lists/polaris/dolma_v1_7_file_list.txt"
+        fi
     elif [[ $(hostname) == login* || $(hostname) == nid* ]]; then
         dfl_fallback="${SLURM_SUBMIT_DIR}/genslm-subsample.txt"
     else
         echo "Unknown hostname. Must manually specify DATA_FILE_LIST."
     fi
     dfl="${1:-${dfl_fallback}}"
-    # dfl_fallback="/eagle/datasets/dolma/data_file_list_reweighted.txt"
     printf "Calling:  setData() with %s\n" "${dfl}"
     ndocs=$(wc -l < "${dfl}")
     ws=$(sumWeights "${dfl}")
     dfl_stem=$(echo "${dfl}" | tr "\/" "\t" | awk '{print $NF}' | sed "s/\.txt//g")
     dcp=".cache/${dfl_stem}/index-cache"
-    # mkdir -p dcp
     export DATA_FILE_LIST="${dfl}"
     export NUM_DOCS="${ndocs}"
     export WEIGHT_SUM="${ws}"
@@ -370,7 +469,7 @@ setData() {  # ---- [dfl: abbrv. for DATA_FILE_LIST] -------------------------
     echo "--------------------"
 }
 
-generateDSconfig() {
+function generateDSconfig() {
     for v in "$GLOBAL_BATCH" "$MICRO_BATCH" "$GRAD_ACC_STEPS" "$ZERO_STAGE" \
              "$PP" "$DTYPE"
     do
@@ -411,7 +510,7 @@ generateDSconfig() {
         \"gradient_clipping\": 1.0,
         \"activation_checkpointing\": {
           \"partition_activations\": true,
-          \"contiguous_memory_optimization\": false
+          \"contiguous_memory_optimization\": true
         },
         \"wall_clock_breakdown\": false,"
     flops_profiler="\
@@ -532,33 +631,34 @@ $flops_profiler
 EOT
 }
 
-printBlack() {
+function printBlack() {
     printf "\e[1;30m%s\e[0m\n" "$@"
 }
 
-printRed() {
+function printRed() {
     printf "\e[1;31m%s\e[0m\n" "$@"
 }
 
-printGreen() {
+function printGreen() {
     printf "\e[1;32m%s\e[0m\n" "$@"
 }
 
-printYellow() {
+function printYellow() {
     printf "\e[1;33m%s\e[0m\n" "$@"
 }
 
-printBlue() {
+function printBlue() {
     printf "\e[1;34m%s\e[0m\n" "$@"
 }
 
-printMagenta() {
+function printMagenta() {
     printf "\e[1;35m%s\e[0m\n" "$@"
 }
 
-printCyan() {
+function printCyan() {
     printf "\e[1;36m%s\e[0m\n" "$@"
 }
-printWhite() {
+
+function printWhite() {
     printf "\e[1;37m%s\e[0m\n" "$@"
 }
