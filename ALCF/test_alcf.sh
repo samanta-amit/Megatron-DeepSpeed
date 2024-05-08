@@ -154,9 +154,9 @@ main() {
         echo "Unable to find / use ${DATA_FILE_LIST}. Exiting."
         exit 1
     fi
-    export ZERO_STAGE=1
-    export NUM_LAYERS=10
-    export MICRO_BATCH=8
+    # export ZERO_STAGE=1
+    # export NUM_LAYERS=10
+    # export MICRO_BATCH=8
     export TRAIN_ITER=20
     export TIMING_LOG_LEVEL=1
     bash train_llama_alcf.sh |& tee "test-${SUBMITTED_FROM}-${NOW}".log
