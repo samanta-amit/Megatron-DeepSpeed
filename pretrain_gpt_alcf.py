@@ -20,6 +20,8 @@ from megatron.training import pretrain
 from megatron.utils import get_ltor_masks_and_position_ids
 from megatron.utils import average_losses_across_data_parallel_group, update_rotary_pos_emb
 from megatron.arguments import core_transformer_config_from_args
+from megatron.utils import Profile, PerfTrace
+
 # from megatron.utils import (
 #     # report_memory,
 #     # throughput_calculator,
@@ -582,7 +584,7 @@ def main():
             )
         args = get_args()
         prof.export_chrome_trace(
-            f"{args.tensorboard_dir}"
+            f"{args.trace_dir}"
             "/torch-trace-{RANK}-of-{WORLD_SIZE}.json"
         )
     else:

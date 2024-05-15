@@ -16,7 +16,11 @@ from megatron.data.dataset_utils import get_datasets_weights_and_num_samples
 from megatron.data.dataset_utils import get_train_valid_test_split_
 from megatron.data.indexed_dataset import make_dataset as make_indexed_dataset
 
+from megatron.utils import PerfTrace, Profile
 
+dlp = Profile("DATASET")
+
+@dlp.log
 def build_train_valid_test_datasets(data_prefix, data_impl, splits_string,
                                     train_valid_test_num_samples,
                                     seq_length, seed, skip_warmup,
@@ -112,7 +116,7 @@ def build_train_valid_test_datasets(data_prefix, data_impl, splits_string,
 
         return (train_dataset, valid_dataset, test_dataset)
 
-
+@dlp.log
 def _build_train_valid_test_datasets(data_prefix, data_impl, splits_string,
                                      train_valid_test_num_samples,
                                      seq_length, seed, skip_warmup,
@@ -159,7 +163,7 @@ def _build_train_valid_test_datasets(data_prefix, data_impl, splits_string,
 
     return (train_dataset, valid_dataset, test_dataset)
 
-
+@dlp.log
 def build_dataset(dataset_name, data_prefix, data_impl,
                   splits_string, num_samples,
                   seq_length, seed, skip_warmup,
@@ -194,7 +198,7 @@ def build_dataset(dataset_name, data_prefix, data_impl,
 
     return dataset
 
-
+@dlp.log
 def _build_dataset(dataset_name, data_prefix, data_impl, splits_string,
                    num_samples, seq_length, seed, skip_warmup,
                    *,
@@ -242,7 +246,7 @@ def get_indexed_dataset_(data_prefix, data_impl, skip_warmup):
 
 
 class GPTDataset(torch.utils.data.Dataset):
-
+    @dlp.log
     def __init__(self, name, data_prefix, documents, indexed_dataset,
                  splits_string, num_samples, seq_length, seed,
                  return_doc_ids=False, *,
@@ -268,7 +272,7 @@ class GPTDataset(torch.utils.data.Dataset):
         # -1 is due to data structure used to retieve the index:
         #    sample i --> [sample_idx[i], sample_idx[i+1])
         return self.sample_idx.shape[0] - 1
-
+    @dlp.log
     def __getitem__(self, idx):
         args = get_args()
         orig_idx = idx
@@ -341,7 +345,7 @@ class GPTDataset(torch.utils.data.Dataset):
 
         return sample_dict
 
-
+@dlp.log
 def _build_index_mappings(name, data_prefix, documents, sizes,
                           splits_string, num_samples, seq_length, seed,
                           *,
@@ -552,7 +556,7 @@ def _num_epochs(tokens_per_epoch, seq_length, num_samples):
         if ((total_tokens - 1) // seq_length) >= num_samples:
             return num_epochs
 
-
+@dlp.log
 def _build_doc_idx(documents, num_epochs, np_rng, separate_last_epoch):
     """Build an array with length = number-of-epochs * number-of-dcuments.
     Each index is mapped to a corresponding document."""
@@ -568,7 +572,7 @@ def _build_doc_idx(documents, num_epochs, np_rng, separate_last_epoch):
     doc_idx_last = _build_doc_idx(documents, 1, np_rng, False)
     return np.concatenate((doc_idx_first, doc_idx_last))
 
-
+@dlp.log
 def _build_sample_idx(sizes, doc_idx, seq_length,
                       num_epochs, tokens_per_epoch):
     """Sample index mapping is a 2D array with sizes
@@ -617,7 +621,7 @@ def _build_sample_idx(sizes, doc_idx, seq_length,
 
     return sample_idx
 
-
+@dlp.log
 def _build_shuffle_idx(num_samples, total_size, np_rng):
     """Build the range [0, size) and shuffle."""
     print(' > building shuffle index with split [0, {}) and [{}, {}) '

@@ -874,6 +874,8 @@ def _add_training_args(parser):
                        'training if SIGTERM is received')
     group.add_argument('--tensorboard-dir', type=str, default=None,
                        help='Write TensorBoard logs to this directory.')
+    group.add_argument('--trace-dir', type=str, default="./trace/",
+                       help='Write trace logs to this directory.')
     group.add_argument('--no-masked-softmax-fusion',
                        action='store_false',
                        help='Disable fusion of query_key_value scaling, '

@@ -26,6 +26,31 @@ from megatron.core import mpu
 from megatron.core.tensor_parallel import param_is_not_tensor_parallel_duplicate
 from megatron.model.module import param_is_not_shared
 from megatron.model.rotary_pos_embedding import RotaryEmbedding
+_DLIO_PROFILER_EXIST=True
+try:
+    import dlio_profiler
+except:
+    _DLIO_PROFILER_EXIST=False
+
+if _DLIO_PROFILER_EXIST:
+    from dlio_profiler.logger import fn_interceptor as Profile
+    from dlio_profiler.logger import dlio_logger as PerfTrace
+else:
+    from functools import wraps
+    class Profile:
+        def __init__(type="PROFILER"):
+            self.type = type
+        def log(self, func):
+            @wraps(func)
+            def wrapper(*args, **kwargs):
+                x = func(*args, **kwargs)
+                return x
+    class dlio_logger:
+        def __init__(self,):
+            self.type = None
+        def initialize_log(self, logfile=None, data_dir=None, process_id=-1):
+            return 
+    PerfTrace = dlio_logger()
 
 
 def update_rotary_pos_emb(seq_length):

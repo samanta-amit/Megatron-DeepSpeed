@@ -12,10 +12,12 @@ import torch
 from deepspeed.accelerator import get_accelerator
 from megatron import print_rank_0
 from megatron.core import mpu
+from megatron.utils import Profile, PerfTrace
 
+dlp = Profile("DATASET")
 class BlendableDataset(torch.utils.data.Dataset):
 
-
+    @dlp.log
     def __init__(self, datasets, weights, size, *,
                  data_cache_path=None):
 
@@ -32,6 +34,7 @@ class BlendableDataset(torch.utils.data.Dataset):
         weights /= sum_weights
 
         # Build indicies.
+        @dlp.log
         def _build_indices():
             start_time = time.time()
             dataset_index = np.zeros(self.size, dtype=np.int64)
@@ -115,7 +118,7 @@ class BlendableDataset(torch.utils.data.Dataset):
     def __len__(self):
         return self.size
 
-
+    @dlp.log
     def __getitem__(self, idx):
         dataset_idx = self.dataset_index[idx]
         sample_idx = self.dataset_sample_index[idx]
