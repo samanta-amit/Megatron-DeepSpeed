@@ -173,6 +173,7 @@ function setParams() {
     # +---[Run Settings]------------------------------------------------------+
     export LR=${LR:-0.0003}                             # LEARNING_RATE
     export LR_WARMUP_FRAC=${LR_WARMUP_FRAC:-0.05}       # LEARNING RATE WARMUP
+    export LR_DECAY_ITERS=${LR_DECAY_ITERS:-320000}     # LR DECAY ITERS
     export SEQ=${SEQ:-4096}                             # SEQ_LEN: 4096
     export ZERO_STAGE=${ZERO_STAGE:-1}                  # ZERO OFFLOADING STAGE
     export MICRO_BATCH=${MICRO_BATCH:-8}                # MICRO BATCH SIZE
@@ -281,7 +282,10 @@ function saveDSenv() {
 
 function setOutput() {
     # ---- Specify output location --------------------------------
-    export OUTPUT_PREFIX="ds_stage${ZERO_STAGE}_nl${NLAYERS}_hs${HIDDEN}_mb${MICRO_BATCH}_seq${SEQ}_gb${GLOBAL_BATCH}_pp${PP}_tp${TP}_${DTYPE}_opt${OPT}"
+    export OUTPUT_PREFIX="ws${WORLD_SIZE}_ds_stage${ZERO_STAGE}_nl${NLAYERS}_hs${HIDDEN}_mb${MICRO_BATCH}_seq${SEQ}_gb${GLOBAL_BATCH}_pp${PP}_tp${TP}_${DTYPE}_opt${OPT}"
+    if [[ -z "${NO_FLASH_ATTN:-}" ]]; then
+        export OUTPUT_PREFIX="${OUTPUT_PREFIX}_flash"
+    fi
     # OUTPUT_DIR="logs/${OUTPUT_PREFIX}/$(date +%m%d%H%M%S)_${HOSTNAME}"
     OUTPUT_DIR="logs/${OUTPUT_PREFIX}/$(date +%Y%m%d-%H%M%S)_${WORLD_SIZE}_${HOSTNAME}"
     export OUTPUT_DIR="${OUTPUT_DIR}"
@@ -289,7 +293,8 @@ function setOutput() {
     export CKPT_DIR="checkpoints/${OUTPUT_PREFIX}"
     echo "${OUTPUT_LOG}" >> "logs/latest"
     mkdir -p "${OUTPUT_DIR}"
-    echo "!!!Please see logs at ${OUTPUT_DIR}"
+    printf "Please see logs at: %s\n" $(printGreen "${OUTPUT_DIR}")
+    printf "Checkpoints will be saved to: %s\n" $(printYellow "${CKPT_DIR}")
 }
 
 function buildDSconfig() {

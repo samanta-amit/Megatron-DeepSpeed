@@ -124,6 +124,7 @@ run_cmd="
     --micro-batch-size ${MICRO_BATCH} \
     --data-file-list ${DATA_FILE_LIST} \
     --tensor-model-parallel-size ${TP} \
+    --lr-decay-iters ${LR_DECAY_ITERS} \
     --global-batch-size ${GLOBAL_BATCH} \
     --pipeline-model-parallel-size ${PP} \
     --num-key-value-heads ${NUM_KV_HEAD} \
