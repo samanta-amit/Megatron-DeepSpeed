@@ -372,18 +372,30 @@ function sumFiles() {
 ########################################################
 setup_conda_sunspot() {
     ###### check if CONDA_PREFIX non-empty ################
-    if [[ -z "${CONDA_PREFIX-}" ]]; then
-        module use -a /home/jmitche1/anl_release/2024/q2 ; module load frameworks_2024_5_v2
-    else
-        echo "Caught CONDA_PREFIX=${CONDA_PREFIX}"
+    if [[ -z "${CONDA_PREFIX:-}" ]]; then
+        eval "$(~/miniconda3/bin/conda shell.zsh hook)"
+        conda activate anl_24_q2_release
     fi
-    ###### check if VIRTUAL_ENV non-empty #################
+    # ------------------------------------------------------------------------
+    # XXX: Jerome's `frameworks_2024_5_v2` seems broken ??
+    # - seems to be missing `python3 -c 'from mpi4py import MPI'` ???
+    # - consequently, we leave the setup below commented out (for the time
+    #   being):
+    # if [[ -z "${CONDA_PREFIX-}" ]]; then
+    #     module use -a /home/jmitche1/anl_release/2024/q2 ; module load frameworks_2024_5_v2
+    # else
+    #     echo "Caught CONDA_PREFIX=${CONDA_PREFIX}"
+    # fi
+    #
+    # ------------------------------------------------------------------------
+    ###### check if VIRTUAL_ENV non-empty ####################################
     if [[ -z "${VIRTUAL_ENV:-}" ]]; then
-        DEFAULT_VENV_PATH=${WORKING_DIR}/venvs/frameworks_2024_5_v2
-        if [[ -d "${DEFAULT_VENV_PATH}" ]]; then
-            echo "Caught virtual env at ${DEFAULT_VENV_PATH}!"
-            source "${WORKING_DIR}/${DEFAULT_VENV_PATH}/bin/activate"
-        fi
+        DEFAULT_VENV_PATH="${WORKING_DIR}/venvs/anl_24_q2_release"
+        # venvs/anl_24_q2_release/bin/activate
+        # if [[ -d "${DEFAULT_VENV_PATH}" ]]; then
+        echo "Caught virtual env at ${DEFAULT_VENV_PATH}!"
+        source "${DEFAULT_VENV_PATH}/bin/activate" || exit
+        # fi
     else
         echo "Found existing python at: $(which python3)"
     fi
@@ -447,7 +459,6 @@ function setEnv() {
         ######################## setup_conda ############################
         # ---- [SunSpot @ ALCF]  || [Aurora @ ALCF] ---------------------
         if [[ $(hostname) == x1* || $(hostname) == x4* ]]; then
-            source "${WORKING_DIR}/ALCF/sunspot-env.sh" || exit
             # ----- [Aurora] --------------------------------------------
             if [[ -z "${conda_prefix}" && -z "${virtual_env}" ]]; then
                 if [[ $(hostname) == x4* ]]; then
@@ -459,6 +470,7 @@ function setEnv() {
                     setup_conda_sunspot
                 fi
             fi
+            source "${WORKING_DIR}/ALCF/sunspot-env.sh" || exit
         # ----- [Polaris @ ALCF] --------------------------------------------
         elif [[ $(hostname) == x3* ]]; then
             if [[ "${PBS_O_HOST}" == sirius* ]]; then
