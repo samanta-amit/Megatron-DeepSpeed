@@ -16,6 +16,27 @@ export WORKING_DIR="${WORKING_DIR}"
 printf "Using WORKING_DIR: %s\n" ${WORKING_DIR}
 
 
+function get_machine() {
+    if [[ $(hostname) == x4* ]]; then
+        machine="aurora"
+    elif [[ $(hostname) == x1* ]]; then
+        machine="sunspot"
+    elif [[ $(hostname) == x3* ]]; then
+        if [[ "${PBS_O_HOST}" == sirius* ]]; then
+            machine="sirius"
+        else
+            machine="polaris"
+        fi
+    elif [[ $(hostname) == nid* ]]; then
+        machine="perlmutter"
+    else
+        echo "Unknown MACHINE. Setting MACHINE to $(hostname) and continuing..."
+    fi
+    export MACHINE="${machine}"
+    printf "Running on: %s\n" "$(printBlue ${MACHINE})"
+}
+
+
 function check_and_kill_if_running() {
     # kill $(ps aux | grep -E "$USER.+(mpi|main.py)" | grep -v grep | awk '{print $2}')
     RUNNING_PIDS=$(lsof -i:29500 -Fp | head -n 1 | sed 's/^p//')
@@ -139,6 +160,8 @@ function setParams() {
         else
             LLAMA_ARGS="${LLAMA_ARGS} --use-flash-attn-v2"
         fi
+        echo "Setting up AWS NCCL OFI Plugin on Polaris..."
+        source "${WORKING_DIR}/ALCF/aws_ofi_nccl_plugin.sh" || exit
     # +--------[Perlmutter]---------------------------------+
     elif [[ $(hostname) == login* || $(hostname) == nid* ]]; then
         TP="${TP:-2}"
@@ -293,7 +316,7 @@ function setOutput() {
     export CKPT_DIR="checkpoints/${OUTPUT_PREFIX}"
     echo "${OUTPUT_LOG}" >> "logs/latest"
     mkdir -p "${OUTPUT_DIR}"
-    printf "Please see logs at: %s\n" $(printGreen "${OUTPUT_DIR}")
+    printf "\n Please see logs at: %s\n" $(printGreen "${OUTPUT_DIR}")
     printf "Checkpoints will be saved to: %s\n" $(printYellow "${CKPT_DIR}")
 }
 
@@ -394,12 +417,13 @@ function setEnv() {
         echo "No conda_prefix or virtual_env found in environment..."
         echo "Setting up conda..."
         ######################## setup_conda ############################
-        # ---- [SunSpot] ------- || ---- [Aurora] --------------
+        # ---- [SunSpot @ ALCF]  || [Aurora @ ALCF] ---------------------
         if [[ $(hostname) == x1* || $(hostname) == x4* ]]; then
             source "${WORKING_DIR}/ALCF/sunspot-env.sh" || exit
             # ----- [Aurora] --------------------------------------------
             if [[ -z "${conda_prefix}" && -z "${virtual_env}" ]]; then
                 if [[ $(hostname) == x4* ]]; then
+                    # TODO: Update once Aurora back online
                     eval "$(conda shell.zsh hook)" && conda activate anl_release_q4v2
                 # ----- [SunSpot] ---------------------------------------
                 elif [[ $(hostname) == x1* ]]; then
@@ -407,7 +431,7 @@ function setEnv() {
                     setup_conda_sunspot
                 fi
             fi
-        # ----- [Polaris] -----------------------------------------------
+        # ----- [Polaris @ ALCF] --------------------------------------------
         elif [[ $(hostname) == x3* ]]; then
             if [[ "${PBS_O_HOST}" == sirius* ]]; then
                 echo "Running on Sirius !!"
@@ -417,8 +441,7 @@ function setEnv() {
                 # ---- [load conda] -------------------------------------
                 setup_conda_polaris
             fi
-            echo "Setting up AWS NCCL OFI Plugin on Polaris..."
-            source "${WORKING_DIR}/ALCF/aws_ofi_nccl_plugin.sh" || exit
+        # ----- [Perlmutter @ NERSC] ----------------------------------------
         elif [[ $(hostname) == login* || $(hostname) == nid* ]]; then
             echo "Running on Perlmutter !!"
             module load pytorch
@@ -431,10 +454,9 @@ function setEnv() {
         echo "Unable to setup python environment. Exiting"
         exit 1
     fi
-    printf "\n"
+    #####################################################################
     pystr="Using: $(which python3)"
-    printf "[python] %s" "$(printMagenta ${pystr})"
-    printf "\n"
+    printf "\n[python] %s\n" "$(printMagenta ${pystr})"
 }
 
 
@@ -457,13 +479,13 @@ function makeHostfiles() {
 #     Ensure `DATA_FILE_LIST` is set,
 #     fallback to default values if necessary.
 ###############################################
-function setData() {  # ----------------------[dfl: abbrv. for DATA_FILE_LIST]
+function setData() {  # ------------------------[dfl: abbrv. for DATA_FILE_LIST]
     # dfldir="${WORKING_DIR}/ALCF/data-lists"
     # =====[Set DATA_FILE_LIST_FALLBACK based on current machine]==============
-    if [[ $(hostname) == x4* ]]; then    # ---------------------------[AURORA]
+    if [[ $(hostname) == x4* ]]; then    # -----------------------------[AURORA]
         dfl_fallback="/home/foremans/anl_24_release_q4/llm.devkit/Megatron-DeepSpeed/data_file_list_reweighted.txt"
 
-    elif [[ $(hostname) == x1* ]]; then  # --------------------------[SUNSPOT]
+    elif [[ $(hostname) == x1* ]]; then  # ----------------------------[SUNSPOT]
         # shellcheck: source ./data-lists/sunspot/books.txt
         dfl_fallback="${WORKING_DIR}/ALCF/data-lists/sunspot/books.txt"
 

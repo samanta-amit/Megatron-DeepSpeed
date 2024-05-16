@@ -34,16 +34,17 @@ export EXEC="${HERE}/pretrain_gpt_alcf.py"
 sourceFile "${HERE}/ALCF/helpers.sh" || exit
 
 # ----[3. Call fns from `./ALCF/helpers_alcf.sh`]------------------------------
-setEnv || exit                      # 1. load `conda` environment
-# saveDSenv || exit                 # 2. save env vars to `.deepspeed_env`
-ezpz || exit                        # 3. determine WORLD_SIZE, etc. from `PBS_*` vars
-setParams || exit                   # 5. set command line arguments to pass to `"${EXEC}"`
-buildDSconfig || exit               # 6. create `deepspeed_config.json` from runtime params from ^
-setOutput || exit                   # 7. specify output directory for {logs, checkpoints, etc.}
-setArgs || exit                     # 8. specify additional `deepspeed` arguments
-setData "${DATA_FILE_LIST-}" || exit  # 9. specify `DATA_FILE_LIST` for dolma dataset
-printJobInfo || exit                # 11. print job info
-setupLauncher || exit
+get_machine || exit                   # 01. Identify machine we're on
+setEnv || exit                        # 02. Load `conda` environment
+# saveDSenv || exit                   # 03. Save env vars to `.deepspeed_env`
+ezpz || exit                          # 04. Determine WORLD_SIZE, etc. from `PBS_*` vars
+setParams || exit                     # 05. Set command line arguments to pass to `"${EXEC}"`
+buildDSconfig || exit                 # 06. Create `deepspeed_config.json` from runtime params from ^
+setOutput || exit                     # 07. Specify output directory for {logs, checkpoints, etc.}
+setArgs || exit                       # 08. Specify additional `deepspeed` arguments
+setData "${DATA_FILE_LIST-}" || exit  # 09. Specify `DATA_FILE_LIST` for dolma dataset
+printJobInfo || exit                  # 11. Print job info
+setupLauncher || exit                 # 12. set launcher to one of `MPICH` (default), or `deepspeed`
 # -----------------------------------------------------------------------------
 
 #### [DEPRECATED] ###########################################################

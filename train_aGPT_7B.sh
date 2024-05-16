@@ -11,24 +11,31 @@ fi
 
 NOW="$(date "+%Y-%m-%d-%H%M%S")"
 cd "${PBS_O_WORKDIR}" || exit
-nhosts=$(wc -l < "${HOSTFILE}")
+export nhosts=$(wc -l < "${PBS_NODEFILE}")
 
-if [[ "${nhosts}" == 1 || "${nhosts}" == 2 ]]; then
-    MBS=1
+if [[ "${nhosts}" == 1 ]]; then
+    export MBS=1
+elif [[ "${nhosts}" == 2 ]]; then
+    export MBS=1
 elif [[ "${nhosts}" -ge 2 ]]; then
-    MBS=2
+    export MBS=2
 elif [[ "${nhosts}" -ge 8 ]]; then
-    MBS=4
+    export MBS=4
 fi
 
-printf "Detected %s  hosts. Running with micro_batch:\n" ${nhosts} ${MBS}
+# printf "Detected %s  hosts. Running with micro_batch:\n" ${nhosts} ${MBS}
 
 OUTDIR="${PBS_O_WORKDIR}/pbslogs"
 mkdir -p "${OUTDIR}"
 OUTFILE="${OUTDIR}/${PBS_JOBID}-${NOW}.log"
-echo "Running on: ${MACHINE}"
-echo "${OUTFILE}" >> "${OUTDIR}/latest"
-echo "Logging job output to: ${OUTFILE}"
+
+echo "+---------------------------------------------------------+"
+echo "| Running on: ${MACHINE}"
+echo "| Detected ${nhosts} hosts. Running with micro batch: ${MBS}"
+echo "| Logging job output to: ${OUTFILE}"
+echo "+---------------------------------------------------------+"
+
 export TORCH_NCCL_HEARTBEAT_TIMEOUT_SEC=6000
+echo "${OUTFILE}" >> "${OUTDIR}/latest"
 # export DEBUG=1
 MICRO_BATCH="${MBS}" DATA_FILE_LIST="${PBS_O_WORKDIR}/ALCF/data-lists/${MACHINE}/dolma_v1_7_file_list.txt" bash "${PBS_O_WORKDIR}/train_llama_alcf.sh" |& tee "${OUTFILE}"
