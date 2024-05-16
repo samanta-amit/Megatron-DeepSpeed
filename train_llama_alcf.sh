@@ -75,6 +75,7 @@ mkdir -p "${TBDIR}"
 data_cache_path="${CKPT_DIR}/${DATA_CACHE_PATH}"
 mkdir -p "${data_cache_path}"
 module list
+printenv > "${CKPT_DIR}/.env"
 
 if [[ "${TIMING_LOG_LEVEL}" -ge 1 ]]; then
     TIMING_STR="\
@@ -85,6 +86,8 @@ if [[ "${TIMING_LOG_LEVEL}" -ge 1 ]]; then
 else
     TIMING_STR=""
 fi
+
+
 
 
 # Take custom args
@@ -98,7 +101,6 @@ run_cmd="
     --split 100,0,0 \
     --log-interval 1 \
     --no-bias-gelu-fusion \
-    --lr-decay-style cosine \
     --no-bias-dropout-fusion \
     --no-masked-softmax-fusion \
     --tokenizer-type Llama2Tokenizer \
@@ -107,7 +109,6 @@ run_cmd="
     --use-checkpoint-opt_param-scheduler \
     --log-timers-to-tensorboard \
     --log-optimizer-states-to-tensorboard \
-    --lr ${LR} \
     --optimizer ${OPT} \
     --save ${CKPT_DIR} \
     --load ${CKPT_DIR} \
@@ -125,14 +126,13 @@ run_cmd="
     --micro-batch-size ${MICRO_BATCH} \
     --data-file-list ${DATA_FILE_LIST} \
     --tensor-model-parallel-size ${TP} \
-    --lr-decay-iters ${LR_DECAY_ITERS} \
     --global-batch-size ${GLOBAL_BATCH} \
     --pipeline-model-parallel-size ${PP} \
     --num-key-value-heads ${NUM_KV_HEAD} \
     --data-cache-path ${data_cache_path} \
     --ffn-hidden-size ${FFN_HIDDEN_SIZE} \
     --tokenizer-model ${TOKENIZER_MODEL} \
-    --lr-warmup-fraction ${LR_WARMUP_FRAC} \
+    ${LR_ARGS} \
     ${LLAMA_ARGS} \
     ${TIMING_STR} \
     $ds_args \
@@ -143,7 +143,8 @@ run_cmd="
 
 check_and_kill_if_running || exit
 echo "${run_cmd}"
-printf "[!! \e[1;31m%s\e[0m] View output at:\n" "NOTE"
-printf "\e[1;34m%s\e[0m\n" "${OUTPUT_LOG}"
+printf "[!! %s] View output at:\n %s\n" "$(printBlue "NOTE")" "$(printYellow ${OUTPUT_LOG})"
+# printf "[!! \e[1;31m%s\e[0m] View output at:\n" "NOTE"
+# printf "\e[1;34m%s\e[0m\n" "${OUTPUT_LOG}"
 eval "${run_cmd}"
 set +x

@@ -125,6 +125,18 @@ function setDSlauncher() {
     fi
 }
 
+function set_lr_args() {
+    LR_ARGS="--lr ${LR} --lr-decay-style cosine"
+    if [[ -n "${LR_DECAY_ITERS:-}" ]]; then
+        LR_ARGS="${LR_ARGS} --lr-decay-iters ${LR_DECAY_ITERS}"
+    fi
+    if [[ -n "${LR_WARMUP_FRAC}" ]]; then
+        LR_ARGS="${LR_ARGS} --lr-warmup-fraction ${LR_WARMUP_FRAC}"
+    fi
+    echo "LR_ARGS: ${LR_ARGS}"
+    export LR_ARGS="${LR_ARGS}"
+}
+
 function setParams() {
     LLAMA_ARGS=""
     # +----[Parallelism Settings] -------------------------------------------+
@@ -194,9 +206,6 @@ function setParams() {
     export NUM_KV_HEAD=${NUM_KV_HEAD:-8}                # GROUP ATTENTION
     export FFN_HIDDEN_SIZE=${FFN_HIDDEN_SIZE:-11008}    # FFN HIDDEN SIZE
     # +---[Run Settings]------------------------------------------------------+
-    export LR=${LR:-0.0003}                             # LEARNING_RATE
-    export LR_WARMUP_FRAC=${LR_WARMUP_FRAC:-0.05}       # LEARNING RATE WARMUP
-    export LR_DECAY_ITERS=${LR_DECAY_ITERS:-320000}     # LR DECAY ITERS
     export SEQ=${SEQ:-4096}                             # SEQ_LEN: 4096
     export ZERO_STAGE=${ZERO_STAGE:-1}                  # ZERO OFFLOADING STAGE
     export MICRO_BATCH=${MICRO_BATCH:-8}                # MICRO BATCH SIZE
@@ -215,6 +224,11 @@ function setParams() {
     export MODEL_TYPE="llama-seq${SEQ}-pp${PP}-tp${TP}-${NLAYERS}layers-${HEADS}heads-${HIDDEN}hidden"  # STRING FOR IDENTIFYING MODEL
     # +----[ADDITIONAL LLAMA SPECIFIC ARGUMENTS]------------------------------
     export LLAMA_ARGS="${LLAMA_ARGS} --no-query-key-layer-scaling --use-rotary-position-embeddings --untie-embeddings-and-output-weights --swiglu --normalization rmsnorm --disable-bias-linear"
+    export LR=${LR:-0.0003}                             # LEARNING_RATE
+    export LR_WARMUP_FRAC=${LR_WARMUP_FRAC:-0.05}       # LEARNING RATE WARMUP
+    # export LR_DECAY_ITERS=${LR_DECAY_ITERS:-320000}     # LR DECAY ITERS
+    export LR_DECAY_ITERS=${LR_DECAY_ITERS:-}     # LR DECAY ITERS
+    set_lr_args
 }
 
 
@@ -305,10 +319,15 @@ function saveDSenv() {
 
 function setOutput() {
     # ---- Specify output location --------------------------------
-    export OUTPUT_PREFIX="ws${WORLD_SIZE}_ds_stage${ZERO_STAGE}_nl${NLAYERS}_hs${HIDDEN}_mb${MICRO_BATCH}_seq${SEQ}_gb${GLOBAL_BATCH}_pp${PP}_tp${TP}_${DTYPE}_opt${OPT}"
+    OUTPUT_PREFIX="ws${WORLD_SIZE}_ds_stage${ZERO_STAGE}_nl${NLAYERS}"
+    OUTPUT_PREFIX="${OUTPUT_PREFIX}_hs${HIDDEN}_mb${MICRO_BATCH}"
+    OUTPUT_PREFIX="${OUTPUT_PREFIX}_seq${SEQ}_gb${GLOBAL_BATCH}"
+    OUTPUT_PREFIX="${OUTPUT_PREFIX}_pp${PP}_tp${TP}_${DTYPE}_opt${OPT}"
+    OUTPUT_PREFIX="${OUTPUT_PREFIX}_lr${LR}_lwf${LR_WARMUP_FRAC}_ldi${LR_DECAY_ITERS}"
     if [[ -z "${NO_FLASH_ATTN:-}" ]]; then
-        export OUTPUT_PREFIX="${OUTPUT_PREFIX}_flash"
+        OUTPUT_PREFIX="${OUTPUT_PREFIX}_flash"
     fi
+    export OUTPUT_PREFIX="${OUTPUT_PREFIX}"
     # OUTPUT_DIR="logs/${OUTPUT_PREFIX}/$(date +%m%d%H%M%S)_${HOSTNAME}"
     OUTPUT_DIR="logs/${OUTPUT_PREFIX}/$(date +%Y%m%d-%H%M%S)_${WORLD_SIZE}_${HOSTNAME}"
     export OUTPUT_DIR="${OUTPUT_DIR}"
@@ -351,11 +370,20 @@ function sumFiles() {
 ########################################################
 # Setup / activate conda environment,
 ########################################################
-setup_conda_sunspot() {  # mine is called `q4-drop` on Sunspot
-    if [[ -z "${CONDA_PREFIX-}" && -z "${VIRTUAL_ENV-}" ]]; then
-        shell_name=$(echo "${SHELL}" | tr "\/" "\t" | awk '{print $NF}')
-        eval "$(~/miniconda3/bin/conda shell.${shell_name} hook)"
-        conda activate q4-drop
+setup_conda_sunspot() {
+    ###### check if CONDA_PREFIX non-empty ################
+    if [[ -z "${CONDA_PREFIX-}" ]]; then
+        module use -a /home/jmitche1/anl_release/2024/q2 ; module load frameworks_2024_5_v2
+    else
+        echo "Caught CONDA_PREFIX=${CONDA_PREFIX}"
+    fi
+    ###### check if VIRTUAL_ENV non-empty #################
+    if [[ -z "${VIRTUAL_ENV:-}" ]]; then
+        DEFAULT_VENV_PATH=${WORKING_DIR}/venvs/frameworks_2024_5_v2
+        if [[ -d "${DEFAULT_VENV_PATH}" ]]; then
+            echo "Caught virtual env at ${DEFAULT_VENV_PATH}!"
+            source "${WORKING_DIR}/${DEFAULT_VENV_PATH}/bin/activate"
+        fi
     else
         echo "Found existing python at: $(which python3)"
     fi
@@ -456,7 +484,9 @@ function setEnv() {
     fi
     #####################################################################
     pystr="Using: $(which python3)"
-    printf "\n[python] %s\n" "$(printMagenta ${pystr})"
+    printf "[python] %s" "$(printMagenta ${pystr})"
+    printf "\n"
+    export "PYTHON_EXEC=$(which python3)"
 }
 
 
