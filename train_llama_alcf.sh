@@ -5,12 +5,25 @@
 #PBS -l select=48
 #PBS -l filesystems=eagle:home
 
-if [[ -n "${DEBUG-}" ]]; then
+#### Make it easy to track experiments by date ###################
+YEAR="$(date "+%Y")"
+MONTH="$(date "+%m")"
+DAY="$(date "+%Y-%m-%d")"
+TODAY="$(date "+%Y-%m-%d")"  # kept for backwards compatibility
+STARTED_AT="$(date "+%Y-%m-%d-%H%M%S")"
+##################################################################
+
+if [[ -n "${DEBUG-}" ]]; then  # to use: `DEBUG=1 bash train_llama_alcf.sh`
     printf "\e[1;31m%s\e[0m\n" "!! RUNNING IN DEBUG MODE !!"
     set -euxo pipefail
 fi
 
-function sourceFile() {
+if [[ -v NOOP ]]; then         # to use: `NOOP=1 bash train_llama_alcf.sh`
+  echo "Run NOOP mode"
+  set -o noexec                # same as set -n
+fi
+
+sourceFile() {
     fp="$1"
     echo "source-ing ${fp}"
     if [[ -f "${fp}" ]]; then
@@ -21,7 +34,7 @@ function sourceFile() {
     fi
 }
 
-# ----[0. Navigate into `$PBS_O_WORKDIR`]-------------------------------------
+# ----[0. Navigate into `$PBS_O_WORKDIR`]--------------------------------------
 cd "${PBS_O_WORKDIR}" || exit
 HERE=$(python3 -c 'import os; print(os.getcwd())')
 export HERE
@@ -47,48 +60,18 @@ printJobInfo || exit                  # 11. Print job info
 setupLauncher || exit                 # 12. set launcher to one of `MPICH` (default), or `deepspeed`
 # -----------------------------------------------------------------------------
 
-#### [DEPRECATED] ###########################################################
-# if [[ -z "${HOSTFILE}" ]]; then
-#     makeHostfiles || exit         # 4. create `deepspeed` hostfile from `$PBS_NODEFILE`
-# else
-#     echo "!! USING CUSTOM HOSTFILE FROM: ${HOSTFILE}"
-# fi
-# ----------------------------------------------------------------------------
-# setDSlauncher "${HERE}" || exit   # 10. set `launcher` args for `deepspeed ${launcher} ${EXEC} ${args}`
-# ----------------------------------------------------------------------------
-# TORCH_DEVICE=$(python3 -c 'import ezpz as ez; print(ez.get_torch_device())')
-# printf %s "Using TORCH_DEVICE=${TORCH_DEVICE}"
-# if [[ "${TORCH_DEVICE}" == "cuda" ]]; then
-#     printf %s "Setting PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True"
-#     PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
-# fi
-# ----------------------------------------------------------------------------
-# export MPICH_GPU_SUPPORT_ENABLED=1
-# export CUDA_DEVICE_MAX_CONNECTIONS=1
-# export NCCL_DEBUG=INFO
-#############################################################################
-
-# Assert TBDIR exists inside our $CKPT_DIR
+################################################
+# Assert `$TBDIR` exists inside our `$CKPT_DIR`
+# to ensure metrics are tied to checkpoint
+################################################
 TBDIR="${CKPT_DIR}/tensorboard"
 mkdir -p "${TBDIR}"
 
-data_cache_path="${CKPT_DIR}/${DATA_CACHE_PATH}"
-mkdir -p "${data_cache_path}"
+data_cache_path="${CKPT_DIR}/${DATA_CACHE_PATH}" && mkdir -p "${data_cache_path}"
+
+# Print info about loaded modules and runtime environment
 module list
-printenv > "${CKPT_DIR}/.env"
-
-if [[ "${TIMING_LOG_LEVEL}" -ge 1 ]]; then
-    TIMING_STR="\
-        --timing-log-level ${TIMING_LOG_LEVEL} \
-        --log-timers-to-tensorboard \
-        --log-optimizer-states-to-tensorboard \
-    "
-else
-    TIMING_STR=""
-fi
-
-
-
+printenv |& tee "${CKPT_DIR}/.env"
 
 # Take custom args
 custom_args=" $@"
