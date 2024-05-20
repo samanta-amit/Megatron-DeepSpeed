@@ -438,7 +438,38 @@ setup_conda_sirius() {
 }
 
 setup_venv_from_conda() {
-    source "venvs/$(echo ${CONDA_PREFIX} | tr '\/' '\t' | awk '{print $NF}')/bin/activate"
+    if [[ -z "${CONDA_PREFIX}" ]]; then
+        echo "No ${CONDA_PREFIX} found."  #  Exiting."
+        # exit 1
+    else
+        if [[ -n "${VIRTUAL_ENV}" ]]; then
+            echo "Already inside virtual env at ${VENV_DIR}!"
+        elif [[ -z "${VIRTUAL_ENV}" ]]; then
+            echo "No VIRTUAL_ENV found in environment!"
+            echo "    - Trying to setup from ${CONDA_PREFIX}"
+            CONDA_NAME=$(echo ${CONDA_PREFIX} | tr '\/' '\t' | sed -E 's/mconda3|\/base//g' | awk '{print $NF}')
+            VENV_DIR="${WORKING_DIR}/venvs/${CONDA_NAME}"
+            echo "    - Using VENV_DIR=${VENV_DIR}"
+            # VENV_DIR="venvs/$(echo ${CONDA_PREFIX} | tr '\/' '\t' | sed -E 's/mconda3|\/base//g' | awk '{print $NF}')"
+            # VENV_DIR="${WORKING_DIR}/venvs/$(echo ${CONDA_PREFIX} | tr '\/' '\t' | awk '{print $NF}')"
+            # VENV_DIR="${WORKING_DIR}/venvs/anl_24_q2_release"
+            # if [[ -f "${VENV_DIR}/bin/activate" ]]; then
+            if [[ ! -f "${VENV_DIR}/bin/activate" ]]; then
+                printf "\n    - Creating a new virtual env on top of %s in %s" "$(printBlue "${CONDA_NAME}")" "$(printGreen "${VENV_DIR}")"
+                mkdir -p "${VENV_DIR}"
+                python3 -m venv "${VENV_DIR}" --system-site-packages
+                source "${VENV_DIR}/bin/activate" || exit
+            elif [[ -f "${VENV_DIR}/bin/activate" ]]; then
+                echo "    - Found existing venv, activating from $(printBlue "${VENV_DIR}")"
+                source "${VENV_DIR}/bin/activate"
+            else
+                printf "\n    [!! %s]: Unable to locate %s\n" "$(printRed "ERROR")" "$(printMagenta "${VENV_DIR}/bin/activate")"
+            fi
+        fi
+        # else
+        #     printf "[!! %s]: Unable to locate %s\n" "$(printRed "ERROR")" "$(printMagenta "${VENV_DIR}/bin/activate")"
+    fi
+
 }
 
 ########################
