@@ -229,6 +229,15 @@ function setParams() {
     # export LR_DECAY_ITERS=${LR_DECAY_ITERS:-320000}     # LR DECAY ITERS
     export LR_DECAY_ITERS=${LR_DECAY_ITERS:-}     # LR DECAY ITERS
     set_lr_args
+    if [[ "${TIMING_LOG_LEVEL}" -ge 1 ]]; then
+        TIMING_STR="\
+            --timing-log-level ${TIMING_LOG_LEVEL} \
+            --log-timers-to-tensorboard \
+            --log-optimizer-states-to-tensorboard \
+        "
+    else
+        TIMING_STR=""
+    fi
 }
 
 
@@ -323,7 +332,10 @@ function setOutput() {
     OUTPUT_PREFIX="${OUTPUT_PREFIX}_hs${HIDDEN}_mb${MICRO_BATCH}"
     OUTPUT_PREFIX="${OUTPUT_PREFIX}_seq${SEQ}_gb${GLOBAL_BATCH}"
     OUTPUT_PREFIX="${OUTPUT_PREFIX}_pp${PP}_tp${TP}_${DTYPE}_opt${OPT}"
-    OUTPUT_PREFIX="${OUTPUT_PREFIX}_lr${LR}_lwf${LR_WARMUP_FRAC}_ldi${LR_DECAY_ITERS}"
+    OUTPUT_PREFIX="${OUTPUT_PREFIX}_lr${LR}_lwf${LR_WARMUP_FRAC}"
+    if [[ -n "${LR_DECAY_ITERS}" ]]; then
+        OUTPUT_PREFIX="${OUTPUT_PREFIX}_ldi${LR_DECAY_ITERS}"
+    fi
     if [[ -z "${NO_FLASH_ATTN:-}" ]]; then
         OUTPUT_PREFIX="${OUTPUT_PREFIX}_flash"
     fi
@@ -373,29 +385,39 @@ function sumFiles() {
 setup_conda_sunspot() {
     ###### check if CONDA_PREFIX non-empty ################
     if [[ -z "${CONDA_PREFIX:-}" ]]; then
-        eval "$(~/miniconda3/bin/conda shell.zsh hook)"
-        conda activate anl_24_q2_release
+        # eval "$(~/miniconda3/bin/conda shell.zsh hook)"
+        # conda activate anl_24_q2_release
+        module use /soft/preview-modulefiles/24.086.0 ; module load frameworks/2024.04.15.002.lua
     fi
-    # ------------------------------------------------------------------------
-    # XXX: Jerome's `frameworks_2024_5_v2` seems broken ??
+    # XXX: -------------------------------------------------------------------
+    # Jerome's `frameworks_2024_5_v2` seems broken ??
     # - seems to be missing `python3 -c 'from mpi4py import MPI'` ???
     # - consequently, we leave the setup below commented out (for the time
     #   being):
-    # if [[ -z "${CONDA_PREFIX-}" ]]; then
-    #     module use -a /home/jmitche1/anl_release/2024/q2 ; module load frameworks_2024_5_v2
-    # else
-    #     echo "Caught CONDA_PREFIX=${CONDA_PREFIX}"
-    # fi
-    #
+    #   if [[ -z "${CONDA_PREFIX-}" ]]; then
+    #       module use -a /home/jmitche1/anl_release/2024/q2 ; module load frameworks_2024_5_v2
+    #   else
+    #       echo "Caught CONDA_PREFIX=${CONDA_PREFIX}"
+    #   fi
     # ------------------------------------------------------------------------
+
     ###### check if VIRTUAL_ENV non-empty ####################################
+    # venvs/anl_24_q2_release/bin/activate
+    # if [[ -d "${DEFAULT_VENV_PATH}" ]]; then
     if [[ -z "${VIRTUAL_ENV:-}" ]]; then
-        DEFAULT_VENV_PATH="${WORKING_DIR}/venvs/anl_24_q2_release"
-        # venvs/anl_24_q2_release/bin/activate
-        # if [[ -d "${DEFAULT_VENV_PATH}" ]]; then
-        echo "Caught virtual env at ${DEFAULT_VENV_PATH}!"
-        source "${DEFAULT_VENV_PATH}/bin/activate" || exit
-        # fi
+        if [[ -n "${CONDA_PREFIX}" ]]; then
+            VENV_DIR="${WORKING_DIR}/venvs/$(echo ${CONDA_PREFIX} | tr '\/' '\t' | awk '{print $NF}')"
+        else
+            VENV_DIR="${WORKING_DIR}/venvs/anl_24_q2_release"
+        fi
+        echo "Caught virtual env at ${VENV_DIR}!"
+        # source "${VENV_DIR}/bin/activate" || 
+        if [[ ! -f "${VENV_DIR}/bin/activate" ]]; then
+            printf "[!! %s]: Unable to locate %s\n" "$(printRed "ERROR")" "$(printMagenta "${VENV_DIR}/bin/activate")"
+            # echo "[!ERROR]: Unable to locate ${VENV_DIR}/bin/activate !!"
+        else
+            source "${VENV_DIR}/bin/activate"
+        fi
     else
         echo "Found existing python at: $(which python3)"
     fi
@@ -413,6 +435,41 @@ setup_conda_sirius() {
     else
         echo "Found existing python at: $(which python3)"
     fi
+}
+
+setup_venv_from_conda() {
+    if [[ -z "${CONDA_PREFIX}" ]]; then
+        echo "No ${CONDA_PREFIX} found."  #  Exiting."
+        # exit 1
+    else
+        if [[ -n "${VIRTUAL_ENV}" ]]; then
+            echo "Already inside virtual env at ${VENV_DIR}!"
+        elif [[ -z "${VIRTUAL_ENV}" ]]; then
+            echo "No VIRTUAL_ENV found in environment!"
+            echo "    - Trying to setup from ${CONDA_PREFIX}"
+            CONDA_NAME=$(echo ${CONDA_PREFIX} | tr '\/' '\t' | sed -E 's/mconda3|\/base//g' | awk '{print $NF}')
+            VENV_DIR="${WORKING_DIR}/venvs/${CONDA_NAME}"
+            echo "    - Using VENV_DIR=${VENV_DIR}"
+            # VENV_DIR="venvs/$(echo ${CONDA_PREFIX} | tr '\/' '\t' | sed -E 's/mconda3|\/base//g' | awk '{print $NF}')"
+            # VENV_DIR="${WORKING_DIR}/venvs/$(echo ${CONDA_PREFIX} | tr '\/' '\t' | awk '{print $NF}')"
+            # VENV_DIR="${WORKING_DIR}/venvs/anl_24_q2_release"
+            # if [[ -f "${VENV_DIR}/bin/activate" ]]; then
+            if [[ ! -f "${VENV_DIR}/bin/activate" ]]; then
+                printf "\n    - Creating a new virtual env on top of %s in %s" "$(printBlue "${CONDA_NAME}")" "$(printGreen "${VENV_DIR}")"
+                mkdir -p "${VENV_DIR}"
+                python3 -m venv "${VENV_DIR}" --system-site-packages
+                source "${VENV_DIR}/bin/activate" || exit
+            elif [[ -f "${VENV_DIR}/bin/activate" ]]; then
+                echo "    - Found existing venv, activating from $(printBlue "${VENV_DIR}")"
+                source "${VENV_DIR}/bin/activate"
+            else
+                printf "\n    [!! %s]: Unable to locate %s\n" "$(printRed "ERROR")" "$(printMagenta "${VENV_DIR}/bin/activate")"
+            fi
+        fi
+        # else
+        #     printf "[!! %s]: Unable to locate %s\n" "$(printRed "ERROR")" "$(printMagenta "${VENV_DIR}/bin/activate")"
+    fi
+
 }
 
 ########################
@@ -470,7 +527,12 @@ function setEnv() {
                     setup_conda_sunspot
                 fi
             fi
-            source "${WORKING_DIR}/ALCF/sunspot-env.sh" || exit
+            # MPICH_MODULES=$(echo $LOADEDMODULES | tr ':' '\n' | grep mpich)
+            # if [[ -z "${MPICH_MODULES" ]]; then
+            #     source "${WORKING_DIR}/ALCF/sunspot-env.sh" || exit
+            # else
+            #     echo "Caught MPICH_MODULES: ${MPICH_MODULES}"
+            # fi
         # ----- [Polaris @ ALCF] --------------------------------------------
         elif [[ $(hostname) == x3* ]]; then
             if [[ "${PBS_O_HOST}" == sirius* ]]; then
@@ -764,3 +826,24 @@ function printCyan() {
 function printWhite() {
     printf "\e[1;37m%s\e[0m\n" "$@"
 }
+
+#### [DEPRECATED] ###########################################################
+# if [[ -z "${HOSTFILE}" ]]; then
+#     makeHostfiles || exit         # 4. create `deepspeed` hostfile from `$PBS_NODEFILE`
+# else
+#     echo "!! USING CUSTOM HOSTFILE FROM: ${HOSTFILE}"
+# fi
+# ----------------------------------------------------------------------------
+# setDSlauncher "${HERE}" || exit   # 10. set `launcher` args for `deepspeed ${launcher} ${EXEC} ${args}`
+# ----------------------------------------------------------------------------
+# TORCH_DEVICE=$(python3 -c 'import ezpz as ez; print(ez.get_torch_device())')
+# printf %s "Using TORCH_DEVICE=${TORCH_DEVICE}"
+# if [[ "${TORCH_DEVICE}" == "cuda" ]]; then
+#     printf %s "Setting PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True"
+#     PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+# fi
+# ----------------------------------------------------------------------------
+# export MPICH_GPU_SUPPORT_ENABLED=1
+# export CUDA_DEVICE_MAX_CONNECTIONS=1
+# export NCCL_DEBUG=INFO
+#############################################################################
