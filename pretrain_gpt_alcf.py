@@ -571,7 +571,7 @@ def git_ds_info():
 
 
 def main():
-    if os.getenv('TORCH_PROFILER_ENABLED') == '1':
+    if os.getenv('TORCH_PROFILER_ENABLE') == '1':
         from torch.profiler import profile, record_function, ProfilerActivity
         with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA]) as prof:
             model = pretrain(
