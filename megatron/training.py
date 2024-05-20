@@ -279,9 +279,9 @@ def pretrain(
         iteration = 0
         if args.do_train and args.train_iters > 0:
             iteration = train(forward_step_func,
-                            model, optimizer, opt_param_scheduler,
-                            train_data_iterator, valid_data_iterator,
-                            process_non_loss_data_func)
+                              model, optimizer, opt_param_scheduler,
+                              train_data_iterator, valid_data_iterator,
+                              process_non_loss_data_func)
 
         print_datetime('after training is done')
         # Clean the model
@@ -1340,13 +1340,29 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
                     update_rotary_pos_emb(curriculum_seqlen)
             args.curriculum_seqlen = curriculum_seqlen
         args.curr_iteration = iteration
-        loss_dict, skipped_iter, grad_norm, num_zeros_in_grad = \
-            train_step(forward_step_func,
-                       train_data_iterator,
-                       model,
-                       optimizer,
-                       opt_param_scheduler,
-                       config)
+        if os.getenv("TORCH_PROFILER_ENABLE")=='2':
+            from torch.profiler import profile, record_function, ProfilerActivity
+            with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA]) as prof:
+                loss_dict, skipped_iter, grad_norm, num_zeros_in_grad = \
+                    train_step(forward_step_func,
+                               train_data_iterator,
+                               model,
+                               optimizer,
+                               opt_param_scheduler,
+                               config)
+            prof.export_chrome_trace(
+                f"{args.trace_dir}"
+                "/torch-trace-{RANK}-of-{WORLD_SIZE}-step{iteration}.json"
+            )
+        else:
+            loss_dict, skipped_iter, grad_norm, num_zeros_in_grad = \
+                train_step(forward_step_func,
+                           train_data_iterator,
+                           model,
+                           optimizer,
+                           opt_param_scheduler,
+                           config)
+        
         iteration += 1
         args.iteration = iteration
         new_samples = mpu.get_data_parallel_world_size() * \
