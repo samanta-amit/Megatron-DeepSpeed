@@ -1,4 +1,4 @@
-# Megatron-DeepSpeed @ ALCF
+- [>] # Megatron-DeepSpeed @ ALCF
 
 ## ✅ TODOs
 
@@ -82,13 +82,16 @@
 
 To launch:
 
+### Polaris
+
 ```bash
 $ qsub -A <your-project> -q debug -l select=2 -l walltime=01:00:00,filesystems=eagle:home -I
 $ cd /path/to/Megatron-DeepSpeed/
-# load your favorite {conda, venv} environment, requires: {pytorch, deepspeed}
-# e.g. on Polaris:
 $ module load conda/2023-10-04  # ; conda activate cu118-pt221 ; unset PYTHONUSERBASE
-$ export PBS_O_WORKDIR="$(pwd)" && DATA_FILE_LIST=./convergence_debug_small.txt DTYPE=bf16 OPT=adamw bash train_llama_alcf.sh
+$ module use /soft/modulefiles
+$ module load conda/2024-04-29
+$ conda activate base
+$ export PBS_O_WORKDIR="$(pwd)" && DATA_FILE_LIST=./ALCF/data-lists/polaris/books.txt DTYPE=bf16 OPT=adamw bash train_llama_alcf.sh
 ```
 
 <details closed><summary><code>[output]</code>:</summary>
