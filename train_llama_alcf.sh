@@ -71,7 +71,9 @@ data_cache_path="${CKPT_DIR}/${DATA_CACHE_PATH}" && mkdir -p "${data_cache_path}
 
 # Print info about loaded modules and runtime environment
 module list
-printenv |& tee "${CKPT_DIR}/.env"
+dotenv_file="${CKPT_DIR}/.env"
+echo "Saving environment to ${dotenv_file}"
+printenv | grep -v "LS_COLORS" > "${dotenv_file}"
 
 # Take custom args
 custom_args=" $@"
