@@ -2,6 +2,7 @@
 
 """Pretrain GPT"""
 
+from pathlib import Path
 from mpi4py import MPI
 import os
 from rich import print
@@ -581,9 +582,13 @@ def main():
                 data_post_process=data_post_process
             )
         args = get_args()
-        prof.export_chrome_trace(
-            f"{args.tensorboard_dir}"
-            "/torch-trace-{RANK}-of-{WORLD_SIZE}.json"
+        assert args is not None
+        trace_output = Path(f"{args.tensorboard_dir}").joinpath(
+            f"torch-trace-{RANK}-of-{WORLD_SIZE}.json"
+        )
+        prof.export_chrome_trace(trace_output.as_posix())
+        log.info(
+            f'Saved trace output to: {trace_output.as_posix()}'
         )
     else:
         model = pretrain(
