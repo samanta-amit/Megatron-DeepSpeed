@@ -234,6 +234,9 @@ def print_rank_0(message):
     else:
         print(message, flush=True)
 
+def print_flush(message):
+    print(f"[{torch.distributed.get_rank()}] {message}", flush=True)
+
 def is_last_rank():
     return torch.distributed.get_rank() == (
         torch.distributed.get_world_size() - 1)

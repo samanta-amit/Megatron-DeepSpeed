@@ -9,13 +9,14 @@ import time
 import numpy as np
 import torch
 from deepspeed.accelerator import get_accelerator
-from megatron import print_rank_0, is_rank_0, get_args
+from megatron import print_rank_0, is_rank_0, get_args, print_flush
 from megatron.core import mpu
 from megatron.data.blendable_dataset import BlendableDataset
 from megatron.data.dataset_utils import get_datasets_weights_and_num_samples
 from megatron.data.dataset_utils import get_train_valid_test_split_
 from megatron.data.indexed_dataset import make_dataset as make_indexed_dataset
-
+from  mpi4py import MPI
+comm = MPI.COMM_WORLD
 
 def build_train_valid_test_datasets(data_prefix, data_impl, splits_string,
                                     train_valid_test_num_samples,
@@ -52,7 +53,7 @@ def build_train_valid_test_datasets(data_prefix, data_impl, splits_string,
         train_datasets = []
         valid_datasets = []
         test_datasets = []
-        for i in range(len(prefixes)):
+        for i in range(torch.distributed.get_rank(), len(prefixes), torch.distributed.get_world_size()):
             train_ds, valid_ds, test_ds = _build_train_valid_test_datasets(
                 prefixes[i], data_impl, splits_string,
                 datasets_train_valid_test_num_samples[i],
@@ -65,7 +66,11 @@ def build_train_valid_test_datasets(data_prefix, data_impl, splits_string,
                 valid_datasets.append(valid_ds)
             if test_ds:
                 test_datasets.append(test_ds)
-
+        def flatten_list(xss):
+            return [x for xs in xss for x in xs]
+        train_datasets = flatten_list(comm.allgather(train_datasets))
+        valid_datasets = flatten_list(comm.allgather(valid_datasets))
+        test_datasets = flatten_list(comm.allgather(test_datasets))
         # Blend.
         blending_train_dataset = None
         if train_datasets:
@@ -129,11 +134,11 @@ def _build_train_valid_test_datasets(data_prefix, data_impl, splits_string,
     splits = get_train_valid_test_split_(splits_string, total_num_of_documents)
 
     # Print stats about the splits.
-    print_rank_0(' > dataset split:')
+    print_flush(' > dataset split:')
 
     def print_split_stats(name, index):
-        print_rank_0('    {}:'.format(name))
-        print_rank_0('     document indices in [{}, {}) total of {} '
+        print_flush('    {}:'.format(name))
+        print_flush('     document indices in [{}, {}) total of {} '
                      'documents'.format(splits[index], splits[index + 1],
                                         splits[index + 1] - splits[index]))
     print_split_stats('train', 0)
@@ -211,8 +216,8 @@ def _build_dataset(dataset_name, data_prefix, data_impl, splits_string,
 
     total_num_of_documents = indexed_dataset.sizes.shape[0]
 
-    print_rank_0('    {}:'.format(dataset_name))
-    print_rank_0('     document indices in [0, {}) total of {} '
+    print_flush('    {}:'.format(dataset_name))
+    print_flush('     document indices in [0, {}) total of {} '
                  'documents'.format(total_num_of_documents, total_num_of_documents))
 
     documents = np.arange(start=0, stop=total_num_of_documents,
@@ -233,9 +238,9 @@ def get_indexed_dataset_(data_prefix, data_impl, skip_warmup):
     indexed_dataset = make_indexed_dataset(data_prefix,
                                            data_impl,
                                            skip_warmup)
-    print_rank_0(' > finished creating indexed dataset in {:4f} '
+    print_flush(' > finished creating indexed dataset in {:4f} '
                  'seconds'.format(time.time() - start_time))
-    print_rank_0('    number of documents: {}'.format(
+    print_flush('    number of documents: {}'.format(
         indexed_dataset.sizes.shape[0]))
 
     return indexed_dataset
@@ -413,9 +418,9 @@ def _build_index_mappings(name, data_prefix, documents, sizes,
     data_cache_success = True
 
     # Build the indexed mapping if not exist.
-    if build_indices and is_rank_0():
-        print_rank_0(' > WARNING: could not find index map files, building '
-                     'the indices on rank 0 ...')
+    if build_indices:
+        print_flush(f" > WARNING: could not find index map files, building "
+                     "the indices on rank {torch.distributed.get_rank()} ...")
 
         # For the last epoch, decide whether include the entire epoch
         # in the global shuffle or not.
@@ -480,7 +485,7 @@ def _build_index_mappings(name, data_prefix, documents, sizes,
             sample_idx = helpers.build_sample_idx(sizes, doc_idx, seq_length,
                                                   num_epochs, tokens_per_epoch)
             np.save(idx_path['sample'], sample_idx, allow_pickle=True)
-            print_rank_0(' > elasped time to build and save sample-idx mapping '
+            print_flush(' > elasped time to build and save sample-idx mapping '
                          '(seconds): {:4f}'.format(time.time() - start_time))
             # shuffle-idx.
             start_time = time.time()
@@ -493,7 +498,7 @@ def _build_index_mappings(name, data_prefix, documents, sizes,
             shuffle_idx = _build_shuffle_idx(num_samples_,
                                              sample_idx.shape[0] - 1, np_rng)
             np.save(idx_path['shuffle'], shuffle_idx, allow_pickle=True)
-            print_rank_0(' > elasped time to build and save shuffle-idx mapping'
+            print_flush(' > elasped time to build and save shuffle-idx mapping'
                          ' (seconds): {:4f}'.format(time.time() - start_time))
         except OSError:
             print(f'There was an error trying to create the data cache directory ({data_cache_dir})')
@@ -503,32 +508,32 @@ def _build_index_mappings(name, data_prefix, documents, sizes,
             print('write access to.')
             data_cache_success = False
 
-    counts = get_accelerator().LongTensor([data_cache_success])
-    torch.distributed.all_reduce(counts, group=mpu.get_data_parallel_group())
-    torch.distributed.all_reduce(counts, group=mpu.get_pipeline_model_parallel_group())
-    if counts[0].item() != (
-        torch.distributed.get_world_size() //
-        torch.distributed.get_world_size(group=mpu.get_tensor_model_parallel_group()) //
-        torch.distributed.get_world_size(group=mpu.get_sequence_parallel_group())):
-        print_rank_0("Data index creation unsuccessful, exiting.")
-        exit()
+    #counts = get_accelerator().LongTensor([data_cache_success])
+    #torch.distributed.all_reduce(counts, group=mpu.get_data_parallel_group())
+    #torch.distributed.all_reduce(counts, group=mpu.get_pipeline_model_parallel_group())
+    #if counts[0].item() != (
+    #    torch.distributed.get_world_size() //
+    #    torch.distributed.get_world_size(group=mpu.get_tensor_model_parallel_group()) //
+    #    torch.distributed.get_world_size(group=mpu.get_sequence_parallel_group())):
+    #    print_rank_0("Data index creation unsuccessful, exiting.")
+    #    exit()
 
     # Load mappings.
     start_time = time.time()
-    print_rank_0(f" > loading doc-idx mapping from {idx_path['doc']}")
+    print_flush(f" > loading doc-idx mapping from {idx_path['doc']}")
     doc_idx = np.load(idx_path['doc'], allow_pickle=True, mmap_mode='r')
 
-    print_rank_0(f" > loading sample-idx mapping from {idx_path['sample']}")
+    print_flush(f" > loading sample-idx mapping from {idx_path['sample']}")
     sample_idx = np.load(idx_path['sample'], allow_pickle=True, mmap_mode='r')
 
-    print_rank_0(f" > loading shuffle-idx mapping from {idx_path['shuffle']}")
+    print_flush(f" > loading shuffle-idx mapping from {idx_path['shuffle']}")
     shuffle_idx = np.load(idx_path['shuffle'], allow_pickle=True, mmap_mode='r')
 
-    print_rank_0('    loaded indexed file in {:3.3f} seconds'.format(
+    print_flush('    loaded indexed file in {:3.3f} seconds'.format(
         time.time() - start_time))
-    print_rank_0('    total number of samples: {}'.format(
+    print_flush('    total number of samples: {}'.format(
         sample_idx.shape[0]))
-    print_rank_0('    total number of epochs: {}'.format(num_epochs))
+    print_flush('    total number of epochs: {}'.format(num_epochs))
 
     return doc_idx, sample_idx, shuffle_idx, desc, desc_hash
 
