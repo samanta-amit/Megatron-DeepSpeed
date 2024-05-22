@@ -16,6 +16,27 @@ export WORKING_DIR="${WORKING_DIR}"
 printf "Using WORKING_DIR: %s\n" ${WORKING_DIR}
 
 
+function get_machine() {
+    if [[ $(hostname) == x4* ]]; then
+        machine="aurora"
+    elif [[ $(hostname) == x1* ]]; then
+        machine="sunspot"
+    elif [[ $(hostname) == x3* ]]; then
+        if [[ "${PBS_O_HOST}" == sirius* ]]; then
+            machine="sirius"
+        else
+            machine="polaris"
+        fi
+    elif [[ $(hostname) == nid* ]]; then
+        machine="perlmutter"
+    else
+        echo "Unknown MACHINE. Setting MACHINE to $(hostname) and continuing..."
+    fi
+    export MACHINE="${machine}"
+    printf "Running on: %s\n" "$(printBlue ${MACHINE})"
+}
+
+
 function check_and_kill_if_running() {
     # kill $(ps aux | grep -E "$USER.+(mpi|main.py)" | grep -v grep | awk '{print $2}')
     RUNNING_PIDS=$(lsof -i:29500 -Fp | head -n 1 | sed 's/^p//')
@@ -104,6 +125,18 @@ function setDSlauncher() {
     fi
 }
 
+function set_lr_args() {
+    LR_ARGS="--lr ${LR} --lr-decay-style cosine"
+    if [[ -n "${LR_DECAY_ITERS:-}" ]]; then
+        LR_ARGS="${LR_ARGS} --lr-decay-iters ${LR_DECAY_ITERS}"
+    fi
+    if [[ -n "${LR_WARMUP_FRAC}" ]]; then
+        LR_ARGS="${LR_ARGS} --lr-warmup-fraction ${LR_WARMUP_FRAC}"
+    fi
+    echo "LR_ARGS: ${LR_ARGS}"
+    export LR_ARGS="${LR_ARGS}"
+}
+
 function setParams() {
     LLAMA_ARGS=""
     # +----[Parallelism Settings] -------------------------------------------+
@@ -139,6 +172,8 @@ function setParams() {
         else
             LLAMA_ARGS="${LLAMA_ARGS} --use-flash-attn-v2"
         fi
+        echo "Setting up AWS NCCL OFI Plugin on Polaris..."
+        source "${WORKING_DIR}/ALCF/aws_ofi_nccl_plugin.sh" || exit
     # +--------[Perlmutter]---------------------------------+
     elif [[ $(hostname) == login* || $(hostname) == nid* ]]; then
         TP="${TP:-2}"
@@ -156,7 +191,7 @@ function setParams() {
     export TP="${TP}"
     export PP="${PP:-1}"
     export DTYPE="${DTYPE:-bf16}"
-    export OPT="${OPT:-adamwschedulefree}"
+    export OPT="${OPT:-adamw}"
     export HOSTFILE="${HOSTFILE:-${PBS_NODEFILE}}"
     NHOSTS=$(wc -l < "${HOSTFILE}")
     if [[ -z "${NGPU_PER_HOST-}" ]]; then
@@ -171,8 +206,6 @@ function setParams() {
     export NUM_KV_HEAD=${NUM_KV_HEAD:-8}                # GROUP ATTENTION
     export FFN_HIDDEN_SIZE=${FFN_HIDDEN_SIZE:-11008}    # FFN HIDDEN SIZE
     # +---[Run Settings]------------------------------------------------------+
-    export LR=${LR:-0.0003}                             # LEARNING_RATE
-    export LR_WARMUP_FRAC=${LR_WARMUP_FRAC:-0.05}       # LEARNING RATE WARMUP
     export SEQ=${SEQ:-4096}                             # SEQ_LEN: 4096
     export ZERO_STAGE=${ZERO_STAGE:-1}                  # ZERO OFFLOADING STAGE
     export MICRO_BATCH=${MICRO_BATCH:-8}                # MICRO BATCH SIZE
@@ -191,6 +224,20 @@ function setParams() {
     export MODEL_TYPE="llama-seq${SEQ}-pp${PP}-tp${TP}-${NLAYERS}layers-${HEADS}heads-${HIDDEN}hidden"  # STRING FOR IDENTIFYING MODEL
     # +----[ADDITIONAL LLAMA SPECIFIC ARGUMENTS]------------------------------
     export LLAMA_ARGS="${LLAMA_ARGS} --no-query-key-layer-scaling --use-rotary-position-embeddings --untie-embeddings-and-output-weights --swiglu --normalization rmsnorm --disable-bias-linear"
+    export LR=${LR:-0.0003}                             # LEARNING_RATE
+    export LR_WARMUP_FRAC=${LR_WARMUP_FRAC:-0.05}       # LEARNING RATE WARMUP
+    # export LR_DECAY_ITERS=${LR_DECAY_ITERS:-320000}     # LR DECAY ITERS
+    export LR_DECAY_ITERS=${LR_DECAY_ITERS:-}     # LR DECAY ITERS
+    set_lr_args
+    if [[ "${TIMING_LOG_LEVEL}" -ge 1 ]]; then
+        TIMING_STR="\
+            --timing-log-level ${TIMING_LOG_LEVEL} \
+            --log-timers-to-tensorboard \
+            --log-optimizer-states-to-tensorboard \
+        "
+    else
+        TIMING_STR=""
+    fi
 }
 
 
@@ -281,7 +328,18 @@ function saveDSenv() {
 
 function setOutput() {
     # ---- Specify output location --------------------------------
-    export OUTPUT_PREFIX="ds_stage${ZERO_STAGE}_nl${NLAYERS}_hs${HIDDEN}_mb${MICRO_BATCH}_seq${SEQ}_gb${GLOBAL_BATCH}_pp${PP}_tp${TP}_${DTYPE}_opt${OPT}"
+    OUTPUT_PREFIX="ws${WORLD_SIZE}_ds_stage${ZERO_STAGE}_nl${NLAYERS}"
+    OUTPUT_PREFIX="${OUTPUT_PREFIX}_hs${HIDDEN}_mb${MICRO_BATCH}"
+    OUTPUT_PREFIX="${OUTPUT_PREFIX}_seq${SEQ}_gb${GLOBAL_BATCH}"
+    OUTPUT_PREFIX="${OUTPUT_PREFIX}_pp${PP}_tp${TP}_${DTYPE}_opt${OPT}"
+    OUTPUT_PREFIX="${OUTPUT_PREFIX}_lr${LR}_lwf${LR_WARMUP_FRAC}"
+    if [[ -n "${LR_DECAY_ITERS}" ]]; then
+        OUTPUT_PREFIX="${OUTPUT_PREFIX}_ldi${LR_DECAY_ITERS}"
+    fi
+    if [[ -z "${NO_FLASH_ATTN:-}" ]]; then
+        OUTPUT_PREFIX="${OUTPUT_PREFIX}_flash"
+    fi
+    export OUTPUT_PREFIX="${OUTPUT_PREFIX}"
     # OUTPUT_DIR="logs/${OUTPUT_PREFIX}/$(date +%m%d%H%M%S)_${HOSTNAME}"
     OUTPUT_DIR="logs/${OUTPUT_PREFIX}/$(date +%Y%m%d-%H%M%S)_${WORLD_SIZE}_${HOSTNAME}"
     export OUTPUT_DIR="${OUTPUT_DIR}"
@@ -289,7 +347,8 @@ function setOutput() {
     export CKPT_DIR="checkpoints/${OUTPUT_PREFIX}"
     echo "${OUTPUT_LOG}" >> "logs/latest"
     mkdir -p "${OUTPUT_DIR}"
-    echo "!!!Please see logs at ${OUTPUT_DIR}"
+    printf "\n Please see logs at: %s\n" $(printGreen "${OUTPUT_DIR}")
+    printf "Checkpoints will be saved to: %s\n" $(printYellow "${CKPT_DIR}")
 }
 
 function buildDSconfig() {
@@ -322,18 +381,51 @@ function sumFiles() {
 
 ########################################################
 # Setup / activate conda environment,
-# mine is called q4-drop
 ########################################################
 setup_conda_sunspot() {
-    if [[ -z "${CONDA_PREFIX-}" && -z "${VIRTUAL_ENV-}" ]]; then
-        shell_name=$(echo "${SHELL}" | tr "\/" "\t" | awk '{print $NF}')
-        eval "$(~/miniconda3/bin/conda shell.${shell_name} hook)"
-        conda activate q4-drop
+    ###### check if CONDA_PREFIX non-empty ################
+    if [[ -z "${CONDA_PREFIX:-}" ]]; then
+        # eval "$(~/miniconda3/bin/conda shell.zsh hook)"
+        # conda activate anl_24_q2_release
+        module use /soft/preview-modulefiles/24.086.0 ; module load frameworks/2024.04.15.002.lua
+    fi
+    # XXX: -------------------------------------------------------------------
+    # Jerome's `frameworks_2024_5_v2` seems broken ??
+    # - seems to be missing `python3 -c 'from mpi4py import MPI'` ???
+    # - consequently, we leave the setup below commented out (for the time
+    #   being):
+    #   if [[ -z "${CONDA_PREFIX-}" ]]; then
+    #       module use -a /home/jmitche1/anl_release/2024/q2 ; module load frameworks_2024_5_v2
+    #   else
+    #       echo "Caught CONDA_PREFIX=${CONDA_PREFIX}"
+    #   fi
+    # ------------------------------------------------------------------------
+
+    ###### check if VIRTUAL_ENV non-empty ####################################
+    # venvs/anl_24_q2_release/bin/activate
+    # if [[ -d "${DEFAULT_VENV_PATH}" ]]; then
+    if [[ -z "${VIRTUAL_ENV:-}" ]]; then
+        if [[ -n "${CONDA_PREFIX}" ]]; then
+            VENV_DIR="${WORKING_DIR}/venvs/$(echo ${CONDA_PREFIX} | tr '\/' '\t' | awk '{print $NF}')"
+        else
+            VENV_DIR="${WORKING_DIR}/venvs/anl_24_q2_release"
+        fi
+        echo "Caught virtual env at ${VENV_DIR}!"
+        # source "${VENV_DIR}/bin/activate" || 
+        if [[ ! -f "${VENV_DIR}/bin/activate" ]]; then
+            printf "[!! %s]: Unable to locate %s\n" "$(printRed "ERROR")" "$(printMagenta "${VENV_DIR}/bin/activate")"
+            # echo "[!ERROR]: Unable to locate ${VENV_DIR}/bin/activate !!"
+        else
+            source "${VENV_DIR}/bin/activate"
+        fi
     else
         echo "Found existing python at: $(which python3)"
     fi
 }
 
+########################
+# Setup conda on Sirius
+########################
 setup_conda_sirius() {
     if [[ -z "${CONDA_PREFIX-}" && -z "${VIRTUAL_ENV-}" ]]; then
         export MAMBA_ROOT_PREFIX=/lus/tegu/projects/PolarisAT/foremans/micromamba
@@ -345,20 +437,62 @@ setup_conda_sirius() {
     fi
 }
 
+setup_venv_from_conda() {
+    if [[ -z "${CONDA_PREFIX}" ]]; then
+        echo "No ${CONDA_PREFIX} found."  #  Exiting."
+        # exit 1
+    else
+        if [[ -n "${VIRTUAL_ENV}" ]]; then
+            echo "Already inside virtual env at ${VENV_DIR}!"
+        elif [[ -z "${VIRTUAL_ENV}" ]]; then
+            echo "No VIRTUAL_ENV found in environment!"
+            echo "    - Trying to setup from ${CONDA_PREFIX}"
+            CONDA_NAME=$(echo ${CONDA_PREFIX} | tr '\/' '\t' | sed -E 's/mconda3|\/base//g' | awk '{print $NF}')
+            VENV_DIR="${WORKING_DIR}/venvs/${CONDA_NAME}"
+            echo "    - Using VENV_DIR=${VENV_DIR}"
+            # VENV_DIR="venvs/$(echo ${CONDA_PREFIX} | tr '\/' '\t' | sed -E 's/mconda3|\/base//g' | awk '{print $NF}')"
+            # VENV_DIR="${WORKING_DIR}/venvs/$(echo ${CONDA_PREFIX} | tr '\/' '\t' | awk '{print $NF}')"
+            # VENV_DIR="${WORKING_DIR}/venvs/anl_24_q2_release"
+            # if [[ -f "${VENV_DIR}/bin/activate" ]]; then
+            if [[ ! -f "${VENV_DIR}/bin/activate" ]]; then
+                printf "\n    - Creating a new virtual env on top of %s in %s" "$(printBlue "${CONDA_NAME}")" "$(printGreen "${VENV_DIR}")"
+                mkdir -p "${VENV_DIR}"
+                python3 -m venv "${VENV_DIR}" --system-site-packages
+                source "${VENV_DIR}/bin/activate" || exit
+            elif [[ -f "${VENV_DIR}/bin/activate" ]]; then
+                echo "    - Found existing venv, activating from $(printBlue "${VENV_DIR}")"
+                source "${VENV_DIR}/bin/activate"
+            else
+                printf "\n    [!! %s]: Unable to locate %s\n" "$(printRed "ERROR")" "$(printMagenta "${VENV_DIR}/bin/activate")"
+            fi
+        fi
+        # else
+        #     printf "[!! %s]: Unable to locate %s\n" "$(printRed "ERROR")" "$(printMagenta "${VENV_DIR}/bin/activate")"
+    fi
+
+}
+
+########################
+# Setup conda on Polaris
+########################
 setup_conda_polaris() {
-    if [[ -z "${CONDA_PREFIX-}" && -z "${VIRTUAL_ENV-}" ]]; then
-        # export CUDA_HOME=/soft/compilers/cudatoolkit/cuda-12.2.2
-        # && export MAMBA_ROOT_PREFIX=/eagle/argonne_tpc/micromamba && eval "$("${MAMBA_ROOT_PREFIX}/bin/micromamba" shell hook -s posix)" ; mm activate 2024-04-25
-        # export MAMBA_ROOT_PREFIX=/eagle/argonne_tpc/micromamba
-        # shell_name=$(echo "${SHELL}" | tr "\/" "\t" | awk '{print $NF}')
-        # eval "$("${MAMBA_ROOT_PREFIX}/bin/micromamba" shell hook -s posix)"
-        # micromamba activate 2024-04-25
+    # unset MPICH_GPU_SUPPORT_ENABLED
+    ###### check if CONDA_PREFIX non-empty ################
+    if [[ -z "${CONDA_PREFIX-}" ]]; then
+        # if so, load the default conda/2024-04-29
+        # module and activate base environment
         module use /soft/modulefiles
         module load conda/2024-04-29 ; conda activate base
-        # unset MPICH_GPU_SUPPORT_ENABLED
-        # if [[ -d "${WORKING_DIR}/venvs/polaris/2024-04-29" ]]; then
-        #     source "${WORKING_DIR}/venvs/polaris/2024-04-29/bin/activate"
-        # fi
+    else
+        echo "Caught CONDA_PREFIX=${CONDA_PREFIX}"
+    fi
+    ###### check if VIRTUAL_ENV non-empty #################
+    if [[ -z "${VIRTUAL_ENV:-}" ]]; then
+        DEFAULT_VENV_PATH=${WORKING_DIR}/venvs/polaris/2024-04-29
+        if [[ -d "${DEFAULT_VENV_PATH}" ]]; then
+            echo "Caught virtual env at ${DEFAULT_VENV_PATH}!"
+            source "${WORKING_DIR}/venvs/polaris/2024-04-29/bin/activate"
+        fi
     else
         echo "Found existing python at: $(which python3)"
     fi
@@ -369,42 +503,47 @@ function setEnv() {
     local virtual_env="${VIRTUAL_ENV-}"
     local conda_prefix="${CONDA_PREFIX-}"
     if [[ -n "${conda_prefix}" && -z "${virtual_env}" ]]; then
+        echo "No virtual environment found."
         echo "Using conda from: ${conda_prefix}"
     elif [[ -n "${virtual_env}" && -z "${conda_prefix}" ]]; then
+        echo "No conda found."
         echo "Using virtual_env from: ${virtual_env}"
     elif [[ -n "${virtual_env}" && -n "${conda_prefix}" ]]; then
-        echo "Using virtual_env: ${virtual_env} on top of CONDA: ${conda_prefix}"
+        echo "Using virtual_env: ${virtual_env} on top of conda from: ${conda_prefix}"
     elif [[ -z "${conda_prefix}" && -z "${virtual_env}" ]]; then
         echo "No conda_prefix or virtual_env found in environment..."
-        echo "Setting up conda"
-        # setup_conda
-        # ---- [SunSpot] ------- || ---- [Aurora] --------------
+        echo "Setting up conda..."
+        ######################## setup_conda ############################
+        # ---- [SunSpot @ ALCF]  || [Aurora @ ALCF] ---------------------
         if [[ $(hostname) == x1* || $(hostname) == x4* ]]; then
-            source "${WORKING_DIR}/ALCF/sunspot-env.sh" || exit
-            # ----- [Aurora] -----------------------------------
+            # ----- [Aurora] --------------------------------------------
             if [[ -z "${conda_prefix}" && -z "${virtual_env}" ]]; then
                 if [[ $(hostname) == x4* ]]; then
+                    # TODO: Update once Aurora back online
                     eval "$(conda shell.zsh hook)" && conda activate anl_release_q4v2
-                # ----- [SunSpot] ----------------------------------
+                # ----- [SunSpot] ---------------------------------------
                 elif [[ $(hostname) == x1* ]]; then
                     echo "Running on SunSpot !!"
                     setup_conda_sunspot
-                    # eval "$(/home/foremans/miniconda3/bin/conda shell.zsh hook)" && conda activate q4-drop
                 fi
             fi
-        # ----- [Polaris] ---------------------------------------
+            # MPICH_MODULES=$(echo $LOADEDMODULES | tr ':' '\n' | grep mpich)
+            # if [[ -z "${MPICH_MODULES" ]]; then
+            #     source "${WORKING_DIR}/ALCF/sunspot-env.sh" || exit
+            # else
+            #     echo "Caught MPICH_MODULES: ${MPICH_MODULES}"
+            # fi
+        # ----- [Polaris @ ALCF] --------------------------------------------
         elif [[ $(hostname) == x3* ]]; then
             if [[ "${PBS_O_HOST}" == sirius* ]]; then
                 echo "Running on Sirius !!"
                 setup_conda_sirius
             else
                 echo "Running on Polaris !!"
-                # ---- [load conda] ---------------------
+                # ---- [load conda] -------------------------------------
                 setup_conda_polaris
-                # if [[ -d "${PBS_O_WORKDIR}/venvs/polaris/cu118-pt221" ]]; then
-                #     source "${PBS_O_WORKDIR}/venvs/polaris/cu118-pt221/bin/activate"
-                # fi
             fi
+        # ----- [Perlmutter @ NERSC] ----------------------------------------
         elif [[ $(hostname) == login* || $(hostname) == nid* ]]; then
             echo "Running on Perlmutter !!"
             module load pytorch
@@ -417,10 +556,20 @@ function setEnv() {
         echo "Unable to setup python environment. Exiting"
         exit 1
     fi
-    echo "[python] Using: $(which python3)"
+    #####################################################################
+    pystr="Using: $(which python3)"
+    printf "[python] %s" "$(printMagenta ${pystr})"
+    printf "\n"
+    export "PYTHON_EXEC=$(which python3)"
 }
 
 
+######################################################################
+# `makeHostiles`:
+#     Detect if `HOSTFILE` set in active environment.
+#         - If so, use this.
+#         - Otherwise, make default HOSTFILEs from "${PBS_NODEFILE}"
+######################################################################
 function makeHostfiles() {
     if [[ -n "${HOSTFILE}" ]]; then
         printf "!! USING CUSTOM HOSTFILE FROM: %s"  "${HOSTFILE}"
@@ -429,25 +578,40 @@ function makeHostfiles() {
     fi
 }
 
-function setData() {  # ---- [dfl: abbrv. for DATA_FILE_LIST] -------------------------
-    if [[ $(hostname) == x4* ]]; then    # ---- [AURORA] ----
+###############################################
+# `setData`:
+#     Ensure `DATA_FILE_LIST` is set,
+#     fallback to default values if necessary.
+###############################################
+function setData() {  # ------------------------[dfl: abbrv. for DATA_FILE_LIST]
+    # dfldir="${WORKING_DIR}/ALCF/data-lists"
+    # =====[Set DATA_FILE_LIST_FALLBACK based on current machine]==============
+    if [[ $(hostname) == x4* ]]; then    # -----------------------------[AURORA]
         dfl_fallback="/home/foremans/anl_24_release_q4/llm.devkit/Megatron-DeepSpeed/data_file_list_reweighted.txt"
-    elif [[ $(hostname) == x1* ]]; then
+
+    elif [[ $(hostname) == x1* ]]; then  # ----------------------------[SUNSPOT]
         # shellcheck: source ./data-lists/sunspot/books.txt
         dfl_fallback="${WORKING_DIR}/ALCF/data-lists/sunspot/books.txt"
-    elif [[ $(hostname) == x3* ]]; then
-        if [[ "${PBS_O_HOST}" == sirius* ]]; then
+
+    elif [[ $(hostname) == x3* ]]; then  # -------------------[POLARIS / SIRIUS]
+        if [[ "${PBS_O_HOST}" == sirius* ]]; then  # -------------------[SIRIUS]
             # shellcheck: source ./data-lists/sirius/books.txt
             dfl_fallback="${WORKING_DIR}/ALCF/data-lists/sirius/books.txt"
-        elif [[ "${PBS_O_HOST}" == polaris* ]]; then
+
+        elif [[ "${PBS_O_HOST}" == polaris* ]]; then  # ---------------[POLARIS]
             # shellcheck: source ./data-lists/polaris/books.txt
             dfl_fallback="${WORKING_DIR}/ALCF/data-lists/polaris/dolma_v1_7_file_list.txt"
         fi
-    elif [[ $(hostname) == login* || $(hostname) == nid* ]]; then
+
+    elif [[ $(hostname) == login* || $(hostname) == nid* ]]; then # [PERLMUTTER]
         dfl_fallback="${SLURM_SUBMIT_DIR}/genslm-subsample.txt"
-    else
+
+    else  # -----------------------------------------------------------[UNKNOWN]
         echo "Unknown hostname. Must manually specify DATA_FILE_LIST."
     fi
+    # ==========================================================================
+    # set `dfl` to `dfl_fallback` if not passed as an argument,
+    # use this data file list to call `setData`
     dfl="${1:-${dfl_fallback}}"
     printf "Calling:  setData() with %s\n" "${dfl}"
     ndocs=$(wc -l < "${dfl}")
@@ -516,7 +680,7 @@ function generateDSconfig() {
     flops_profiler="\
         \"flops_profiler\": {
           \"enabled\": true,
-          \"profile_step\": 4,
+          \"profile_step\": 2,
           \"module_depth\": -1,
           \"top_modules\": 1,
           \"detailed\": true,
@@ -662,3 +826,24 @@ function printCyan() {
 function printWhite() {
     printf "\e[1;37m%s\e[0m\n" "$@"
 }
+
+#### [DEPRECATED] ###########################################################
+# if [[ -z "${HOSTFILE}" ]]; then
+#     makeHostfiles || exit         # 4. create `deepspeed` hostfile from `$PBS_NODEFILE`
+# else
+#     echo "!! USING CUSTOM HOSTFILE FROM: ${HOSTFILE}"
+# fi
+# ----------------------------------------------------------------------------
+# setDSlauncher "${HERE}" || exit   # 10. set `launcher` args for `deepspeed ${launcher} ${EXEC} ${args}`
+# ----------------------------------------------------------------------------
+# TORCH_DEVICE=$(python3 -c 'import ezpz as ez; print(ez.get_torch_device())')
+# printf %s "Using TORCH_DEVICE=${TORCH_DEVICE}"
+# if [[ "${TORCH_DEVICE}" == "cuda" ]]; then
+#     printf %s "Setting PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True"
+#     PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+# fi
+# ----------------------------------------------------------------------------
+# export MPICH_GPU_SUPPORT_ENABLED=1
+# export CUDA_DEVICE_MAX_CONNECTIONS=1
+# export NCCL_DEBUG=INFO
+#############################################################################

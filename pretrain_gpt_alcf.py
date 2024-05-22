@@ -2,6 +2,7 @@
 
 """Pretrain GPT"""
 
+from pathlib import Path
 from mpi4py import MPI
 import os
 from rich import print
@@ -44,7 +45,7 @@ import ezpz as ez
 
 # ---- [SETUP COMMS] ------------------------
 # if str(os.environ.get('LAUNCH_CMD', 'mpich')).lower() == 'mpich':
-RANK = ez.setup_torch(backend="deepspeed")
+RANK = ez.setup_torch(backend="deepspeed", timeout=7200)
 # else:
 #     RANK = ez.get_rank()
 WORLD_SIZE = ez.get_world_size()

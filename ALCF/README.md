@@ -80,16 +80,35 @@
 > [`train_llama_alcf.sh`](https://github.com/argonne-lcf/Megatron-DeepSpeed/blob/main/train_llama_alcf.sh) is the main entry point for launching
 > distributed training on {Polaris, Aurora, Sunspot} @ ALCF.
 
-To launch:
+To launch on Polaris @ ALCF:
 
-```bash
-$ qsub -A <your-project> -q debug -l select=2 -l walltime=01:00:00,filesystems=eagle:home -I
-$ cd /path/to/Megatron-DeepSpeed/
-# load your favorite {conda, venv} environment, requires: {pytorch, deepspeed}
-# e.g. on Polaris:
-$ module load conda/2023-10-04  # ; conda activate cu118-pt221 ; unset PYTHONUSERBASE
-$ export PBS_O_WORKDIR="$(pwd)" && DATA_FILE_LIST=./convergence_debug_small.txt DTYPE=bf16 OPT=adamw bash train_llama_alcf.sh
-```
+> [!IMPORTANT]
+> **Launch Instructions** on Polaris @ ALCF
+>
+> 1. Request an interactive job with `qsub -I`:
+>
+>     ```bash
+>     $ qsub -A <your-project> -q debug -l select=2 -l walltime=01:00:00,filesystems=eagle:home -I
+>     ```
+>
+> 2. Clone repo + navigate into it:
+>     ```sh
+>     $ cd /path/to/Megatron-DeepSpeed/ # or git clone https://github.com/argonne-lcf/Megatron-DeepSpeed
+>     ```
+>
+> 3. Load required modules:
+>
+>     ```sh
+>     $ module use /soft/modulefiles
+>     $ module load conda/2024-04-29
+>     $ conda activate base
+>     ```
+>
+> 4. Launch:
+>
+>     ```sh
+>     $ export PBS_O_WORKDIR="$(pwd)" && DATA_FILE_LIST=./ALCF/data-lists/polaris/books.txt DTYPE=bf16 OPT=adamw bash train_llama_alcf.sh
+>     ```
 
 <details closed><summary><code>[output]</code>:</summary>
 
@@ -458,6 +477,8 @@ training ...
 
 </details>
 
+<!--
+
 ## 📦 Install
 
 <details closed><summary>Install Instructions</summary>
@@ -572,19 +593,17 @@ training ...
         $ git clone https://github.com/saforem2/ezpz
         $ python3 -m pip install -e "ezpz[dev]"
         ```
+-->
 
+<!--
 ### Running
 
 - The (shell) script used to launch pre-training is:
-    - Polaris:
-      [`train_llama_alcf_polaris.sh`](https://github.com/argonne-lcf/Megatron-DeepSpeed/blob/main/train_llama_alcf_polaris.sh)
-    - Aurora:
-      [`train_llama_alcf_aurora.sh`](https://github.com/argonne-lcf/Megatron-DeepSpeed/blob/main/train_llama_alcf_aurora.sh)
+    - [`train_llama_alcf.sh`](https://github.com/argonne-lcf/Megatron-DeepSpeed/blob/main/train_llama_alcf.sh)
 
-- These shell script(s) will set the appropriate environment variables, load the correct conda
+- This shell script will set the appropriate environment variables, load the correct conda
 modules and launch
-[`pretrain_gpt_alcf.py`](https://github.com/argonne-lcf/Megatron-DeepSpeed/blob/main/pretrain_gpt_alcf.py) using `deepspeed`
-
+[`pretrain_gpt_alcf.py`](https://github.com/argonne-lcf/Megatron-DeepSpeed/blob/main/pretrain_gpt_alcf.py) using `mpiexec`
 
 - Explicitly, to launch:
 
@@ -651,6 +670,8 @@ modules and launch
     </details>
 
 -->
+
+
 
 ## 📝 Data Preprocessing 
 
