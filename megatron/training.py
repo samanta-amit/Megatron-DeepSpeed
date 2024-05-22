@@ -1351,8 +1351,7 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
                                opt_param_scheduler,
                                config)
             prof.export_chrome_trace(
-                f"{args.trace_dir}"
-                "/torch-trace-{RANK}-of-{WORLD_SIZE}-step{iteration}.json"
+                f"{args.trace_dir}/torch-trace-{RANK}-of-{WORLD_SIZE}-step{iteration}.json"
             )
         else:
             loss_dict, skipped_iter, grad_norm, num_zeros_in_grad = \

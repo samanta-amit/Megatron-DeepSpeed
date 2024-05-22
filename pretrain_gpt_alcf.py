@@ -584,8 +584,7 @@ def main():
             )
         args = get_args()
         prof.export_chrome_trace(
-            f"{args.trace_dir}"
-            "/torch-trace-{RANK}-of-{WORLD_SIZE}.json"
+            f"{args.trace_dir}/torch-trace-{RANK}-of-{WORLD_SIZE}.json"
         )
     else:
         model = pretrain(
