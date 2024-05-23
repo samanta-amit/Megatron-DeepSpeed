@@ -53,6 +53,8 @@ def build_train_valid_test_datasets(data_prefix, data_impl, splits_string,
         train_datasets = []
         valid_datasets = []
         test_datasets = []
+        print_rank_0(" >>> Building datasets in distributed way ****")
+        t0 = time.time()
         for i in range(torch.distributed.get_rank(), len(prefixes), torch.distributed.get_world_size()):
             train_ds, valid_ds, test_ds = _build_train_valid_test_datasets(
                 prefixes[i], data_impl, splits_string,
@@ -71,6 +73,7 @@ def build_train_valid_test_datasets(data_prefix, data_impl, splits_string,
         train_datasets = flatten_list(comm.allgather(train_datasets))
         valid_datasets = flatten_list(comm.allgather(valid_datasets))
         test_datasets = flatten_list(comm.allgather(test_datasets))
+        print_rank_0(f" >>> Done with building datasets in {time.time() - t0} seconds")
         # Blend.
         blending_train_dataset = None
         if train_datasets:
@@ -232,7 +235,7 @@ def _build_dataset(dataset_name, data_prefix, data_impl, splits_string,
 
 def get_indexed_dataset_(data_prefix, data_impl, skip_warmup):
     """Build indexed dataset."""
-    print_rank_0(' > building dataset index ...')
+    print_flush(' > building dataset index ...')
 
     start_time = time.time()
     indexed_dataset = make_indexed_dataset(data_prefix,
@@ -420,7 +423,7 @@ def _build_index_mappings(name, data_prefix, documents, sizes,
     # Build the indexed mapping if not exist.
     if build_indices:
         print_flush(f" > WARNING: could not find index map files, building "
-                     "the indices on rank {torch.distributed.get_rank()} ...")
+                     f"the indices on rank {torch.distributed.get_rank()} ...")
 
         # For the last epoch, decide whether include the entire epoch
         # in the global shuffle or not.
