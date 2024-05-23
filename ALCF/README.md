@@ -1,114 +1,84 @@
 # Megatron-DeepSpeed @ ALCF
 
-## ✅ TODOs
 
-<details closed>
-<summary>TODOs:</summary>
-
-- [ ] Ensure / double check that optimizer settings from `ds_config.json` aren't being overwritten by some defaults in `megatron/arguments.py`
-    - [ ] specifically, `momentum, beta{1, 2}, etc`
-    
-<details closed><summary><b>✅ <code>Completed</code></b></summary>
-
-- Continue runs on Polaris @
-    - [x] 48 Nodes
-    - [x] 32 Nodes
-    - [x] 16 Nodes
-    - [x] 8 Nodes
-    - [x] 4 Nodes
-
-- [x] Then, try re-creating ( / fixing) conda with `cuda==12.1`
-    - 😔, failed.
-     
-- ~~‼️  Unable to save checkpoints with `torch==2.1` + `cuda==11.8`~~:
-    - Fixed in [a57a21f](https://github.com/argonne-lcf/Megatron-DeepSpeed/commit/a57a21f6b2a8abf847f5ef599e1b1edcb5a5e1b5)
-
-    <details closed><summary><code>🐛 Bug</code></summary>
-        
-    - Training progresses OK:
-
-        ```bash
-        [2024-03-07 15:27:02,646] [INFO] [timer.py:260:stop] epoch=0/micro_step=199/global_step=199, RunningAvgSamplesPerSec=58.730622229657506, CurrSamplesPerSec=61.35304005128382, MemAllocated=6.01GB, MaxMemAllocated=19.52GB
-        iteration      199/  317892 | consumed samples:       152832 | consumed tokens:    625999872 | elapsed time per iteration (ms): 14287.5 | learning rate: 2.407E-04 | global batch size:   768 | lm loss: 5.905366E+00 | loss scale: 8192.0 | actual seqlen:  4096 | number of skipped iterations:   0 | number of nan iterations:   0 | samples per second: 53.753 | tokens per gpu per second (tgs): 1146.733 | TFLOPs: 69.85 |
-        [2024-03-07 15:27:15,063] [INFO] [logging.py:96:log_dist] [Rank 0] step=200, skipped=4, lr=[0.000240653265864008, 0.000240653265864008], mom=[(0.9, 0.999), (0.9, 0.999)]
-        [2024-03-07 15:27:17,188] [INFO] [timer.py:260:stop] epoch=0/micro_step=200/global_step=200, RunningAvgSamplesPerSec=58.730745476291396, CurrSamplesPerSec=58.75503515561452, MemAllocated=6.01GB, MaxMemAllocated=19.52GB
-        iteration      200/  317892 | consumed samples:       153600 | consumed tokens:    629145600 | elapsed time per iteration (ms): 14541.4 | learning rate: 2.407E-04 | global batch size:   768 | lm loss: 5.897035E+00 | loss scale: 8192.0 | actual seqlen:  4096 | number of skipped iterations:   0 | number of nan iterations:   0 | samples per second: 52.815 | tokens per gpu per second (tgs): 1126.713 | TFLOPs: 68.63 |
-        saving checkpoint at iteration     200 to checkpoints/ds_stage2_nl32_hs4096_mb8_seq4096_gb768_pp1_tp2_fp16
-        # ...
-        ```
-
-    - Then crashes with:
-
-      ```python
-      Traceback (most recent call last):
-      Traceback (most recent call last):
-        File "/lus/eagle/projects/datascience/foremans/tmp/Megatron-DeepSpeed/pretrain_gpt_alcf.py", line 575, in <module>
-          model = main()
-        File "/lus/eagle/projects/datascience/foremans/tmp/Megatron-DeepSpeed/pretrain_gpt_alcf.py", line 554, in main
-          model = pretrain(
-        File "/lus/eagle/projects/datascience/foremans/tmp/Megatron-DeepSpeed/megatron/training.py", line 226, in pretrain
-          iteration = train(forward_step_func,
-        File "/lus/eagle/projects/datascience/foremans/tmp/Megatron-DeepSpeed/megatron/training.py", line 1290, in train
-          save_checkpoint_and_time(iteration, model, optimizer,
-        File "/lus/eagle/projects/datascience/foremans/tmp/Megatron-DeepSpeed/megatron/training.py", line 1151, in save_checkpoint_and_time
-          save_checkpoint(iteration, model, optimizer, opt_param_scheduler)
-        File "/lus/eagle/projects/datascience/foremans/tmp/Megatron-DeepSpeed/megatron/checkpointing.py", line 259, in save_checkpoint
-          state_dict[UNIVERSAL_CHECKPOINT_INFO] = _universal_checkpoint_info(model)
-        File "/lus/eagle/projects/datascience/foremans/tmp/Megatron-DeepSpeed/megatron/checkpointing.py", line 783, in _universal_checkpoint_info
-          info.update(model[0].universal_checkpoint_info())
-        File "/lus/eagle/projects/datascience/foremans/tmp/Megatron-DeepSpeed/megatron/model/gpt_model.py", line 203, in universal_checkpoint_info
-          info[TP_REPLICATED_PARAMETER_PATTERNS] = self._get_tp_replicated_param_patterns()
-        File "/lus/eagle/projects/datascience/foremans/miniconda3/envs/polaris/2024-03-06/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1695, in __getattr__
-          raise AttributeError(f"'{type(self).__name__}' object has no attribute '{name}'")
-      AttributeError: 'GPTModel' object has no attribute '_get_tp_replicated_param_patterns'
-      ```
-
-      🤔
-</details>
-
-</details>
-
-</details>
-
-</details>
-
-</details>
-
-## 🏃‍♂️ Running
+## 🆘 Getting Started
 
 > [!NOTE]
 > [`train_llama_alcf.sh`](https://github.com/argonne-lcf/Megatron-DeepSpeed/blob/main/train_llama_alcf.sh) is the main entry point for launching
 > distributed training on {Polaris, Aurora, Sunspot} @ ALCF.
 
-To launch on Polaris @ ALCF:
 
-> [!IMPORTANT]
-> **Launch Instructions** on Polaris @ ALCF
->
-> 1. Request an interactive job with `qsub -I`:
+<!-- WIP
 >
 >     ```bash
->     $ qsub -A <your-project> -q debug -l select=2 -l walltime=01:00:00,filesystems=eagle:home -I
+>     $ PBS_O_WORKDIR=$(pwd) source ALCF/helpers.sh
+>     $ setup_conda_polaris
+>     $ setup_venv_from_conda
 >     ```
->
-> 2. Clone repo + navigate into it:
->     ```sh
->     $ cd /path/to/Megatron-DeepSpeed/ # or git clone https://github.com/argonne-lcf/Megatron-DeepSpeed
->     ```
->
-> 3. Load required modules:
->
->     ```sh
->     $ module use /soft/modulefiles
->     $ module load conda/2024-04-29
->     $ conda activate base
->     ```
->
-> 4. Launch:
->
->     ```sh
->     $ export PBS_O_WORKDIR="$(pwd)" && DATA_FILE_LIST=./ALCF/data-lists/polaris/books.txt DTYPE=bf16 OPT=adamw bash train_llama_alcf.sh
->     ```
+-->
+
+## 🏃‍♂️ Running
+
+To launch on Polaris @ ALCF:
+
+
+
+<details closed><summary>⏳ Request an interactive job with <code>qsub -I</code>:</summary>
+    
+```bash
+qsub -A <your-project-q debug -l select=2 -l walltime=01:00:00,filesystems=eagle:home -I
+```
+    
+</details>
+
+<details closed><summary>⬇️ Clone repo + navigate into it:</summary>
+
+```bash
+git clone "https://github.com/argonne-lcf/Megatron-DeepSpeed"
+cd Megatron-DeepSpeed
+```
+
+</details>
+
+<details closed><summary>🐍 Setup Python:</summary>
+
+```bash
+module use /soft/modulefiles ; module load conda ; conda activate base
+PBS_O_WORKDIR=$(pwd) source ALCF/helpers.sh && setup_venv_from_conda
+```
+
+- 🍋 Install [`ezpz`](https://github.com/saforem2/ezpz):
+
+    ```bash
+    mkdir deps &&  git clone https://github.com/saforem2/ezpz deps/ezpz
+    python3 -m pip install -e deps/ezpz --require-virtualenv
+    ```
+
+</details>
+
+
+<details closed><summary>🚀 Launch:</summary>
+
+In this case, train a ~ 2B Model (with 10 layers),
+for 1000 iterations using the data file list in:
+
+[`ALCF/data-lists/polaris/books.txt`](https://github.com/argonne-lcf/Megatron-DeepSpeed/blob/main/ALCF/data-lists/polaris/books.txt)
+
+with a micro-batch-size of 2, with the `torch.optim.AdamW` optimizer. 
+
+**Note** that _any_ of the options in the
+
+[`setParams`](https://github.com/argonne-lcf/Megatron-DeepSpeed/blob/main/ALCF/helpers.sh#L140)
+
+function from
+
+[`ALCF/helpers.sh`](https://github.com/argonne-lcf/Megatron-DeepSpeed/blob/7d203596dbf14e048e756c5ee6705de7dcb22283/ALCF/helpers.sh)
+
+can be overridden dynamically at runtime using this technique.
+
+```bash
+PBS_O_WORKDIR=$(pwd) DATA_FILE_LIST=./ALCF/data-lists/polaris/books.txt TRAIN_ITER=1000 NLAYERS=10 MICRO_BATCH=2 OPT=adamw bash train_llama_alcf.sh
+```
 
 <details closed><summary><code>[output]</code>:</summary>
 
@@ -477,6 +447,34 @@ training ...
 
 </details>
 
+</details>
+
+<!--
+
+[^example]: |
+    In this case, train a ~ 2B Model (with 10 layers),
+    for 1000 iterations using the data file list in:
+    
+    [`ALCF/data-lists/polaris/books.txt`](https://github.com/argonne-lcf/Megatron-DeepSpeed/blob/main/ALCF/data-lists/polaris/books.txt)
+    
+    with a micro-batch-size of 2, with the `torch.optim.AdamW` optimizer. Note that _any_ of the options in the
+    
+    [`setParams`](https://github.com/argonne-lcf/Megatron-DeepSpeed/blob/main/ALCF/helpers.sh#L140)
+    
+    function from
+    
+    [`ALCF/helpers.sh`](https://github.com/argonne-lcf/Megatron-DeepSpeed/blob/7d203596dbf14e048e756c5ee6705de7dcb22283/ALCF/helpers.sh)
+    
+    can be overridden dynamically at runtime using this technique.
+-->
+
+<!--
+export PBS_O_WORKDIR="$(pwd)" && DATA_FILE_LIST=./ALCF/data-lists/polaris/books.txt bash train_llama_alcf.sh
+export PBS_O_WORKDIR="$(pwd)" && DATA_FILE_LIST=./ALCF/data-lists/polaris/books.txt bash train_llama_alcf.sh
+-->
+
+
+
 <!--
 
 ## 📦 Install
@@ -687,3 +685,78 @@ cd /eagle/datasets/dolma/utils
 ``` 
 
 </details>
+
+## ✅ TODOs
+
+<details closed>
+<summary>TODOs:</summary>
+
+- [ ] Ensure / double check that optimizer settings from `ds_config.json` aren't being overwritten by some defaults in `megatron/arguments.py`
+    - [ ] specifically, `momentum, beta{1, 2}, etc`
+    
+<details closed><summary><b>✅ <code>Completed</code></b></summary>
+
+- Continue runs on Polaris @
+    - [x] 48 Nodes
+    - [x] 32 Nodes
+    - [x] 16 Nodes
+    - [x] 8 Nodes
+    - [x] 4 Nodes
+
+- [x] Then, try re-creating ( / fixing) conda with `cuda==12.1`
+    - 😔, failed.
+     
+- ~~‼️  Unable to save checkpoints with `torch==2.1` + `cuda==11.8`~~:
+    - Fixed in [a57a21f](https://github.com/argonne-lcf/Megatron-DeepSpeed/commit/a57a21f6b2a8abf847f5ef599e1b1edcb5a5e1b5)
+
+    <details closed><summary><code>🐛 Bug</code></summary>
+        
+    - Training progresses OK:
+
+        ```bash
+        [2024-03-07 15:27:02,646] [INFO] [timer.py:260:stop] epoch=0/micro_step=199/global_step=199, RunningAvgSamplesPerSec=58.730622229657506, CurrSamplesPerSec=61.35304005128382, MemAllocated=6.01GB, MaxMemAllocated=19.52GB
+        iteration      199/  317892 | consumed samples:       152832 | consumed tokens:    625999872 | elapsed time per iteration (ms): 14287.5 | learning rate: 2.407E-04 | global batch size:   768 | lm loss: 5.905366E+00 | loss scale: 8192.0 | actual seqlen:  4096 | number of skipped iterations:   0 | number of nan iterations:   0 | samples per second: 53.753 | tokens per gpu per second (tgs): 1146.733 | TFLOPs: 69.85 |
+        [2024-03-07 15:27:15,063] [INFO] [logging.py:96:log_dist] [Rank 0] step=200, skipped=4, lr=[0.000240653265864008, 0.000240653265864008], mom=[(0.9, 0.999), (0.9, 0.999)]
+        [2024-03-07 15:27:17,188] [INFO] [timer.py:260:stop] epoch=0/micro_step=200/global_step=200, RunningAvgSamplesPerSec=58.730745476291396, CurrSamplesPerSec=58.75503515561452, MemAllocated=6.01GB, MaxMemAllocated=19.52GB
+        iteration      200/  317892 | consumed samples:       153600 | consumed tokens:    629145600 | elapsed time per iteration (ms): 14541.4 | learning rate: 2.407E-04 | global batch size:   768 | lm loss: 5.897035E+00 | loss scale: 8192.0 | actual seqlen:  4096 | number of skipped iterations:   0 | number of nan iterations:   0 | samples per second: 52.815 | tokens per gpu per second (tgs): 1126.713 | TFLOPs: 68.63 |
+        saving checkpoint at iteration     200 to checkpoints/ds_stage2_nl32_hs4096_mb8_seq4096_gb768_pp1_tp2_fp16
+        # ...
+        ```
+
+    - Then crashes with:
+
+      ```python
+      Traceback (most recent call last):
+      Traceback (most recent call last):
+        File "/lus/eagle/projects/datascience/foremans/tmp/Megatron-DeepSpeed/pretrain_gpt_alcf.py", line 575, in <module>
+          model = main()
+        File "/lus/eagle/projects/datascience/foremans/tmp/Megatron-DeepSpeed/pretrain_gpt_alcf.py", line 554, in main
+          model = pretrain(
+        File "/lus/eagle/projects/datascience/foremans/tmp/Megatron-DeepSpeed/megatron/training.py", line 226, in pretrain
+          iteration = train(forward_step_func,
+        File "/lus/eagle/projects/datascience/foremans/tmp/Megatron-DeepSpeed/megatron/training.py", line 1290, in train
+          save_checkpoint_and_time(iteration, model, optimizer,
+        File "/lus/eagle/projects/datascience/foremans/tmp/Megatron-DeepSpeed/megatron/training.py", line 1151, in save_checkpoint_and_time
+          save_checkpoint(iteration, model, optimizer, opt_param_scheduler)
+        File "/lus/eagle/projects/datascience/foremans/tmp/Megatron-DeepSpeed/megatron/checkpointing.py", line 259, in save_checkpoint
+          state_dict[UNIVERSAL_CHECKPOINT_INFO] = _universal_checkpoint_info(model)
+        File "/lus/eagle/projects/datascience/foremans/tmp/Megatron-DeepSpeed/megatron/checkpointing.py", line 783, in _universal_checkpoint_info
+          info.update(model[0].universal_checkpoint_info())
+        File "/lus/eagle/projects/datascience/foremans/tmp/Megatron-DeepSpeed/megatron/model/gpt_model.py", line 203, in universal_checkpoint_info
+          info[TP_REPLICATED_PARAMETER_PATTERNS] = self._get_tp_replicated_param_patterns()
+        File "/lus/eagle/projects/datascience/foremans/miniconda3/envs/polaris/2024-03-06/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1695, in __getattr__
+          raise AttributeError(f"'{type(self).__name__}' object has no attribute '{name}'")
+      AttributeError: 'GPTModel' object has no attribute '_get_tp_replicated_param_patterns'
+      ```
+
+      🤔
+</details>
+
+</details>
+
+</details>
+
+</details>
+
+</details>
+
