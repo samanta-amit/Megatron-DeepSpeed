@@ -135,12 +135,13 @@ loadCondaEnv() {
 
 setupLauncher() {
     # outdir=$1
-    if [[ -n "${DIST_LAUNCH}" && ${LAUNCH_CMD:-"MPICH"} != "deepspeed" ]]; then
-        export LAUNCHER="${DIST_LAUNCH} --genvall --cpu-bind depth -d 16 $(which python3) -Wignore ${EXEC}"
-    else
+    if [[ "${LAUNCH_CMD:-"MPICH"}" == "deepspeed" ]]; then
         # Assert `./hostfile_deepspeed` exists
         export hfds="${WORKING_DIR}/hostfile_deepspeed" && [ -f "${hfds}" ] || exit
         export LAUNCHER="deepspeed --hostfile $hfds --launcher MPICH ${EXEC}"
+    # if [[ -n "${DIST_LAUNCH}" && ${LAUNCH_CMD:-"MPICH"} != "deepspeed" ]]; then
+    else
+        export LAUNCHER="${DIST_LAUNCH} --genvall --cpu-bind depth -d 16 $(which python3) -Wignore ${EXEC}"
     fi
     printf "Launching with: %s\n" "$(printRed "${LAUNCH_CMD}")"
     printf " %s" "$(printMagenta ${LAUNCHER})"
@@ -390,21 +391,27 @@ saveDSenv() {
     } > .deepspeed_env
 }
 
-setOutput() {
+
+get_output_prefix() {
     # ---- Specify output location --------------------------------
-    OUTPUT_PREFIX="ws${WORLD_SIZE}_ds_stage${ZERO_STAGE}_nl${NLAYERS}"
-    OUTPUT_PREFIX="${OUTPUT_PREFIX}_hs${HIDDEN}_mb${MICRO_BATCH}"
-    OUTPUT_PREFIX="${OUTPUT_PREFIX}_seq${SEQ}_gb${GLOBAL_BATCH}"
-    OUTPUT_PREFIX="${OUTPUT_PREFIX}_pp${PP}_tp${TP}_${DTYPE}_opt${OPT}"
-    OUTPUT_PREFIX="${OUTPUT_PREFIX}_lr${LR}_lwf${LR_WARMUP_FRAC}"
+    pre="ws${WORLD_SIZE}_ds_stage${ZERO_STAGE}_nl${NLAYERS}"
+    pre="${pre}_hs${HIDDEN}_mb${MICRO_BATCH}"
+    pre="${pre}_seq${SEQ}_gb${GLOBAL_BATCH}"
+    pre="${pre}_pp${PP}_tp${TP}_${DTYPE}_opt${OPT}"
+    pre="${pre}_lr${LR}_lwf${LR_WARMUP_FRAC}"
     if [[ -n "${LR_DECAY_ITERS}" ]]; then
-        OUTPUT_PREFIX="${OUTPUT_PREFIX}_ldi${LR_DECAY_ITERS}"
+        pre="${pre}_ldi${LR_DECAY_ITERS}"
     fi
     if [[ -z "${NO_FLASH_ATTN:-}" ]]; then
-        OUTPUT_PREFIX="${OUTPUT_PREFIX}_flash"
+        pre="${pre}_flash"
     fi
-    export OUTPUT_PREFIX="${OUTPUT_PREFIX}"
+    export OUTPUT_PREFIX="${pre}"
+    echo "${pre}"
+}
+
+setOutput() {
     # OUTPUT_DIR="logs/${OUTPUT_PREFIX}/$(date +%m%d%H%M%S)_${HOSTNAME}"
+    OUTPUT_PREFIX=$(get_output_prefix)
     OUTPUT_DIR="logs/${OUTPUT_PREFIX}/$(date +%Y%m%d-%H%M%S)_${WORLD_SIZE}_${HOSTNAME}"
     export OUTPUT_DIR="${OUTPUT_DIR}"
     export OUTPUT_LOG="${OUTPUT_DIR}/output.log"
@@ -665,7 +672,7 @@ setup_tokenizer_and_data() {
         export TOKENIZER_TYPE="Llama2"
         tm="${WORKING_DIR}/ALCF/tokenizer.model"            # fallback: Megatron-DeepSpeed/ALCF/tokenizer.model
         export TOKENIZER_MODEL="${TOKENIZER_MODEL:-${tm}}"  # USE TOKENIZER_MODEL from env, else fallback from ^
-        export TOKENIZER_FLAGS="${TOKENIZER_FLAGS} --tokenizer-type Llama2Tokenizer --tokenizer-model ${TOKENIZER_MODEL}"
+        export TOKENIZER_FLAGS="--tokenizer-type Llama2Tokenizer --tokenizer-model ${TOKENIZER_MODEL}"
         if [[ "${TOKENIZER_TYPE}" != "GPT2" ]]; then
             echo "Using tokenizer: ${TOKENIZER_TYPE}. Setting up data with ${DATA_FILE_LIST-}"
             setData "${dfl}" || exit
@@ -737,13 +744,14 @@ setData() {  # ------------------------[dfl: abbrv. for DATA_FILE_LIST]
     ndocs=$(wc -l < "${dfl}")
     ws=$(sumWeights "${dfl}")
     dfl_stem=$(echo "${dfl}" | tr "\/" "\t" | awk '{print $NF}' | sed "s/\.txt//g")
+    # dcp="${OUTPUT_PREFIX:-$(get_output_prefix)}/.cache/${dfl_stem}/index-cache"
     dcp=".cache/${dfl_stem}/index-cache"
     export DATA_FILE_LIST="${dfl}"
     export NUM_DOCS="${ndocs}"
     export WEIGHT_SUM="${ws}"
     export DFL_STEM="${dfl_stem}"
     export DATA_CACHE_PATH="${dcp}"
-    export DATA_FLAGS="${DATA_FLAGS} --data-file-list ${DATA_FILE_LIST} --data-cache-path ${DATA_CACHE_PATH}"
+    export DATA_FLAGS="${DATA_FLAGS} --data-file-list ${DATA_FILE_LIST}"  #  --data-cache-path ${DATA_CACHE_PATH}"
     echo "--------------------"
     echo "Updated environment:"
     printf "DATA_FILE_LIST: %s\n" "${DATA_FILE_LIST}"
@@ -751,6 +759,7 @@ setData() {  # ------------------------[dfl: abbrv. for DATA_FILE_LIST]
     printf "WEIGHT_SUM: %s\n" "${WEIGHT_SUM}"
     printf "DFL_STEM: %s\n" "${DFL_STEM}"
     printf "DATA_CACHE_PATH: %s\n" "${DATA_CACHE_PATH}"
+    printf "DATA_FLAGS: %s\n" "${DATA_FLAGS}"
     echo "--------------------"
     # fi
     # export DATA_FLAGS="${DATA_FLAGS}"

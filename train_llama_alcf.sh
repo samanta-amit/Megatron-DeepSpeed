@@ -95,6 +95,7 @@ TBDIR="${CKPT_DIR}/tensorboard"
 mkdir -p "${TBDIR}"
 
 data_cache_path="${CKPT_DIR}/${DATA_CACHE_PATH}" && mkdir -p "${data_cache_path}"
+echo "Using data_cache_path: ${data_cache_path}"
 
 
 export DEFAULTS="\
@@ -116,7 +117,6 @@ custom_args=" $@"
     # --log-memory-to-tensorboard \
     # --data-file-list ${DATA_FILE_LIST} \
     # --data-file-list ${DATA_FILE_LIST} \
-    # --data-cache-path ${data_cache_path} \
     # --tokenizer-type Llama2Tokenizer \
     # --tokenizer-model ${TOKENIZER_MODEL} \
 run_cmd="
@@ -143,10 +143,11 @@ run_cmd="
     --pipeline-model-parallel-size ${PP} \
     --num-key-value-heads ${NUM_KV_HEAD} \
     --ffn-hidden-size ${FFN_HIDDEN_SIZE} \
+    --data-cache-path ${data_cache_path} \
+    ${DATA_FLAGS} \
     ${LR_ARGS} \
     ${LLAMA_ARGS} \
     ${TIMING_STR} \
-    ${DATA_FLAGS} \
     ${TOKENIZER_FLAGS} \
     $ds_args \
     ${gpt_args[*]} \
