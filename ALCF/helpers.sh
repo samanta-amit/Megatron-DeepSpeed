@@ -16,6 +16,22 @@ export WORKING_DIR="${WORKING_DIR}"
 printf "Using WORKING_DIR: %s\n" ${WORKING_DIR}
 
 
+save_dotenv() {
+    if [[ "$#" -ne 1 ]]; then
+        estr="[error]"
+        # echo "Expected exactly one argument, specifying outputdir. Received $#"
+        printf "%s Expected one argument (outdir). Received: %s" "$(printRed ${estr})" "$#"
+    else
+        outdir="$1"
+        module list
+        dotenv_file="${outdir}/.env"
+        echo "Saving environment to ${dotenv_file}"
+        printenv | grep -v "LS_COLORS" > "${dotenv_file}"
+        export DOTENV_FILE="${dotenv_file}"
+    fi
+}
+
+
 function get_machine() {
     if [[ $(hostname) == x4* ]]; then
         machine="aurora"
@@ -100,14 +116,14 @@ function loadCondaEnv() {
 function setupLauncher() {
     # outdir=$1
     if [[ -n "${DIST_LAUNCH}" && ${LAUNCH_CMD:-"MPICH"} != "deepspeed" ]]; then
-        export LAUNCH_CMD="${DIST_LAUNCH} --genvall --cpu-bind depth -d 16 $(which python3) -Wignore ${EXEC}"
+        export LAUNCHER="${DIST_LAUNCH} --genvall --cpu-bind depth -d 16 $(which python3) -Wignore ${EXEC}"
     else
         # Assert `./hostfile_deepspeed` exists
         export hfds="${WORKING_DIR}/hostfile_deepspeed" && [ -f "${hfds}" ] || exit
-        export LAUNCH_CMD="deepspeed --hostfile $hfds --launcher MPICH ${EXEC}"
+        export LAUNCHER="deepspeed --hostfile $hfds --launcher MPICH ${EXEC}"
     fi
-    printf "%s" "$(printRed 'Launching with:')"
-    printf " %s" "$(printMagenta ${LAUNCH_CMD})"
+    printf "Launching with: %s\n" "$(printRed "${LAUNCH_CMD}")"
+    printf " %s" "$(printMagenta ${LAUNCHER})"
 }
 
 function setDSlauncher() {
@@ -219,8 +235,8 @@ function setParams() {
     export USE_ACTIVATION_CHECKPOINTING=${USE_ACTIVATION_CHECKPOINTING:-1}  # USE ACTIVATION CHECKPOINTING ?
     export GLOBAL_BATCH_MAX=$(( $WORLD_SIZE * $MICRO_BATCH * $GRAD_ACC_STEPS / $TP / $PP ))  # MAX GLOBAL BATCH SIZE
     export GLOBAL_BATCH="${GLOBAL_BATCH:-${GLOBAL_BATCH_MAX}}"  # WILL USE MAX IF NOT SET IN ENVIRONMENT
-    tm="${WORKING_DIR}/ALCF/tokenizer.model"            # fallback: Megatron-DeepSpeed/ALCF/tokenizer.model
-    export TOKENIZER_MODEL="${TOKENIZER_MODEL:-${tm}}"  # USE TOKENIZER_MODEL from env, else fallback from ^
+    # tm="${WORKING_DIR}/ALCF/tokenizer.model"            # fallback: Megatron-DeepSpeed/ALCF/tokenizer.model
+    # export TOKENIZER_MODEL="${TOKENIZER_MODEL:-${tm}}"  # USE TOKENIZER_MODEL from env, else fallback from ^
     export MODEL_TYPE="llama-seq${SEQ}-pp${PP}-tp${TP}-${NLAYERS}layers-${HEADS}heads-${HIDDEN}hidden"  # STRING FOR IDENTIFYING MODEL
     # +----[ADDITIONAL LLAMA SPECIFIC ARGUMENTS]------------------------------
     export LLAMA_ARGS="${LLAMA_ARGS} --no-query-key-layer-scaling --use-rotary-position-embeddings --untie-embeddings-and-output-weights --swiglu --normalization rmsnorm --disable-bias-linear"
@@ -498,6 +514,23 @@ setup_conda_polaris() {
     fi
 }
 
+##########################################################
+# Check that we can find the `.py` file we wish to launch
+##########################################################
+check_executable() {
+    fp=$1
+    if [[ -f "${fp}" ]]; then
+        export EXEC="${EXEC}"
+        # ----[1.5 Keep track of stem from file path]-------------------------
+        exec_stem=$(echo "${EXEC}" | tr "\/" "\t" | awk '{print $NF}' | sed "s/\.py//g")
+        export EXEC_STEM="${exec_stem}"
+    else
+        estr="Unable to locate executable ${fp}"
+        printf "[ALCF.helpers:check_executable] %s" "$(printRed ${estr})"
+    fi
+}
+
+
 
 function setEnv() {
     local virtual_env="${VIRTUAL_ENV-}"
@@ -578,17 +611,109 @@ function makeHostfiles() {
     fi
 }
 
+##################################################
+# Setup tokenizer as either Llama2 or GPT2 style
+##################################################
+setup_tokenizer_and_data() {
+    # if [[ ${tok} == Llama* || ${tok} == llama* || ${tok} == LLAMA* ]]; then
+    #     tm="${WORKING_DIR}/ALCF/tokenizer.model"            # fallback: Megatron-DeepSpeed/ALCF/tokenizer.model
+    #     export TOKENIZER_MODEL="${TOKENIZER_MODEL:-${tm}}"  # USE TOKENIZER_MODEL from env, else fallback from ^
+    #     export TOKENIZER_TYPE="Llama2"
+    #     setData
+    # elif [[ ${tok} == gpt* || ${tok} == GPT* ]]; then
+    #     export DATA_PARENT="${DATA_PARENT:-/gila/Aurora_deployment/foremans/anl_24_q2_release/Megatron-DeepSpeed/dataset}"
+    #     export VOCAB_FILE="${DATA_PARENT}/gpt2-vocab.json"
+    #     export MERGE_FILE="${DATA_PARENT}/gpt2-merges.txt"
+    #     export DATA_PATH="${DATA_PARENT}/BookCorpusDataset_text_document"
+    #     export TOKENIZER_FLAGS="--data-path $DATA_PATH--vocab-file $VOCAB_FILE --merge-file $MERGE_FILE"
+    #     # export TOKENIZER_TYPE="${TOKENIZER_TYPE:-GPT2}"
+    #     export TOKENIZER_TYPE="GPT2"
+    # else
+    #     echo "Unknown tokenizer ${tok} passed"
+    # fi
+    if [[ "$#" == 1 ]]; then
+        tok="$1"
+        dfl="${DATA_FILE_LIST:-}"
+        # echo "Setting up tokenizer with ${tok}"
+    # elif [[ "$#" -ne 2 ]]; then
+    elif [[ "$#" == 2 ]]; then
+        tok="$1"
+        dfl="$2"
+        # tok="${TOKENIZER_TYPE:-Llama2}"
+    else
+        echo "Incorrect number of arguments passed. Received: $#, expected 2"
+    fi
+    echo "Setting up tokenizer with ${tok}"
+    echo "Using data_file_list: ${dfl}"
+    if [[ ${tok} == gpt* || ${tok} == GPT* ]]; then
+        export TOKENIZER_TYPE="GPT2"
+        export TOKENIZER_FLAGS="--tokenizer-type GPT2BPETokenizer"
+        export DATA_PARENT="${DATA_PARENT:-/gila/Aurora_deployment/foremans/anl_24_q2_release/Megatron-DeepSpeed/dataset}"
+        export VOCAB_FILE="${DATA_PARENT}/gpt2-vocab.json"
+        export MERGE_FILE="${DATA_PARENT}/gpt2-merges.txt"
+        export DATA_PATH="${DATA_PARENT}/BookCorpusDataset_text_document"
+        # TOKENIZER_FLAGS="--data-path $DATA_PATH--vocab-file $VOCAB_FILE --merge-file ${MERGE_FILE}"
+        export DATA_FLAGS="--data-path ${DATA_PATH} --vocab-file ${VOCAB_FILE} --merge-file ${MERGE_FILE}"
+        # export TOKENIZER_TYPE="${TOKENIZER_TYPE:-GPT2}"
+    # else [[ ${tok} == Llama* || ${tok} == llama* || ${tok} == LLAMA* ]]; then
+    else
+        export DATA_FLAGS=""
+        export TOKENIZER_TYPE="Llama2"
+        tm="${WORKING_DIR}/ALCF/tokenizer.model"            # fallback: Megatron-DeepSpeed/ALCF/tokenizer.model
+        export TOKENIZER_MODEL="${TOKENIZER_MODEL:-${tm}}"  # USE TOKENIZER_MODEL from env, else fallback from ^
+        export TOKENIZER_FLAGS="${TOKENIZER_FLAGS} --tokenizer-type Llama2Tokenizer --tokenizer-model ${TOKENIZER_MODEL}"
+        if [[ "${TOKENIZER_TYPE}" != "GPT2" ]]; then
+            echo "Using tokenizer: ${TOKENIZER_TYPE}. Setting up data with ${DATA_FILE_LIST-}"
+            setData "${dfl}" || exit
+            # setData "${DATA_FILE_LIST-}" || exit  # 09. Specify `DATA_FILE_LIST` for dolma dataset
+        fi
+    # --tokenizer-model ${TOKENIZER_MODEL} \
+    fi
+    # export DATA_FLAGS="${DATA_FLAGS}"
+    # export TOKENIZER_TYPE="${TOKENIZER_TYPE}"
+    # export TOKENIZER_FLAGS="${TOKENIZER_FLAGS}"
+    printf "[setData] DATA_FLAGS: %s\n" "$(printGreen ${DATA_FLAGS})"
+    printf "[setData] TOKENIZER_FLAGS: %s\n" "$(printMagenta ${TOKENIZER_FLAGS})"
+    # if [[ "${TOKENIZER_TYPE}" != "GPT2" ]]; then
+    #     echo "Using tokenizer: ${TOKENIZER_TYPE}. Setting up data with ${DATA_FILE_LIST-}"
+    #     setData "${DATA_FILE_LIST-}" || exit  # 09. Specify `DATA_FILE_LIST` for dolma dataset
+    # fi
+}
+
+
 ###############################################
 # `setData`:
 #     Ensure `DATA_FILE_LIST` is set,
 #     fallback to default values if necessary.
 ###############################################
 function setData() {  # ------------------------[dfl: abbrv. for DATA_FILE_LIST]
+    # if [[ "$#" -ne 1 ]]; then
+    #     tok="${TOKENIZER_TYPE:-Llama2}"
+    # else
+    #     tok="$1"
+    # fi
+    # echo "Setting up tokenizer with ${tok}"
+    # setup_tokenizer "${tok}"
+    # tok="${TOKENIZER_TYPE:-}"
+    # if [[ ${tok} == gpt* || ${tok} == GPT* ]]; then
+    #     export TOKENIZER_TYPE="GPT2"
+    #     export DATA_PARENT="${DATA_PARENT:-/gila/Aurora_deployment/foremans/anl_24_q2_release/Megatron-DeepSpeed/dataset}"
+    #     export VOCAB_FILE="${DATA_PARENT}/gpt2-vocab.json"
+    #     export MERGE_FILE="${DATA_PARENT}/gpt2-merges.txt"
+    #     export DATA_PATH="${DATA_PARENT}/BookCorpusDataset_text_document"
+    #     # TOKENIZER_FLAGS="--data-path $DATA_PATH--vocab-file $VOCAB_FILE --merge-file ${MERGE_FILE}"
+    #     DATA_FLAGS="--data-path ${DATA_PATH} --vocab-file ${VOCAB_FILE} --merge-file ${MERGE_FILE}"
+    #     # export TOKENIZER_TYPE="${TOKENIZER_TYPE:-GPT2}"
+    # # else [[ ${tok} == Llama* || ${tok} == llama* || ${tok} == LLAMA* ]]; then
+    # else 
+    # export TOKENIZER_TYPE="Llama2"
+    # tm="${WORKING_DIR}/ALCF/tokenizer.model"            # fallback: Megatron-DeepSpeed/ALCF/tokenizer.model
+    # export TOKENIZER_MODEL="${TOKENIZER_MODEL:-${tm}}"  # USE TOKENIZER_MODEL from env, else fallback from ^
+    # TOKENIZER_FLAGS="${TOKENIZER_FLAGS} --tokenizer-type Llama2Tokenizer"
     # dfldir="${WORKING_DIR}/ALCF/data-lists"
     # =====[Set DATA_FILE_LIST_FALLBACK based on current machine]==============
     if [[ $(hostname) == x4* ]]; then    # -----------------------------[AURORA]
         dfl_fallback="/home/foremans/anl_24_release_q4/llm.devkit/Megatron-DeepSpeed/data_file_list_reweighted.txt"
-
     elif [[ $(hostname) == x1* ]]; then  # ----------------------------[SUNSPOT]
         # shellcheck: source ./data-lists/sunspot/books.txt
         dfl_fallback="${WORKING_DIR}/ALCF/data-lists/sunspot/books.txt"
@@ -623,6 +748,7 @@ function setData() {  # ------------------------[dfl: abbrv. for DATA_FILE_LIST]
     export WEIGHT_SUM="${ws}"
     export DFL_STEM="${dfl_stem}"
     export DATA_CACHE_PATH="${dcp}"
+    export DATA_FLAGS="${DATA_FLAGS} --data-file-list ${DATA_FILE_LIST} --data-cache-path ${DATA_CACHE_PATH}"
     echo "--------------------"
     echo "Updated environment:"
     printf "DATA_FILE_LIST: %s\n" "${DATA_FILE_LIST}"
@@ -631,6 +757,11 @@ function setData() {  # ------------------------[dfl: abbrv. for DATA_FILE_LIST]
     printf "DFL_STEM: %s\n" "${DFL_STEM}"
     printf "DATA_CACHE_PATH: %s\n" "${DATA_CACHE_PATH}"
     echo "--------------------"
+    # fi
+    # export DATA_FLAGS="${DATA_FLAGS}"
+    # export TOKENIZER_FLAGS="${TOKENIZER_FLAGS}"
+    # printf "[setData] DATA_FLAGS: %s\n" "$(printGreen ${DATA_FLAGS})"
+    # printf "[setData] TOKENIZER_FLAGS: %s\n" "$(printMagenta ${TOKENIZER_FLAGS})"
 }
 
 function generateDSconfig() {
