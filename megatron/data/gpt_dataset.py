@@ -70,7 +70,7 @@ def build_train_valid_test_datasets(data_prefix, data_impl, splits_string,
                 self.build = False
             def Build(self):
                 self.dataset = _build_train_valid_test_datasets_single(self.prefix, self.data_impl, self.splits_string,
-                    self.num_samples, self.seq_length, self.seed, self.skip_warmup, self.return_doc_ids, name, 
+                    self.num_samples, self.seq_length, self.seed, self.skip_warmup, self.name, self.return_doc_ids, 
                     data_cache_path=self.data_cache_path)
                 self.build = True
                 return self.dataset
@@ -204,7 +204,7 @@ def _build_train_valid_test_datasets_single(data_prefix, data_impl, splits_strin
     """Build train, valid, and test datasets."""
 
     # Each rank print out information
-    print_flush(f" >> building dataset for {dataset_prefix}")
+    print_flush(f" >> building dataset for {data_prefix}")
     # Indexed dataset.
     indexed_dataset = get_indexed_dataset_(data_prefix,
                                            data_impl,
