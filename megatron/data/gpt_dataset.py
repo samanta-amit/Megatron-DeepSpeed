@@ -198,7 +198,7 @@ def _build_train_valid_test_datasets(data_prefix, data_impl, splits_string,
 
 def _build_train_valid_test_datasets_single(data_prefix, data_impl, splits_string,
                             train_valid_test_num_samples,
-                            seq_length, seed, skip_warmup, name
+                            seq_length, seed, skip_warmup, name, 
                             return_doc_ids=False, *,
                             data_cache_path=None):
     """Build train, valid, and test datasets."""
