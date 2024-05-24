@@ -23,6 +23,7 @@ save_dotenv() {
         printf "%s Expected one argument (outdir). Received: %s" "$(printRed ${estr})" "$#"
     else
         outdir="$1"
+        mkdir -p "${outdir}"
         module list
         dotenv_file="${outdir}/.env"
         echo "Saving environment to ${dotenv_file}"
@@ -32,7 +33,26 @@ save_dotenv() {
 }
 
 
-function get_machine() {
+where_am_i() {
+    if [[ $(hostname) == x4* ]]; then
+        machine="aurora"
+    elif [[ $(hostname) == x1* ]]; then
+        machine="sunspot"
+    elif [[ $(hostname) == x3* ]]; then
+        if [[ "${PBS_O_HOST}" == sirius* ]]; then
+            machine="sirius"
+        else
+            machine="polaris"
+        fi
+    elif [[ $(hostname) == nid* ]]; then
+        machine="perlmutter"
+    else
+        machine=$(hostname)
+    fi
+    echo "${machine}"
+}
+
+get_machine() {
     if [[ $(hostname) == x4* ]]; then
         machine="aurora"
     elif [[ $(hostname) == x1* ]]; then
@@ -53,7 +73,7 @@ function get_machine() {
 }
 
 
-function check_and_kill_if_running() {
+check_and_kill_if_running() {
     # kill $(ps aux | grep -E "$USER.+(mpi|main.py)" | grep -v grep | awk '{print $2}')
     RUNNING_PIDS=$(lsof -i:29500 -Fp | head -n 1 | sed 's/^p//')
     if [[ -n "${RUNNING_PIDS}" ]];
@@ -64,7 +84,7 @@ function check_and_kill_if_running() {
 }
 
 
-function setupSrun() {
+setupSrun() {
     if [[ $(hostname) == login* || $(hostname) == nid* ]]; then
         export NHOSTS="${SLURM_NNODES:-1}"
         export NGPU_PER_HOST="${SLURM_GPUS_ON_NODE:-$(nvidia-smi -L | wc -l)}"
@@ -76,7 +96,7 @@ function setupSrun() {
 }
 
 
-function printJobInfo() {
+printJobInfo() {
     echo "++++++++++++++++++++++++++++++++++++++++++++++++++"
     echo "- MPICH_DIR=${MPICH_DIR:-${MPI_ROOT}}"
     echo "- Using $(which python3)"
@@ -87,7 +107,7 @@ function printJobInfo() {
     echo "++++++++++++++++++++++++++++++++++++++++++++++++++"
 }
 
-function setupVenv() {
+setupVenv() {
     VENV_DIR="$1"
     if [[ -d "${VENV_DIR}" ]]; then
         echo "Found venv at: ${VENV_DIR}"
@@ -97,7 +117,7 @@ function setupVenv() {
     fi
 }
 
-function loadCondaEnv() {
+loadCondaEnv() {
     if [[ "${CONDA_EXE}" ]]; then
         echo "Already inside ${CONDA_EXE}, exiting!"
     else
@@ -113,7 +133,7 @@ function loadCondaEnv() {
 }
 
 
-function setupLauncher() {
+setupLauncher() {
     # outdir=$1
     if [[ -n "${DIST_LAUNCH}" && ${LAUNCH_CMD:-"MPICH"} != "deepspeed" ]]; then
         export LAUNCHER="${DIST_LAUNCH} --genvall --cpu-bind depth -d 16 $(which python3) -Wignore ${EXEC}"
@@ -126,7 +146,7 @@ function setupLauncher() {
     printf " %s" "$(printMagenta ${LAUNCHER})"
 }
 
-function setDSlauncher() {
+setDSlauncher() {
     # launcher setting
     outdir=$1
     export hfds="$outdir/hostfile_deepspeed"
@@ -141,7 +161,7 @@ function setDSlauncher() {
     fi
 }
 
-function set_lr_args() {
+set_lr_args() {
     LR_ARGS="--lr ${LR} --lr-decay-style cosine"
     if [[ -n "${LR_DECAY_ITERS:-}" ]]; then
         LR_ARGS="${LR_ARGS} --lr-decay-iters ${LR_DECAY_ITERS}"
@@ -153,7 +173,22 @@ function set_lr_args() {
     export LR_ARGS="${LR_ARGS}"
 }
 
-function setParams() {
+
+get_batch_size_on_polaris() {
+    if [[ $(hostname) == x3* ]]; then
+        local nhosts=$(wc -l < "${PBS_NODEFILE}")
+        if [[ "${nhosts}" == 1  || "${nhosts}" == 2 ]]; then
+            mbs=1
+        elif [[ "${nhosts}" -ge 3 ]]; then
+            mbs=2
+        elif [[ "${nhosts}" -ge 8 ]]; then
+            mbs=4
+        fi
+    fi
+    echo "${mbs}"
+}
+
+setParams() {
     LLAMA_ARGS=""
     # +----[Parallelism Settings] -------------------------------------------+
     # +------[Aurora]--------||-------[SunSpot]-------------+
@@ -182,7 +217,8 @@ function setParams() {
         export DTYPE=${DTYPE:-fp16}                     # DTYPE: FP16
         export GRAD_ACC_STEPS=${GRAD_ACC_STEPS:-8}     # GRADIENT_ACC_STEPS
         # NOTE: MICRO_BATCH is exported below
-        MICRO_BATCH=${MICRO_BATCH:-2}    # MICRO_BATCH = 8
+        # MICRO_BATCH=${MICRO_BATCH:-2}    # MICRO_BATCH = 8
+        export MICRO_BATCH="${MICRO_BATCH:-$(get_batch_size_on_polaris)}"
         if [[ -n "${NO_FLASH_ATTN-}" ]]; then
             echo "Not using flash-attn!!"
         else
@@ -257,7 +293,7 @@ function setParams() {
 }
 
 
-function setArgs() {
+setArgs() {
     # ---- Set DeepSpeed arguments --------------------------------
     ds_args=" "
     ds_args=" --deepspeed ${ds_args}"
@@ -288,7 +324,7 @@ function setArgs() {
 }
 
 
-function make_ds_hostfile() {
+make_ds_hostfile() {
     export GPUS_PER_NODE="${GPUS_PER_NODE:-${NGPU_PER_HOST:-${SLURM_GPUS_ON_NODE:-$(nvidia-smi -L | wc -l)}}}"
     # ---- Make MPICH hostfile ----------------
     hf="${HOSTFILE:-${PBS_NODEFILE}}"
@@ -304,33 +340,45 @@ function make_ds_hostfile() {
 # | 1. Git clone ezpz (if not found)    |
 # | 2. Install ezpz (if not installed)  |
 # +---------------------------------------+
-function ezpz() {
+ezpz() {
     if [[ ! -d "${WORKING_DIR}/deps/ezpz" ]]; then
         mkdir -p "${WORKING_DIR}/deps"
         git clone https://github.com/saforem2/ezpz "${WORKING_DIR}/deps/ezpz"
     else
         echo "Found ezpz!"
     fi
-    echo "Done with clone. Now, checking if ezpz is installed..."
-    # if python3 -c 'import ezpz; print(ezpz.__file__)' 2> '/dev/null'; then
-    if python3 -c "import sys; any(['ezpz' in s for s in sys.path])" 2> '/dev/null'; then
-        echo "Has ezpz installed. Nothing to do."
+    ezloc=$(python3 -m pip list | grep ezpz | awk '{print $NF}')
+    if [[ -n "${ezloc}" ]]; then
+        echo "ezpz detected. Sourcing ${ezloc}/bin/savejobenv"
+        source "${ezloc}/src/ezpz/bin/savejobenv" > /dev/null 2>&1
+        source "${ezloc}/src/ezpz/bin/getjobenv" || exit
+        make_ds_hostfile || exit
     else
-        echo "Does not have ezpz installed. Installing..."
-        echo "Using $(which python3) to install ezpz:"
-        python3 -m pip install -e "${WORKING_DIR}/deps/ezpz"  #  > ezpz-install.log 2>&1
+        echo "No ezpz detected. Attempting to install with $(which python3)"
+        python3 -m pip install -e "${WORKING_DIR}/deps/ezpz" --require-virtualenv
     fi
     echo "Done with ezpz."
-    source ${WORKING_DIR}/deps/ezpz/src/ezpz/bin/savejobenv  >  /dev/null 2>&1 #> /tmp/savejobenv.log 2>&1 || exit
-    source ${WORKING_DIR}/deps/ezpz/src/ezpz/bin/getjobenv || exit
-    make_ds_hostfile || exit
+    # echo "Done with clone. Now, checking if ezpz is installed..."
+    # if python3 -c 'import ezpz; print(ezpz.__file__)' 2> '/dev/null'; then
+    # if [[ $(python3 -c "import sys; any(['ezpz' in s for s in sys.path])") 2> '/dev/null' ]]; then
+    #     echo "Has ezpz installed. Nothing to do."
+    # else
+    #     echo "Does not have ezpz installed. Installing..."
+    #     echo "Using $(which python3) to install ezpz:"
+    #     python3 -m pip install -e "${WORKING_DIR}/deps/ezpz" --verbose --require-virtualenv #  > ezpz-install.log 2>&1
+    # fi
+    # python3 -m pip install -e "${WORKING_DIR}/deps/ezpz" --verbose --require-virtualenv
+    # # echo "Done with ezpz."
+    # source ${WORKING_DIR}/deps/ezpz/src/ezpz/bin/savejobenv  >  /dev/null 2>&1 #> /tmp/savejobenv.log 2>&1 || exit
+    # source ${WORKING_DIR}/deps/ezpz/src/ezpz/bin/getjobenv || exit
+    # make_ds_hostfile || exit
 }
 
 # +------------------------------------------------------------------------+
 # | Save important environment variables to .deepspeed_env, which will be  |
 # | forwarded to ALL ranks with DeepSpeed                                  |
 # +------------------------------------------------------------------------+
-function saveDSenv() {
+saveDSenv() {
     echo "Saving {PATH, LD_LIBRARY_PATH, htt{p,ps}_proxy, CFLAGS, PYTHONUSERBASE} to .deepspeed_env"
     {
         echo "PATH=${PATH}" ;
@@ -342,7 +390,7 @@ function saveDSenv() {
     } > .deepspeed_env
 }
 
-function setOutput() {
+setOutput() {
     # ---- Specify output location --------------------------------
     OUTPUT_PREFIX="ws${WORLD_SIZE}_ds_stage${ZERO_STAGE}_nl${NLAYERS}"
     OUTPUT_PREFIX="${OUTPUT_PREFIX}_hs${HIDDEN}_mb${MICRO_BATCH}"
@@ -367,7 +415,7 @@ function setOutput() {
     printf "Checkpoints will be saved to: %s\n" $(printYellow "${CKPT_DIR}")
 }
 
-function buildDSconfig() {
+buildDSconfig() {
     # ---- Build DeepSpeed Config ---------------------------------
     export CPU_OPTIMIZER="${CPU_OPTIMIZER:-0}"
     export DS_CONFIG="${WORKING_DIR}/ds-configs/ds_stage${ZERO_STAGE}_mb${MICRO_BATCH}_gb${GLOBAL_BATCH}_pp${PP}_${DTYPE}.json"
@@ -381,13 +429,13 @@ function buildDSconfig() {
 }
 
 
-function sumWeights() {
+sumWeights() {
     local file_list=$1
     weights=$(cat "${file_list}" | awk '{print $1}' | tr '\n' '\ ,\ ' | sed 's/^/[/g' | sed 's/$/]/g' | tr '\ ' "\,\ ")
     python3 -c "import numpy as np; print(np.sum(${weights}))"
 }
 
-function sumFiles() {
+sumFiles() {
     local rd=$1
     for f in $("${rd}/*.txt"); do
         ws=$(sumWeights "${rd}/${f}")
@@ -397,45 +445,22 @@ function sumFiles() {
 
 ########################################################
 # Setup / activate conda environment,
+# NOTE:
+#
+# Jerome's `frameworks_2024_5_v2` seems broken ??
+# - seems to be missing `python3 -c 'from mpi4py import MPI'` ???
+# - consequently, we leave the setup below commented out (for the time
+#   being):
+#   if [[ -z "${CONDA_PREFIX-}" ]]; then
+#       module use -a /home/jmitche1/anl_release/2024/q2 ; module load frameworks_2024_5_v2
+#   else
+#       echo "Caught CONDA_PREFIX=${CONDA_PREFIX}"
+#   fi
 ########################################################
 setup_conda_sunspot() {
     ###### check if CONDA_PREFIX non-empty ################
     if [[ -z "${CONDA_PREFIX:-}" ]]; then
-        # eval "$(~/miniconda3/bin/conda shell.zsh hook)"
-        # conda activate anl_24_q2_release
         module use /soft/preview-modulefiles/24.086.0 ; module load frameworks/2024.04.15.002.lua
-    fi
-    # XXX: -------------------------------------------------------------------
-    # Jerome's `frameworks_2024_5_v2` seems broken ??
-    # - seems to be missing `python3 -c 'from mpi4py import MPI'` ???
-    # - consequently, we leave the setup below commented out (for the time
-    #   being):
-    #   if [[ -z "${CONDA_PREFIX-}" ]]; then
-    #       module use -a /home/jmitche1/anl_release/2024/q2 ; module load frameworks_2024_5_v2
-    #   else
-    #       echo "Caught CONDA_PREFIX=${CONDA_PREFIX}"
-    #   fi
-    # ------------------------------------------------------------------------
-
-    ###### check if VIRTUAL_ENV non-empty ####################################
-    # venvs/anl_24_q2_release/bin/activate
-    # if [[ -d "${DEFAULT_VENV_PATH}" ]]; then
-    if [[ -z "${VIRTUAL_ENV:-}" ]]; then
-        if [[ -n "${CONDA_PREFIX}" ]]; then
-            VENV_DIR="${WORKING_DIR}/venvs/$(echo ${CONDA_PREFIX} | tr '\/' '\t' | awk '{print $NF}')"
-        else
-            VENV_DIR="${WORKING_DIR}/venvs/anl_24_q2_release"
-        fi
-        echo "Caught virtual env at ${VENV_DIR}!"
-        # source "${VENV_DIR}/bin/activate" || 
-        if [[ ! -f "${VENV_DIR}/bin/activate" ]]; then
-            printf "[!! %s]: Unable to locate %s\n" "$(printRed "ERROR")" "$(printMagenta "${VENV_DIR}/bin/activate")"
-            # echo "[!ERROR]: Unable to locate ${VENV_DIR}/bin/activate !!"
-        else
-            source "${VENV_DIR}/bin/activate"
-        fi
-    else
-        echo "Found existing python at: $(which python3)"
     fi
 }
 
@@ -450,6 +475,21 @@ setup_conda_sirius() {
         micromamba activate 2024-04-23
     else
         echo "Found existing python at: $(which python3)"
+    fi
+}
+
+########################
+# Setup conda on Polaris
+########################
+setup_conda_polaris() {
+    # unset MPICH_GPU_SUPPORT_ENABLED
+    ###### check if CONDA_PREFIX non-empty ################
+    if [[ -z "${CONDA_PREFIX-}" ]]; then
+        # if so, load the default conda/2024-04-29
+        # module and activate base environment
+        module use /soft/modulefiles ; module load conda ; conda activate base
+    else
+        echo "Caught CONDA_PREFIX=${CONDA_PREFIX}"
     fi
 }
 
@@ -488,32 +528,6 @@ setup_venv_from_conda() {
 
 }
 
-########################
-# Setup conda on Polaris
-########################
-setup_conda_polaris() {
-    # unset MPICH_GPU_SUPPORT_ENABLED
-    ###### check if CONDA_PREFIX non-empty ################
-    if [[ -z "${CONDA_PREFIX-}" ]]; then
-        # if so, load the default conda/2024-04-29
-        # module and activate base environment
-        module use /soft/modulefiles
-        module load conda/2024-04-29 ; conda activate base
-    else
-        echo "Caught CONDA_PREFIX=${CONDA_PREFIX}"
-    fi
-    ###### check if VIRTUAL_ENV non-empty #################
-    if [[ -z "${VIRTUAL_ENV:-}" ]]; then
-        DEFAULT_VENV_PATH=${WORKING_DIR}/venvs/polaris/2024-04-29
-        if [[ -d "${DEFAULT_VENV_PATH}" ]]; then
-            echo "Caught virtual env at ${DEFAULT_VENV_PATH}!"
-            source "${WORKING_DIR}/venvs/polaris/2024-04-29/bin/activate"
-        fi
-    else
-        echo "Found existing python at: $(which python3)"
-    fi
-}
-
 ##########################################################
 # Check that we can find the `.py` file we wish to launch
 ##########################################################
@@ -532,12 +546,14 @@ check_executable() {
 
 
 
-function setEnv() {
-    local virtual_env="${VIRTUAL_ENV-}"
-    local conda_prefix="${CONDA_PREFIX-}"
+setEnv() {
+    local virtual_env="${VIRTUAL_ENV:-}"
+    local conda_prefix="${CONDA_PREFIX:-}"
     if [[ -n "${conda_prefix}" && -z "${virtual_env}" ]]; then
         echo "No virtual environment found."
         echo "Using conda from: ${conda_prefix}"
+        echo "Setting up venv from ${CONDA_PROMPT_MODIFIER:-}"
+        setup_venv_from_conda
     elif [[ -n "${virtual_env}" && -z "${conda_prefix}" ]]; then
         echo "No conda found."
         echo "Using virtual_env from: ${virtual_env}"
@@ -589,6 +605,9 @@ function setEnv() {
         echo "Unable to setup python environment. Exiting"
         exit 1
     fi
+    if [[ -z "${virtual_env}" ]]; then
+        setup_venv_from_conda
+    fi
     #####################################################################
     pystr="Using: $(which python3)"
     printf "[python] %s" "$(printMagenta ${pystr})"
@@ -603,7 +622,7 @@ function setEnv() {
 #         - If so, use this.
 #         - Otherwise, make default HOSTFILEs from "${PBS_NODEFILE}"
 ######################################################################
-function makeHostfiles() {
+makeHostfiles() {
     if [[ -n "${HOSTFILE}" ]]; then
         printf "!! USING CUSTOM HOSTFILE FROM: %s"  "${HOSTFILE}"
     else
@@ -615,31 +634,12 @@ function makeHostfiles() {
 # Setup tokenizer as either Llama2 or GPT2 style
 ##################################################
 setup_tokenizer_and_data() {
-    # if [[ ${tok} == Llama* || ${tok} == llama* || ${tok} == LLAMA* ]]; then
-    #     tm="${WORKING_DIR}/ALCF/tokenizer.model"            # fallback: Megatron-DeepSpeed/ALCF/tokenizer.model
-    #     export TOKENIZER_MODEL="${TOKENIZER_MODEL:-${tm}}"  # USE TOKENIZER_MODEL from env, else fallback from ^
-    #     export TOKENIZER_TYPE="Llama2"
-    #     setData
-    # elif [[ ${tok} == gpt* || ${tok} == GPT* ]]; then
-    #     export DATA_PARENT="${DATA_PARENT:-/gila/Aurora_deployment/foremans/anl_24_q2_release/Megatron-DeepSpeed/dataset}"
-    #     export VOCAB_FILE="${DATA_PARENT}/gpt2-vocab.json"
-    #     export MERGE_FILE="${DATA_PARENT}/gpt2-merges.txt"
-    #     export DATA_PATH="${DATA_PARENT}/BookCorpusDataset_text_document"
-    #     export TOKENIZER_FLAGS="--data-path $DATA_PATH--vocab-file $VOCAB_FILE --merge-file $MERGE_FILE"
-    #     # export TOKENIZER_TYPE="${TOKENIZER_TYPE:-GPT2}"
-    #     export TOKENIZER_TYPE="GPT2"
-    # else
-    #     echo "Unknown tokenizer ${tok} passed"
-    # fi
     if [[ "$#" == 1 ]]; then
         tok="$1"
         dfl="${DATA_FILE_LIST:-}"
-        # echo "Setting up tokenizer with ${tok}"
-    # elif [[ "$#" -ne 2 ]]; then
     elif [[ "$#" == 2 ]]; then
         tok="$1"
         dfl="$2"
-        # tok="${TOKENIZER_TYPE:-Llama2}"
     else
         echo "Incorrect number of arguments passed. Received: $#, expected 2"
     fi
@@ -648,14 +648,18 @@ setup_tokenizer_and_data() {
     if [[ ${tok} == gpt* || ${tok} == GPT* ]]; then
         export TOKENIZER_TYPE="GPT2"
         export TOKENIZER_FLAGS="--tokenizer-type GPT2BPETokenizer"
-        export DATA_PARENT="${DATA_PARENT:-/gila/Aurora_deployment/foremans/anl_24_q2_release/Megatron-DeepSpeed/dataset}"
+        local machine=$(where_am_i)
+        if [[ ${machine} == "polaris" ]]; then
+            export DATA_PARENT="${DATA_PARENT:-/eagle/argonne_tpc/foremans/projects/argonne-lcf/Megatron-DeepSpeed/dataset}"
+        elif [[ ${machine} == "sunspot" ]]; then
+            export DATA_PARENT="${DATA_PARENT:-/gila/Aurora_deployment/foremans/anl_24_q2_release/Megatron-DeepSpeed/dataset}"
+        else
+            export DATA_PARENT="${DATA_PARENT:-${WORKING_DIR}/dataset}"
+        fi
         export VOCAB_FILE="${DATA_PARENT}/gpt2-vocab.json"
         export MERGE_FILE="${DATA_PARENT}/gpt2-merges.txt"
         export DATA_PATH="${DATA_PARENT}/BookCorpusDataset_text_document"
-        # TOKENIZER_FLAGS="--data-path $DATA_PATH--vocab-file $VOCAB_FILE --merge-file ${MERGE_FILE}"
         export DATA_FLAGS="--data-path ${DATA_PATH} --vocab-file ${VOCAB_FILE} --merge-file ${MERGE_FILE}"
-        # export TOKENIZER_TYPE="${TOKENIZER_TYPE:-GPT2}"
-    # else [[ ${tok} == Llama* || ${tok} == llama* || ${tok} == LLAMA* ]]; then
     else
         export DATA_FLAGS=""
         export TOKENIZER_TYPE="Llama2"
@@ -665,19 +669,10 @@ setup_tokenizer_and_data() {
         if [[ "${TOKENIZER_TYPE}" != "GPT2" ]]; then
             echo "Using tokenizer: ${TOKENIZER_TYPE}. Setting up data with ${DATA_FILE_LIST-}"
             setData "${dfl}" || exit
-            # setData "${DATA_FILE_LIST-}" || exit  # 09. Specify `DATA_FILE_LIST` for dolma dataset
         fi
-    # --tokenizer-model ${TOKENIZER_MODEL} \
     fi
-    # export DATA_FLAGS="${DATA_FLAGS}"
-    # export TOKENIZER_TYPE="${TOKENIZER_TYPE}"
-    # export TOKENIZER_FLAGS="${TOKENIZER_FLAGS}"
     printf "[setData] DATA_FLAGS: %s\n" "$(printGreen ${DATA_FLAGS})"
     printf "[setData] TOKENIZER_FLAGS: %s\n" "$(printMagenta ${TOKENIZER_FLAGS})"
-    # if [[ "${TOKENIZER_TYPE}" != "GPT2" ]]; then
-    #     echo "Using tokenizer: ${TOKENIZER_TYPE}. Setting up data with ${DATA_FILE_LIST-}"
-    #     setData "${DATA_FILE_LIST-}" || exit  # 09. Specify `DATA_FILE_LIST` for dolma dataset
-    # fi
 }
 
 
@@ -686,7 +681,7 @@ setup_tokenizer_and_data() {
 #     Ensure `DATA_FILE_LIST` is set,
 #     fallback to default values if necessary.
 ###############################################
-function setData() {  # ------------------------[dfl: abbrv. for DATA_FILE_LIST]
+setData() {  # ------------------------[dfl: abbrv. for DATA_FILE_LIST]
     # if [[ "$#" -ne 1 ]]; then
     #     tok="${TOKENIZER_TYPE:-Llama2}"
     # else
@@ -764,7 +759,7 @@ function setData() {  # ------------------------[dfl: abbrv. for DATA_FILE_LIST]
     # printf "[setData] TOKENIZER_FLAGS: %s\n" "$(printMagenta ${TOKENIZER_FLAGS})"
 }
 
-function generateDSconfig() {
+generateDSconfig() {
     for v in "$GLOBAL_BATCH" "$MICRO_BATCH" "$GRAD_ACC_STEPS" "$ZERO_STAGE" \
              "$PP" "$DTYPE"
     do
@@ -926,35 +921,35 @@ $flops_profiler
 EOT
 }
 
-function printBlack() {
+printBlack() {
     printf "\e[1;30m%s\e[0m\n" "$@"
 }
 
-function printRed() {
+printRed() {
     printf "\e[1;31m%s\e[0m\n" "$@"
 }
 
-function printGreen() {
+printGreen() {
     printf "\e[1;32m%s\e[0m\n" "$@"
 }
 
-function printYellow() {
+printYellow() {
     printf "\e[1;33m%s\e[0m\n" "$@"
 }
 
-function printBlue() {
+printBlue() {
     printf "\e[1;34m%s\e[0m\n" "$@"
 }
 
-function printMagenta() {
+printMagenta() {
     printf "\e[1;35m%s\e[0m\n" "$@"
 }
 
-function printCyan() {
+printCyan() {
     printf "\e[1;36m%s\e[0m\n" "$@"
 }
 
-function printWhite() {
+printWhite() {
     printf "\e[1;37m%s\e[0m\n" "$@"
 }
 
