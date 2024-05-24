@@ -7,13 +7,12 @@ cd "${PBS_O_WORKDIR}" || exit
 HOSTNAME=$(hostname)
 if [[ "${HOSTNAME}" == x3* ]]; then
     MACHINE="polaris"
-    # XXX: ¯\_(ツ)_/¯
+    # XXX:
     # - On Polaris, we see that:
     #       - on 1 or 2 nodes, only MICRO_BATCH=1 will fit in memory
     #       - on 8 nodes, MICRO_BATCH=2 will fit in memory
     #       - on 48 nodes, MICRO_BATCH=4 will fit in memory
-    #
-    export nhosts=$(wc -l < "${PBS_NODEFILE}")
+    nhosts=$(wc -l < "${PBS_NODEFILE}")
     if [[ "${nhosts}" == 1 ]]; then
         export MBS=1
     elif [[ "${nhosts}" == 2 ]]; then
@@ -29,6 +28,7 @@ elif [[ "${HOSTNAME}" == x4* ]]; then
     MACHINE="aurora"
 fi
 
+export nhosts
 OUTDIR="${PBS_O_WORKDIR}/pbslogs"
 mkdir -p "${OUTDIR}"
 OUTFILE="${OUTDIR}/${PBS_JOBID}-${NOW}.log"
