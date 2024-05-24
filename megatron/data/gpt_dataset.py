@@ -11,12 +11,10 @@ import torch
 from deepspeed.accelerator import get_accelerator
 from megatron import print_rank_0, is_rank_0, get_args, print_flush
 from megatron.core import mpu
-from megatron.data.blendable_dataset import BlendableDataset
+from megatron.data.blendable_dataset import BlendableDataset, DistributedBlendableDataset
 from megatron.data.dataset_utils import get_datasets_weights_and_num_samples
 from megatron.data.dataset_utils import get_train_valid_test_split_
 from megatron.data.indexed_dataset import make_dataset as make_indexed_dataset
-from  mpi4py import MPI
-comm = MPI.COMM_WORLD
 
 def build_train_valid_test_datasets(data_prefix, data_impl, splits_string,
                                     train_valid_test_num_samples,
@@ -49,43 +47,74 @@ def build_train_valid_test_datasets(data_prefix, data_impl, splits_string,
             zip(*datasets_train_valid_test_num_samples)
         )
 
-        # Build individual datasets.
+        class DatasetBuilder:
+            ''' 
+            This is for building individual dataset from each dataset file
+            '''
+            def __init__(self, prefix, data_impl, splits_string,
+                num_samples, seq_length, seed, skip_warmup,
+                return_doc_ids,
+                data_cache_path=data_cache_path, name='train'):
+                self.prefix = prefix
+                self.data_impl = data_impl
+                self.splits_string = splits_string
+                self.num_samples = num_samples
+                self.seq_length = seq_length
+                self.seed = seed
+                self.skip_warmup = skip_warmup
+                self.return_doc_ids = return_doc_ids
+                self.data_cache_path = data_cache_path
+                self.dataset = None
+                self.name = name
+                self.desc = prefix + f"{num_samples}" + f"{seq_length}" + f"{seed}"
+                self.build = False
+            def Build(self):
+                self.dataset = _build_train_valid_test_datasets_single(self.prefix, self.data_impl, self.splits_string,
+                    self.num_samples, self.seq_length, self.seed, self.skip_warmup, self.return_doc_ids, name, 
+                    data_cache_path=self.data_cache_path)
+                self.build = True
+                return self.dataset
+
+        # Predetermine whether need to build the specific dataset or not. 
+
+        print_rank_0(" >>> Started building datasets in distributed way ... ")
+
+        a, b, c = [int(d) for d in splits_string.split(",")]
         train_datasets = []
         valid_datasets = []
         test_datasets = []
-        print_rank_0(" >>> Building datasets in distributed way ****")
-        t0 = time.time()
-        for i in range(torch.distributed.get_rank(), len(prefixes), torch.distributed.get_world_size()):
-            train_ds, valid_ds, test_ds = _build_train_valid_test_datasets(
-                prefixes[i], data_impl, splits_string,
+        # Build individual datasets.
+        if a > 0:
+            train_datasets = [DatasetBuilder(prefixes[i], data_impl, splits_string,
                 datasets_train_valid_test_num_samples[i],
                 seq_length, seed, skip_warmup,
-                return_doc_ids,
-                data_cache_path=data_cache_path)
-            if train_ds:
-                train_datasets.append(train_ds)
-            if valid_ds:
-                valid_datasets.append(valid_ds)
-            if test_ds:
-                test_datasets.append(test_ds)
-        def flatten_list(xss):
-            return [x for xs in xss for x in xs]
-        train_datasets = flatten_list(comm.allgather(train_datasets))
-        valid_datasets = flatten_list(comm.allgather(valid_datasets))
-        test_datasets = flatten_list(comm.allgather(test_datasets))
-        print_rank_0(f" >>> Done with building datasets in {time.time() - t0} seconds")
+                return_doc_ids,data_cache_path, 'train') for i in  range(len(weights))]
+            for i in range(torch.distributed.get_rank(), len(weights), torch.distributed.get_world_size()):
+                train_datasets[i].Build()
+        if b > 0:
+            valid_datasets = [DatasetBuilder(prefixes[i], data_impl, splits_string,
+                datasets_train_valid_test_num_samples[i],
+                seq_length, seed, skip_warmup,
+                return_doc_ids,data_cache_path, 'valid') for i in  range(len(weights))] 
+        if c > 0:            
+            test_datasets = [DatasetBuilder(prefixes[i], data_impl, splits_string,
+                datasets_train_valid_test_num_samples[i],
+                seq_length, seed, skip_warmup,
+                return_doc_ids,data_cache_path, 'test') for i in  range(len(weights))]              
+        print_rank_0(" >>> Finished building datasets in distributed way ... ")
+
         # Blend.
         blending_train_dataset = None
         if train_datasets:
-            blending_train_dataset = BlendableDataset(train_datasets, weights, train_num_samples,
+            blending_train_dataset = DistributedBlendableDataset(train_datasets, weights, train_num_samples,
                                                       data_cache_path=data_cache_path)
         blending_valid_dataset = None
         if valid_datasets:
-            blending_valid_dataset = BlendableDataset(valid_datasets, weights, valid_num_samples,
+            blending_valid_dataset = DistributedBlendableDataset(valid_datasets, weights, valid_num_samples,
                                                       data_cache_path=data_cache_path)
         blending_test_dataset = None
         if test_datasets:
-            blending_test_dataset = BlendableDataset(test_datasets, weights, test_num_samples,
+            blending_test_dataset = DistributedcBlendableDataset(test_datasets, weights, test_num_samples,
                                                      data_cache_path=data_cache_path)
 
         return (blending_train_dataset, blending_valid_dataset,
@@ -137,11 +166,11 @@ def _build_train_valid_test_datasets(data_prefix, data_impl, splits_string,
     splits = get_train_valid_test_split_(splits_string, total_num_of_documents)
 
     # Print stats about the splits.
-    print_flush(' > dataset split:')
+    print_rank_0(' > dataset split:')
 
     def print_split_stats(name, index):
-        print_flush('    {}:'.format(name))
-        print_flush('     document indices in [{}, {}) total of {} '
+        print_rank_0('    {}:'.format(name))
+        print_rank_0('     document indices in [{}, {}) total of {} '
                      'documents'.format(splits[index], splits[index + 1],
                                         splits[index + 1] - splits[index]))
     print_split_stats('train', 0)
@@ -166,6 +195,54 @@ def _build_train_valid_test_datasets(data_prefix, data_impl, splits_string,
     test_dataset = build_dataset(2, 'test')
 
     return (train_dataset, valid_dataset, test_dataset)
+
+def _build_train_valid_test_datasets_single(data_prefix, data_impl, splits_string,
+                            train_valid_test_num_samples,
+                            seq_length, seed, skip_warmup, name
+                            return_doc_ids=False, *,
+                            data_cache_path=None):
+    """Build train, valid, and test datasets."""
+
+    # Each rank print out information
+    print_flush(f" >> building dataset for {dataset_prefix}")
+    # Indexed dataset.
+    indexed_dataset = get_indexed_dataset_(data_prefix,
+                                           data_impl,
+                                           skip_warmup)
+
+    total_num_of_documents = indexed_dataset.sizes.shape[0]
+    splits = get_train_valid_test_split_(splits_string, total_num_of_documents)
+
+    # Print stats about the splits.
+    print_rank_0(' > dataset split:')
+
+    def print_split_stats(name, index):
+        print_rank_0('    {}:'.format(name))
+        print_rank_0('     document indices in [{}, {}) total of {} '
+                     'documents'.format(splits[index], splits[index + 1],
+                                        splits[index + 1] - splits[index]))
+    print_split_stats('train', 0)
+    print_split_stats('validation', 1)
+    print_split_stats('test', 2)
+
+    def build_dataset(index, name):
+        dataset = None
+        if splits[index + 1] > splits[index]:
+            documents = np.arange(start=splits[index], stop=splits[index + 1],
+                                  step=1, dtype=np.int32)
+            dataset = GPTDataset(name, data_prefix, documents, indexed_dataset,
+                                 splits_string,
+                                 train_valid_test_num_samples[index],
+                                 seq_length, seed,
+                                 return_doc_ids,
+                                 data_cache_path=data_cache_path)
+        return dataset
+    if name.find("train")!=-1:
+        return build_dataset(0, 'train')
+    if name.find("valid")!=-1:
+        return build_dataset(1, 'valid')
+    if name.find("test")!=-1:
+        return build_dataset(2, 'test')
 
 
 def build_dataset(dataset_name, data_prefix, data_impl,
@@ -219,8 +296,8 @@ def _build_dataset(dataset_name, data_prefix, data_impl, splits_string,
 
     total_num_of_documents = indexed_dataset.sizes.shape[0]
 
-    print_flush('    {}:'.format(dataset_name))
-    print_flush('     document indices in [0, {}) total of {} '
+    print_rank_0('    {}:'.format(dataset_name))
+    print_rank_0('     document indices in [0, {}) total of {} '
                  'documents'.format(total_num_of_documents, total_num_of_documents))
 
     documents = np.arange(start=0, stop=total_num_of_documents,
@@ -235,15 +312,15 @@ def _build_dataset(dataset_name, data_prefix, data_impl, splits_string,
 
 def get_indexed_dataset_(data_prefix, data_impl, skip_warmup):
     """Build indexed dataset."""
-    print_flush(' > building dataset index ...')
+    print_rank_0(' > building dataset index ...')
 
     start_time = time.time()
     indexed_dataset = make_indexed_dataset(data_prefix,
                                            data_impl,
                                            skip_warmup)
-    print_flush(' > finished creating indexed dataset in {:4f} '
+    print_rank_0(' > finished creating indexed dataset in {:4f} '
                  'seconds'.format(time.time() - start_time))
-    print_flush('    number of documents: {}'.format(
+    print_rank_0('    number of documents: {}'.format(
         indexed_dataset.sizes.shape[0]))
 
     return indexed_dataset
@@ -422,8 +499,10 @@ def _build_index_mappings(name, data_prefix, documents, sizes,
 
     # Build the indexed mapping if not exist.
     if build_indices:
-        print_flush(f" > WARNING: could not find index map files, building "
-                     f"the indices on rank {torch.distributed.get_rank()} ...")
+        # Since this function will be called by all the rank in the very beginning. Therefore, we assume that all the 
+        # ranks will first create the document files, and then read it. 
+        # There will not be contension effects going on either
+        print_flush(f" > WARNING: could not find index map files, building ")
 
         # For the last epoch, decide whether include the entire epoch
         # in the global shuffle or not.
@@ -476,7 +555,7 @@ def _build_index_mappings(name, data_prefix, documents, sizes,
             doc_idx = _build_doc_idx(documents, num_epochs, np_rng,
                                      separate_last_epoch)
             np.save(idx_path['doc'], doc_idx, allow_pickle=True)
-            print_rank_0(' > elasped time to build and save doc-idx mapping '
+            print_flush(' > elasped time to build and save doc-idx mapping '
                          '(seconds): {:4f}'.format(time.time() - start_time))
             # sample-idx.
             start_time = time.time()
@@ -510,16 +589,6 @@ def _build_index_mappings(name, data_prefix, documents, sizes,
             print('ensure you have write access to this directory or specify one that you do have')
             print('write access to.')
             data_cache_success = False
-
-    #counts = get_accelerator().LongTensor([data_cache_success])
-    #torch.distributed.all_reduce(counts, group=mpu.get_data_parallel_group())
-    #torch.distributed.all_reduce(counts, group=mpu.get_pipeline_model_parallel_group())
-    #if counts[0].item() != (
-    #    torch.distributed.get_world_size() //
-    #    torch.distributed.get_world_size(group=mpu.get_tensor_model_parallel_group()) //
-    #    torch.distributed.get_world_size(group=mpu.get_sequence_parallel_group())):
-    #    print_rank_0("Data index creation unsuccessful, exiting.")
-    #    exit()
 
     # Load mappings.
     start_time = time.time()

@@ -10,7 +10,7 @@ import numpy as np
 import torch
 
 from deepspeed.accelerator import get_accelerator
-from megatron import print_rank_0
+from megatron import print_rank_0, print_flush
 from megatron.core import mpu
 
 class BlendableDataset(torch.utils.data.Dataset):
@@ -123,3 +123,17 @@ class BlendableDataset(torch.utils.data.Dataset):
             "dataset_idx" : dataset_idx,
             **self.datasets[dataset_idx][sample_idx],
         }
+
+class DistributedBlendableDataset(BlendableDataset):
+    def __getitem__(self, idx):
+        dataset_idx = self.dataset_index[idx]
+        sample_idx = self.dataset_sample_index[idx]
+        if (self.datasets[dataset_idx].build):
+            dataset = self.datasets[dataset_idx].dataset
+        else:
+            dataset = self.datasets[dataset_idx].Build()
+        return {
+            "dataset_idx" : dataset_idx,
+            **dataset[sample_idx],
+        }
+            

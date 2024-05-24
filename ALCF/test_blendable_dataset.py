@@ -55,7 +55,6 @@ ratio_select=np.zeros(num_datasets)
 if comm.rank ==0:
     print(f"Total number of samples: {len(train_ds)}")
     print(f"Weights set: {weights[:min(8, num_datasets)]}")
-#print(f"Weights across training: {ratio_select[:min(8, num_datasets)]}")
 
 for e in range(min(100, args.train_iters)):
     ratio_select=np.zeros(num_datasets)
@@ -72,10 +71,13 @@ for i in range(10):
 
 #### Build data loaders
 rank_in_parallel_group = mpu.get_sequence_parallel_rank()
-print(rank_in_parallel_group)
-#if rank_in_parallel_group == 0:
 train_dataloader = build_pretraining_data_loader(
     train_ds, args.consumed_train_samples)
 valid_dataloader = build_pretraining_data_loader(
         valid_ds, args.consumed_valid_samples)
 test_dataloader = build_pretraining_data_loader(test_ds, 0)
+
+
+# Run through all the batches in data loader
+for i in train_dataloader:
+    print(i.shape)
