@@ -131,6 +131,7 @@ class DistributedBlendableDataset(BlendableDataset):
         if (self.datasets[dataset_idx].build):
             dataset = self.datasets[dataset_idx].dataset
         else:
+            print_flush(f" First time reading samples from {self.datasets[dataset_idx].prefix}. Building the dataset now.")
             dataset = self.datasets[dataset_idx].Build()
         return {
             "dataset_idx" : dataset_idx,

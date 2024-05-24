@@ -80,4 +80,4 @@ test_dataloader = build_pretraining_data_loader(test_ds, 0)
 
 # Run through all the batches in data loader
 for i in train_dataloader:
-    print(i.shape)
+    print(i)
