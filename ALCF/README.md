@@ -19,16 +19,14 @@
 
 ## 🏃‍♂️ Running
 
-To launch on Polaris @ ALCF:
-
-
+To launch on Polaris @ [ALCF](https://alcf.anl.gov):
 
 <details closed><summary>⏳ Request an interactive job with <code>qsub -I</code>:</summary>
     
 ```bash
-qsub -A <your-project-q debug -l select=2 -l walltime=01:00:00,filesystems=eagle:home -I
+qsub -A <your-project> -q debug -l select=2 -l walltime=01:00:00,filesystems=eagle:home -I
 ```
-    
+
 </details>
 
 <details closed><summary>⬇️ Clone repo + navigate into it:</summary>
@@ -42,20 +40,56 @@ cd Megatron-DeepSpeed
 
 <details closed><summary>🐍 Setup Python:</summary>
 
-```bash
-module use /soft/modulefiles ; module load conda ; conda activate base
-PBS_O_WORKDIR=$(pwd) source ALCF/helpers.sh && setup_venv_from_conda
-```
+1. 📂 Load `conda` module and activate base environment:
 
-- 🍋 Install [`ezpz`](https://github.com/saforem2/ezpz):
+    ```bash
+    module use /soft/modulefiles ; module load conda ; conda activate base
+    ```
+
+3. 👻 Create virtual environment _on top of the base `conda`_[^venv]:
+
+    ```bash
+    PBS_O_WORKDIR=$(pwd) source ALCF/helpers.sh && setup_venv_from_conda
+    ```
+
+
+4. 🍋 Install [`ezpz`](https://github.com/saforem2/ezpz):
 
     ```bash
     mkdir deps &&  git clone https://github.com/saforem2/ezpz deps/ezpz
     python3 -m pip install -e deps/ezpz --require-virtualenv
     ```
 
+[^venv]: Its generally a good practice to keep separate virtual Python environments different projects.  
+    We provide a helper function, [`setup_venv_from_conda()`](https://github.com/argonne-lcf/Megatron-DeepSpeed/blob/2f0154394bbdf3c64b4669f9d944645e2cdb8f2b/ALCF/helpers.sh#L440),
+    that helps take care of this for you.  
+    <br>
+    This will: activate (or build, if necessary) a `venv` in your working dir,  
+    _automatically_ matching the name of your active `conda` environment (e.g. `2024-04-29`, on Polaris_.
+
 </details>
 
+<!--
+Explicitly, it will (if inside a `conda` environment):
+
+- look for a virtual environment in `"./venvs/${conda_tag}/"`
+  (e.g. `./venvs/2024-04-29`) and:
+    - if found:  
+        - activate the existing virtual environment
+    - else:
+        - create a _new_ virtual environment in `"./venvs/${conda_tag}"`
+            - activate it
+            
+Explicitly, at the command line:
+
+```bash
+PBS_O_WORKDIR=$(pwd) source ALCF/helpers.sh  # 1.
+setup_conda_polaris    # 2.
+setup_venv_from_conda  # 3.
+```
+
+will (1.) 
+-->
 
 <details closed><summary>🚀 Launch:</summary>
 
@@ -66,14 +100,8 @@ for 1000 iterations using the data file list in:
 
 with a micro-batch-size of 2, with the `torch.optim.AdamW` optimizer. 
 
-**Note** that _any_ of the options in the
-
-[`setParams`](https://github.com/argonne-lcf/Megatron-DeepSpeed/blob/main/ALCF/helpers.sh#L140)
-
-function from
-
-[`ALCF/helpers.sh`](https://github.com/argonne-lcf/Megatron-DeepSpeed/blob/7d203596dbf14e048e756c5ee6705de7dcb22283/ALCF/helpers.sh)
-
+**Note** that _any_ of the options in the [`setParams`](https://github.com/argonne-lcf/Megatron-DeepSpeed/blob/main/ALCF/helpers.sh#L140)
+function from [`ALCF/helpers.sh`](https://github.com/argonne-lcf/Megatron-DeepSpeed/blob/7d203596dbf14e048e756c5ee6705de7dcb22283/ALCF/helpers.sh)
 can be overridden dynamically at runtime using this technique.
 
 ```bash
