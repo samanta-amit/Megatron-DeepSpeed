@@ -5,14 +5,26 @@
 #PBS -l select=48
 #PBS -l filesystems=eagle:home
 
+
 #### Make it easy to track experiments by date ###################
-YEAR="$(date "+%Y")"
-MONTH="$(date "+%m")"
-DAY="$(date "+%Y-%m-%d")"
-TODAY="$(date "+%Y-%m-%d")"  # kept for backwards compatibility
-STARTED_AT="$(date "+%Y-%m-%d-%H%M%S")"
+year="$(date "+%Y")"
+month="$(date "+%m")"
+day="$(date "+%Y-%m-%d")"
+today="$(date "+%Y-%m-%d")"  # kept for backwards compatibility
+started_at="$(date "+%Y-%m-%d-%H%M%S")"
+export YEAR="${year}"
+export MONTH="${month}"
+export DAY="${day}"
+export TODAY="${today}"
+export STARTED_AT="${started_at}"
 ##################################################################
 
+
+#############################################################################
+# Check if running in `DEBUG=1` mode.
+#   - If so, this will print each command before it is ran and exit if any of
+#   them return a nonzero exit status.
+#############################################################################
 if [[ -n "${DEBUG-}" ]]; then  # to use: `DEBUG=1 bash train_llama_alcf.sh`
     printf "\e[1;31m%s\e[0m\n" "!! RUNNING IN DEBUG MODE !!"
     set -euxo pipefail
@@ -23,6 +35,9 @@ if [[ -v NOOP ]]; then         # to use: `NOOP=1 bash train_llama_alcf.sh`
   set -o noexec                # same as set -n
 fi
 
+##################################################
+# Helper function for `source`-ing another file
+##################################################
 sourceFile() {
     fp="$1"
     echo "source-ing ${fp}"
@@ -34,6 +49,8 @@ sourceFile() {
     fi
 }
 
+##############################################################################
+###################### MAIN LOGIC ############################################
 # ----[0. Navigate into `$PBS_O_WORKDIR`]--------------------------------------
 cd "${PBS_O_WORKDIR}" || exit
 HERE=$(python3 -c 'import os; print(os.getcwd())')
@@ -42,6 +59,11 @@ export HERE
 # ----[1. Assert `./pretrain_gpt_alcf.py` exists:]-----------------------------
 export EXEC="${HERE}/pretrain_gpt_alcf.py"
 [ -f "${EXEC}" ] || exit
+
+# ----[1.5 Keep track of ]
+exec_stem=$(echo "${EXEC}" | tr "\/" "\t" | awk '{print $NF}' | sed "s/\.py//g")
+export EXEC_STEM="${exec_stem}"
+
 
 # ----[2. `source ./ALCF/helpers_alcf.sh`:]------------------------------------
 sourceFile "${HERE}/ALCF/helpers.sh" || exit
@@ -55,10 +77,15 @@ setParams || exit                     # 05. Set command line arguments to pass t
 buildDSconfig || exit                 # 06. Create `deepspeed_config.json` from runtime params from ^
 setOutput || exit                     # 07. Specify output directory for {logs, checkpoints, etc.}
 setArgs || exit                       # 08. Specify additional `deepspeed` arguments
-setData "${DATA_FILE_LIST-}" || exit  # 09. Specify `DATA_FILE_LIST` for dolma dataset
-printJobInfo || exit                  # 11. Print job info
-setupLauncher || exit                 # 12. set launcher to one of `MPICH` (default), or `deepspeed`
+dfl="${DATA_FILE_LIST:-}"             # 09. Setup data + tokenizer
+tok="${TOKENIZER_TYPE:-Llama2}"       #     via `DATA_FILE_LIST` and `TOKENIZER_TYPE`
+setup_tokenizer_and_data "${tok}" "${dfl}" || exit
+printJobInfo || exit                  # 10. Print job info
+setupLauncher || exit                 # 11. set launcher to one of `MPICH` (default), or `deepspeed`
+save_dotenv "${CKPT_DIR}" || exit     # 12. Print info about loaded modules and runtime environment
+check_and_kill_if_running || exit     # 13. Check that were not already running, if so, exit.
 # -----------------------------------------------------------------------------
+##############################################################################
 
 ################################################
 # Assert `$TBDIR` exists inside our `$CKPT_DIR`
@@ -69,31 +96,33 @@ mkdir -p "${TBDIR}"
 
 data_cache_path="${CKPT_DIR}/${DATA_CACHE_PATH}" && mkdir -p "${data_cache_path}"
 
-# Print info about loaded modules and runtime environment
-module list
-dotenv_file="${CKPT_DIR}/.env"
-echo "Saving environment to ${dotenv_file}"
-printenv | grep -v "LS_COLORS" > "${dotenv_file}"
+
+export DEFAULTS="\
+    --split 100,0,0 \
+    --log-interval 1 \
+    --no-bias-gelu-fusion \
+    --no-bias-dropout-fusion \
+    --no-masked-softmax-fusion \
+    --no-gradient-accumulation-fusion \
+    --accumulate-allreduce-grads-in-fp32 \
+    --use-checkpoint-opt_param-scheduler \
+    --log-timers-to-tensorboard \
+    --log-optimizer-states-to-tensorboard"
 
 # Take custom args
 custom_args=" $@"
 
     # --log-num-zeros-in-grad \
     # --log-memory-to-tensorboard \
+    # --data-file-list ${DATA_FILE_LIST} \
+    # --data-file-list ${DATA_FILE_LIST} \
+    # --data-cache-path ${data_cache_path} \
+    # --tokenizer-type Llama2Tokenizer \
+    # --tokenizer-model ${TOKENIZER_MODEL} \
 run_cmd="
-    ${LAUNCH_CMD} \
+    ${LAUNCHER} \
     --${DTYPE} \
-    --split 100,0,0 \
-    --log-interval 1 \
-    --no-bias-gelu-fusion \
-    --no-bias-dropout-fusion \
-    --no-masked-softmax-fusion \
-    --tokenizer-type Llama2Tokenizer \
-    --no-gradient-accumulation-fusion \
-    --accumulate-allreduce-grads-in-fp32 \
-    --use-checkpoint-opt_param-scheduler \
-    --log-timers-to-tensorboard \
-    --log-optimizer-states-to-tensorboard \
+    ${DEFAULTS} \
     --optimizer ${OPT} \
     --save ${CKPT_DIR} \
     --load ${CKPT_DIR} \
@@ -109,27 +138,23 @@ run_cmd="
     --eval-interval ${EVAL_INTERVAL} \
     --max-position-embeddings ${SEQ} \
     --micro-batch-size ${MICRO_BATCH} \
-    --data-file-list ${DATA_FILE_LIST} \
     --tensor-model-parallel-size ${TP} \
     --global-batch-size ${GLOBAL_BATCH} \
     --pipeline-model-parallel-size ${PP} \
     --num-key-value-heads ${NUM_KV_HEAD} \
-    --data-cache-path ${data_cache_path} \
     --ffn-hidden-size ${FFN_HIDDEN_SIZE} \
-    --tokenizer-model ${TOKENIZER_MODEL} \
     ${LR_ARGS} \
     ${LLAMA_ARGS} \
     ${TIMING_STR} \
+    ${DATA_FLAGS} \
+    ${TOKENIZER_FLAGS} \
     $ds_args \
     ${gpt_args[*]} \
     $custom_args \
     |& tee ${OUTPUT_LOG}
     "
 
-check_and_kill_if_running || exit
 echo "${run_cmd}"
 printf "[!! %s] View output at:\n %s\n" "$(printBlue "NOTE")" "$(printYellow ${OUTPUT_LOG})"
-# printf "[!! \e[1;31m%s\e[0m] View output at:\n" "NOTE"
-# printf "\e[1;34m%s\e[0m\n" "${OUTPUT_LOG}"
 eval "${run_cmd}"
 set +x
