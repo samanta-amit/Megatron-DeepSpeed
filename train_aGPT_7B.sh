@@ -25,6 +25,6 @@ echo "+---------------------------------------------------------+"
 export TORCH_NCCL_HEARTBEAT_TIMEOUT_SEC=6000
 echo "${OUTFILE}" >> "${OUTDIR}/latest"
 # export DEBUG=1
-export MICRO_BATCH="${MICRO_BATCH:-${MBS}}"
+# export MICRO_BATCH="${MICRO_BATCH:-${MBS}}"
 export DATA_FILE_LIST="${DATA_FILE_LIST:-${PBS_O_WORKDIR}/ALCF/data-lists/${MACHINE}/dolma_v1_7_file_list.txt}"
 bash "${PBS_O_WORKDIR}/train_llama_alcf.sh" |& tee "${OUTFILE}"
