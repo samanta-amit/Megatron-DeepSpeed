@@ -19,10 +19,10 @@
 
 ## 🏃‍♂️ Running
 
-To launch on Polaris @ [ALCF](https://alcf.anl.gov):
+To launch on {`Polaris`, `Sunspot`} @ [ALCF](https://alcf.anl.gov):
 
 <details closed><summary>⏳ Request an interactive job with <code>qsub -I</code>:</summary>
-    
+
 ```bash
 qsub -A <your-project> -q debug -l select=2 -l walltime=01:00:00,filesystems=eagle:home -I
 ```
@@ -42,14 +42,22 @@ cd Megatron-DeepSpeed
 
 1. 📂 Load `conda` module and activate base environment:
 
-    ```bash
-    module use /soft/modulefiles ; module load conda ; conda activate base
-    ```
+    - **Polaris**:
+
+        ```bash
+        module use /soft/modulefiles ; module load conda ; conda activate base
+        ```
+
+    - **Sunspot**:
+
+        ```bash
+        source ALCF/sunspot-env-2024-04-15-002.sh
+        ```
 
 3. 👻 Create virtual environment _on top of the base `conda`_[^venv]:
 
     ```bash
-    PBS_O_WORKDIR=$(pwd) source ALCF/helpers.sh && setup_venv_from_conda
+    export PBS_O_WORKDIR=$(pwd) && source ALCF/helpers.sh && setup_venv_from_conda
     ```
 
 
