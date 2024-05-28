@@ -95,12 +95,21 @@ def build_train_valid_test_datasets(data_prefix, data_impl, splits_string,
             valid_datasets = [DatasetBuilder(prefixes[i], data_impl, splits_string,
                 datasets_train_valid_test_num_samples[i],
                 seq_length, seed, skip_warmup,
-                return_doc_ids,data_cache_path, 'valid') for i in  range(len(weights))] 
+                return_doc_ids,data_cache_path, 'valid') for i in  range(len(weights))]
+            for i in range(torch.distributed.get_rank(), len(weights), torch.distributed.get_world_size()):
+                valid_datasets[i].Build()
         if c > 0:            
             test_datasets = [DatasetBuilder(prefixes[i], data_impl, splits_string,
                 datasets_train_valid_test_num_samples[i],
                 seq_length, seed, skip_warmup,
-                return_doc_ids,data_cache_path, 'test') for i in  range(len(weights))]              
+                return_doc_ids,data_cache_path, 'test') for i in  range(len(weights))]
+            for i in range(torch.distributed.get_rank(), len(weights), torch.distributed.get_world_size()):
+                test_datasets[i].Build()
+
+        # This barrier is critical to make sure that all the datasets are built once
+        # and the metadata were written to the cache folder before other ranks touch them
+        torch.distributed.barrier()
+        
         print_rank_0(" >>> Finished building datasets in distributed way ... ")
 
         # Blend.
