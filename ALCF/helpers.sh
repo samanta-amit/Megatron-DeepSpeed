@@ -40,6 +40,10 @@ printf "Using WORKING_DIR: %s\n" ${WORKING_DIR}
 #     13. Setup run command to be executed.
 ##############################################################################
 setup() {
+    python3 -m ezpz.jobs && source "./.jobenv"
+    # echo "ezpz detected. Sourcing ${ezloc}/bin/savejobenv"
+    # source "${ezloc}/src/ezpz/bin/savejobenv" > /dev/null 2>&1
+    # source "${ezloc}/src/ezpz/bin/getjobenv" || exit
     get_machine || exit                   # 01. Identify machine we're on
     setEnv || exit                        # 02. Load `conda` environment
     # saveDSenv || exit
@@ -57,6 +61,7 @@ setup() {
     save_dotenv "${CKPT_DIR}" || exit     # 11. Print info about loaded modules and runtime environment
     check_and_kill_if_running || exit     # 12. Check that were not already running, if so, exit.
     setup_run_cmd || exit                 # 13. Setup run command to be executed
+    # make_ds_hostfile || exit
 }
 
 #####################################################
@@ -75,7 +80,10 @@ setup_run_cmd() {
     export TODAY="${today}"
     export STARTED_AT="${started_at}"
     ##################################################################
-    setupLauncher || exit
+    # to launch with DeepSpeed instead of mpiexec, run with:
+    #       $ LAUNCH_WITH=deepspeed bash train_llama_alcf.sh
+    ##################################################################
+    setupLauncher "${LAUNCH_WITH:-MPICH}" || exit
     TBDIR="${CKPT_DIR}/tensorboard"
     mkdir -p "${TBDIR}"
     export data_cache_path="${CKPT_DIR}/${DATA_CACHE_PATH}" && mkdir -p "${data_cache_path}"
@@ -262,15 +270,27 @@ loadCondaEnv() {
 #############################################################################
 setupLauncher() {
     # outdir=$1
-    if [[ "${LAUNCH_CMD:-"MPICH"}" == "deepspeed" ]]; then
+    if [[ "$#" == 1 ]]; then
+        local dist_launcher="$1"
+    else
+        local dist_launcher="${LAUNCH_WITH:-${LAUNCH_CMD:-"MPICH"}}"
+    fi
+    if [[ "${dist_launcher}" == "deepspeed" ]]; then
         # Assert `./hostfile_deepspeed` exists
         export hfds="${WORKING_DIR}/hostfile_deepspeed" && [ -f "${hfds}" ] || exit
         export LAUNCHER="deepspeed --hostfile $hfds --launcher MPICH ${EXEC}"
     # if [[ -n "${DIST_LAUNCH}" && ${LAUNCH_CMD:-"MPICH"} != "deepspeed" ]]; then
     else
-        export LAUNCHER="${DIST_LAUNCH} --genvall --cpu-bind depth -d 16 $(which python3) -Wignore ${EXEC}"
+        if [[ -n "${DIST_LAUNCH}" ]]; then
+            export LAUNCHER="${DIST_LAUNCH} --genvall --cpu-bind depth -d 16 $(which python3) -Wignore ${EXEC}"
+        else
+            echo "[setupLauncher][INFO]: Saving environment to: .env-${PBS_JOBID}"
+            printenv | tee ".env-${PBS_JOBID}"
+            echo "[setupLauncher][ERROR]: DIST_LAUNCH not found in environment !!"
+        fi
     fi
-    printf "Launching with: %s\n" "$(printRed "${LAUNCH_CMD}")"
+
+    printf "Launching with: %s\n" "$(printRed "${dist_launcher}")"
     printf " %s" "$(printMagenta ${LAUNCHER})"
 }
 
@@ -491,6 +511,16 @@ make_ds_hostfile() {
     sed -e "s/$/ slots=${GPUS_PER_NODE}/" -i "${hostfile_deepspeed}"
 }
 
+ezpz_savejobenv() {
+    local outfile="${WORKING_DIR}/savejobenv"
+    curl -Ls https://raw.githubusercontent.com/saforem2/ezpz/main/src/ezpz/bin/savejobenv > "${outfile}" && source "${outfile}"
+}
+
+ezpz_getjobenv() {
+    local outfile="${WORKING_DIR}/getjobenv"
+    curl -Ls https://raw.githubusercontent.com/saforem2/ezpz/main/src/ezpz/bin/getjobenv > "${outfile}" && source "${outfile}"
+}
+
 # +---------------------------------------+
 # | 1. Git clone ezpz (if not found)    |
 # | 2. Install ezpz (if not installed)  |
@@ -504,9 +534,11 @@ ezpz() {
     fi
     ezloc=$(python3 -m pip list | grep ezpz | awk '{print $NF}')
     if [[ -n "${ezloc}" ]]; then
-        echo "ezpz detected. Sourcing ${ezloc}/bin/savejobenv"
-        source "${ezloc}/src/ezpz/bin/savejobenv" > /dev/null 2>&1
-        source "${ezloc}/src/ezpz/bin/getjobenv" || exit
+        ezpz_savejobenv
+        python3 -m ezpz.jobs && source "./.jobenv"
+        # echo "ezpz detected. Sourcing ${ezloc}/bin/savejobenv"
+        # source "${ezloc}/src/ezpz/bin/savejobenv" > /dev/null 2>&1
+        # source "${ezloc}/src/ezpz/bin/getjobenv" || exit
         make_ds_hostfile || exit
     else
         echo "No ezpz detected. Attempting to install with $(which python3)"
@@ -662,13 +694,15 @@ setup_venv_from_conda() {
         echo "No ${CONDA_PREFIX} found."  #  Exiting."
         # exit 1
     else
-        if [[ -n "${VIRTUAL_ENV}" ]]; then
-            echo "Already inside virtual env at ${VENV_DIR}!"
-        elif [[ -z "${VIRTUAL_ENV}" ]]; then
+        echo "Found conda at: ${CONDA_PREFIX}"
+        CONDA_NAME=$(echo ${CONDA_PREFIX} | tr '\/' '\t' | sed -E 's/mconda3|\/base//g' | awk '{print $NF}')
+        export CONDA_NAME
+        # if [[ -n "${VIRTUAL_ENV}" ]]; then
+        #     echo "Already inside virtual env at ${VENV_DIR}!"
+        if [[ -z "${VIRTUAL_ENV}" ]]; then
             echo "No VIRTUAL_ENV found in environment!"
             echo "    - Trying to setup from ${CONDA_PREFIX}"
-            CONDA_NAME=$(echo ${CONDA_PREFIX} | tr '\/' '\t' | sed -E 's/mconda3|\/base//g' | awk '{print $NF}')
-            VENV_DIR="${WORKING_DIR}/venvs/${CONDA_NAME}"
+            export VENV_DIR="${WORKING_DIR}/venvs/${CONDA_NAME}"
             echo "    - Using VENV_DIR=${VENV_DIR}"
             # VENV_DIR="venvs/$(echo ${CONDA_PREFIX} | tr '\/' '\t' | sed -E 's/mconda3|\/base//g' | awk '{print $NF}')"
             # VENV_DIR="${WORKING_DIR}/venvs/$(echo ${CONDA_PREFIX} | tr '\/' '\t' | awk '{print $NF}')"
