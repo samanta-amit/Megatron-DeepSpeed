@@ -12,7 +12,7 @@ import torch
 from deepspeed.accelerator import get_accelerator
 from megatron import print_rank_0, print_flush
 from megatron.core import mpu
-from mpi4py import MPI
+
 class BlendableDataset(torch.utils.data.Dataset):
 
 
