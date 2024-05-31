@@ -94,11 +94,17 @@ def build_train_valid_test_datasets(data_prefix, data_impl, splits_string,
                     self.desc += dataset_builders[i].prefix + ","
                     for j in range(dataset_builders[i].num_samples):
                         self.indices.append((i, j))
+                assert(len(self.indices)==self.num_samples)
                 self.desc += f"-{self.num_samples}" + f"-{dataset_builders[0].seq_length}" + f"{dataset_builders[0].seed}"
             def __len__(self):
                 return self.num_samples
             def __getitem__(self, idx):
-                i, j = self.indices[idx]
+                if idx >= self.num_samples:
+                    print_flush(f"WARNING: index overflow encountered {idx} > {self.num_samples} for {self.dataset_builders[0].corpus}; will randomly pick one sample")
+                    id = np.random.randint(self.num_samples)
+                else:
+                    id = idx
+                i, j = self.indices[id]
                 if self.dataset_builders[i].build:
                     return self.dataset_builders[i].dataset[j]
                 else:
@@ -133,10 +139,18 @@ def build_train_valid_test_datasets(data_prefix, data_impl, splits_string,
             for i, d in zip(range(len(weights)), dataset_builders):
                 corpus_builders[d.corpus].append(d)
                 corpus_weights[d.corpus] += weights[i]
+            total = 0
+            print_rank_0(" > number of samples for each corpus ")
+            corpus_weights_achieved={}
             for c in corpus_list:
                 datasets.append(BuildConcatDataset(corpus_builders[c]))
+                total += datasets[-1].num_samples
+                corpus_weights_achieved[c] =  float(datasets[-1].num_samples)/train_num_samples                
+                print_rank_0(f"    {c}: {datasets[-1].num_samples} w={corpus_weights_achieved[c]} (expected: {corpus_weights[c]})")
+
+            print_rank_0(f" > total number of samples: {total}")                
             print_rank_0(f" >>> Finished building {dataset_type} corpus datasets in {time.time() - start_time} seconds")
-            return datasets, [corpus_weights[c] for c in corpus_list]
+            return datasets, [corpus_weights_achieved[c] for c in corpus_list]
 
         if a > 0:
             train_datasets, train_weights = build_corpus_datasets('train')

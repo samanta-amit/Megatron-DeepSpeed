@@ -12,7 +12,7 @@ import torch
 from deepspeed.accelerator import get_accelerator
 from megatron import print_rank_0, print_flush
 from megatron.core import mpu
-
+from mpi4py import MPI
 class BlendableDataset(torch.utils.data.Dataset):
 
 
@@ -52,8 +52,8 @@ class BlendableDataset(torch.utils.data.Dataset):
         desc += f"Weights: {weights}\n"
         desc += f"Size: {size}\n"
         self.desc = desc
-        self.dataset_index = []
-        self.dataset_sample_index = []
+        self.dataset_index = np.zeros(self.size, dtype=np.int64)
+        self.dataset_sample_index = np.zeros(self.size, dtype=np.int64)
         if data_cache_path:
             desc_hash = hashlib.md5(desc.encode('utf-8')).hexdigest()
             desc_path = os.path.join(data_cache_path, desc_hash + ".dsc")
@@ -66,12 +66,15 @@ class BlendableDataset(torch.utils.data.Dataset):
                       ' dataset, building indices on rank 0 ...', flush=True)
                 dataset_index, dataset_sample_index = _build_indices()
                 try:
+                    print_rank_0(" > saving index map files")
+                    start_time = time.time()
                     os.makedirs(os.path.dirname(index_path), exist_ok=True)
                     with open(desc_path, 'wt') as fd:
                         fd.write(desc)
                         np.save(index_path, dataset_index, allow_pickle=True)
                         np.save(sample_index_path, dataset_sample_index,
                                 allow_pickle=True)
+                    print_rank_0(f" > finished saving index map files in {time.time() - start_time} seconds")                        
                 except OSError:
                     print(f'There was an error trying to create the data cache directory ({data_cache_path})')
                     print('or a file in it. This is set with the --data-cache-path argument. Please')
@@ -90,17 +93,15 @@ class BlendableDataset(torch.utils.data.Dataset):
                 print_rank_0("Data index creation unsuccessful, exiting.")
                 exit()
 
-            if cache_hit:
-                print_rank_0(f"> index map files exists already, rank 0 will read them and broadcast to all the rank")
-                print_rank_0(f'> loading blendable dataset index: {index_path}')
-                self.dataset_index = np.load(index_path, allow_pickle=True, mmap_mode='r')
-                assert self.dataset_index.size == self.size
-
-                print_rank_0(f'> loading blendable dataset sample index: {sample_index_path}')
-                self.dataset_sample_index = np.load(sample_index_path, allow_pickle=True, mmap_mode='r')
-                assert self.dataset_sample_index.size == self.size
-            torch.distributed.broadcast_object_list(self.dataset_sample_index, src=0)
-            torch.distributed.broadcast_object_list(self.dataset_index, src=0)                
+            start_time = time.time()
+            print_rank_0(f'> loading blendable dataset index: {index_path}')
+            self.dataset_index = np.load(index_path, allow_pickle=True, mmap_mode='r')
+            assert self.dataset_index.size == self.size
+            print_rank_0(f'> loading blendable dataset sample index: {sample_index_path}')
+            self.dataset_sample_index = np.load(sample_index_path, allow_pickle=True, mmap_mode='r')
+            assert self.dataset_sample_index.size == self.size
+            torch.distributed.barrier()
+            print_rank_0(f'> finished loading in {time.time() - start_time} seconds')            
         else:
             self.dataset_index, self.dataset_sample_index = _build_indices()
 
