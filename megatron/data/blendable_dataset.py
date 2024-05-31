@@ -122,19 +122,4 @@ class BlendableDataset(torch.utils.data.Dataset):
         return {
             "dataset_idx" : dataset_idx,
             **self.datasets[dataset_idx][sample_idx],
-        }
-
-class DistributedBlendableDataset(BlendableDataset):
-    def __getitem__(self, idx):
-        dataset_idx = self.dataset_index[idx]
-        sample_idx = self.dataset_sample_index[idx]
-        if (self.datasets[dataset_idx].build):
-            dataset = self.datasets[dataset_idx].dataset
-        else:
-            print_flush(f" First time reading samples from {self.datasets[dataset_idx].prefix}. Building the dataset now.")
-            dataset = self.datasets[dataset_idx].Build()
-        return {
-            "dataset_idx" : dataset_idx,
-            **dataset[sample_idx],
-        }
-            
+        }            
