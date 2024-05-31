@@ -2,6 +2,12 @@
 #
 # set -euxo pipefail
 
+####################################################################
+# `WORKING_DIR`:
+# 1. if `${PBS_O_WORKDIR}` has nonzero value, use this
+# 2. else, if `${SLURM_SUBMIT_DIR}` has nonzero value, use that
+# 3. else, use `$(pwd)`
+####################################################################
 if [[ -n "${PBS_O_WORKDIR}" ]]; then
     WORKING_DIR="${PBS_O_WORKDIR}"
 elif [[ -n "${SLURM_SUBMIT_DIR}" ]]; then
@@ -13,7 +19,7 @@ else
 fi
 
 export WORKING_DIR="${WORKING_DIR}"
-printf "Using WORKING_DIR: %s\n" ${WORKING_DIR}
+printf "Using WORKING_DIR: %s\n" "${WORKING_DIR}"
 
 ##############################################################################
 # `setup`: All-in-one helper function.
@@ -40,14 +46,13 @@ printf "Using WORKING_DIR: %s\n" ${WORKING_DIR}
 #     13. Setup run command to be executed.
 ##############################################################################
 setup() {
-    python3 -m ezpz.jobs && source "./.jobenv"
     # echo "ezpz detected. Sourcing ${ezloc}/bin/savejobenv"
     # source "${ezloc}/src/ezpz/bin/savejobenv" > /dev/null 2>&1
     # source "${ezloc}/src/ezpz/bin/getjobenv" || exit
     get_machine || exit                   # 01. Identify machine we're on
     setEnv || exit                        # 02. Load `conda` environment
     # saveDSenv || exit
-    ezpz || exit                          # 03. Determine WORLD_SIZE, etc. from `PBS_*` vars
+    setup_ezpz || exit                          # 03. Determine WORLD_SIZE, etc. from `PBS_*` vars
     setParams || exit                     # 04. Set command line arguments to pass to `"${EXEC}"`
     buildDSconfig || exit                 # 05. Create `deepspeed_config.json` from runtime params from ^
     setOutput || exit                     # 06. Specify output directory for {logs, checkpoints, etc.}
@@ -103,7 +108,7 @@ setup_run_cmd() {
     if [[ "${SP}" -ge 2 ]]; then
         export DEFAULTS="${DEFAULTS} --ds-sequence-parallel-size ${SP} --force-ds-sequence-parallel"
     fi
-    run_cmd="
+    export run_cmd="
         ${LAUNCHER} \
         --${DTYPE} \
         ${DEFAULTS} \
@@ -335,7 +340,7 @@ set_lr_args() {
 #########################################################################
 get_batch_size_on_polaris() {
     if [[ $(hostname) == x3* ]]; then
-        local nhosts=$(wc -l < "${PBS_NODEFILE}")
+        nhosts=$(wc -l < "${PBS_NODEFILE}")
         if [[ "${nhosts}" == 1  || "${nhosts}" == 2 ]]; then
             mbs=1
         elif [[ "${nhosts}" -ge 3 ]]; then
@@ -513,19 +518,21 @@ make_ds_hostfile() {
 
 ezpz_savejobenv() {
     local outfile="${WORKING_DIR}/savejobenv"
-    curl -Ls https://raw.githubusercontent.com/saforem2/ezpz/main/src/ezpz/bin/savejobenv > "${outfile}" && source "${outfile}"
+    curl -Ls https://raw.githubusercontent.com/saforem2/ezpz/jobs-cleanup/src/ezpz/bin/savejobenv > "${outfile}" && source "${outfile}"
 }
 
 ezpz_getjobenv() {
     local outfile="${WORKING_DIR}/getjobenv"
-    curl -Ls https://raw.githubusercontent.com/saforem2/ezpz/main/src/ezpz/bin/getjobenv > "${outfile}" && source "${outfile}"
+    curl -Ls https://raw.githubusercontent.com/saforem2/ezpz/jobs-cleanup/src/ezpz/bin/getjobenv > "${outfile}" && source "${outfile}"
 }
 
 # +---------------------------------------+
 # | 1. Git clone ezpz (if not found)    |
 # | 2. Install ezpz (if not installed)  |
 # +---------------------------------------+
-ezpz() {
+setup_ezpz() {
+    [ -n "${PBS_NODEFILE}" ] && ezpz_savejobenv || ezpz_getjobenv
+    python3 -m ezpz.jobs && source "./.jobenv"
     if [[ ! -d "${WORKING_DIR}/deps/ezpz" ]]; then
         mkdir -p "${WORKING_DIR}/deps"
         git clone https://github.com/saforem2/ezpz "${WORKING_DIR}/deps/ezpz"
@@ -536,29 +543,25 @@ ezpz() {
     if [[ -n "${ezloc}" ]]; then
         ezpz_savejobenv
         python3 -m ezpz.jobs && source "./.jobenv"
-        # echo "ezpz detected. Sourcing ${ezloc}/bin/savejobenv"
-        # source "${ezloc}/src/ezpz/bin/savejobenv" > /dev/null 2>&1
-        # source "${ezloc}/src/ezpz/bin/getjobenv" || exit
         make_ds_hostfile || exit
     else
         echo "No ezpz detected. Attempting to install with $(which python3)"
         python3 -m pip install -e "${WORKING_DIR}/deps/ezpz" --require-virtualenv
     fi
     echo "Done with ezpz."
-    # echo "Done with clone. Now, checking if ezpz is installed..."
-    # if python3 -c 'import ezpz; print(ezpz.__file__)' 2> '/dev/null'; then
-    # if [[ $(python3 -c "import sys; any(['ezpz' in s for s in sys.path])") 2> '/dev/null' ]]; then
-    #     echo "Has ezpz installed. Nothing to do."
-    # else
-    #     echo "Does not have ezpz installed. Installing..."
-    #     echo "Using $(which python3) to install ezpz:"
-    #     python3 -m pip install -e "${WORKING_DIR}/deps/ezpz" --verbose --require-virtualenv #  > ezpz-install.log 2>&1
-    # fi
-    # python3 -m pip install -e "${WORKING_DIR}/deps/ezpz" --verbose --require-virtualenv
-    # # echo "Done with ezpz."
-    # source ${WORKING_DIR}/deps/ezpz/src/ezpz/bin/savejobenv  >  /dev/null 2>&1 #> /tmp/savejobenv.log 2>&1 || exit
-    # source ${WORKING_DIR}/deps/ezpz/src/ezpz/bin/getjobenv || exit
-    # make_ds_hostfile || exit
+}
+
+#######################################################################
+# `ezpz_test`: Run simple test to make sure all nodes in working order
+#######################################################################
+ezpz_test() {
+    printf "[$(printBlue 'ezpz:test_dist')][INFO] Running ezpz.test_dist...\n"
+    # [ -n "${PBS_O_WORKIR}" ] && ezpz_savejobenv || ezpz_getjobenv
+    # python3 -Wignore -m ezpz.jobs && source "${PBS_O_WORKDIR}/.jobenv"
+    printf "[$(printBlue 'ezpz:test_dist')] Running test: ${eztest}\n"
+    eztest="TRAIN_ITERS=50 ${LAUNCH_CMD} python3 -Wignore -m ezpz.test_dist"
+    eval "${eztest}"
+    printf "[$(printBlue 'ezpz:test_dist')] Done with test!\n"
 }
 
 # +------------------------------------------------------------------------+
@@ -908,14 +911,14 @@ setData() {  # ------------------------[dfl: abbrv. for DATA_FILE_LIST]
     if [[ $(hostname) == x4* ]]; then    # -----------------------------[AURORA]
         dfl_fallback="/home/foremans/anl_24_release_q4/llm.devkit/Megatron-DeepSpeed/data_file_list_reweighted.txt"
     elif [[ $(hostname) == x1* ]]; then  # ----------------------------[SUNSPOT]
-        # shellcheck: source ./data-lists/sunspot/books.txt
+        # shellcheck source=./data-lists/sunspot/books.txt
         dfl_fallback="${WORKING_DIR}/ALCF/data-lists/sunspot/dolma_v1_7_file_list.txt"
     elif [[ $(hostname) == x3* ]]; then  # -------------------[POLARIS / SIRIUS]
         if [[ "${PBS_O_HOST}" == sirius* ]]; then  # -------------------[SIRIUS]
-            # shellcheck: source ./data-lists/sirius/books.txt
+            # shellcheck source=./data-lists/sirius/books.txt
             dfl_fallback="${WORKING_DIR}/ALCF/data-lists/sirius/dolma_v1_7_file_list.txt"
         elif [[ "${PBS_O_HOST}" == polaris* ]]; then  # ---------------[POLARIS]
-            # shellcheck: source ./data-lists/polaris/books.txt
+            # shellcheck source=./data-lists/polaris/books.txt
             dfl_fallback="${WORKING_DIR}/ALCF/data-lists/polaris/dolma_v1_7_file_list.txt"
         fi
     elif [[ $(hostname) == login* || $(hostname) == nid* ]]; then # [PERLMUTTER]
@@ -960,7 +963,7 @@ generateDSconfig() {
     for v in "$GLOBAL_BATCH" "$MICRO_BATCH" "$GRAD_ACC_STEPS" "$ZERO_STAGE" \
              "$PP" "$DTYPE"
     do
-      if [ -z $v ]; then
+      if [ -z "$v" ]; then
         echo "Please export required envs before execute $0"
         exit 1
       fi
@@ -1040,7 +1043,7 @@ generateDSconfig() {
     else
       dtype="\"communication_data_type\": \"fp32\","
     fi
-    if [ $ZERO_STAGE == 3 ]; then
+    if [ "$ZERO_STAGE" == 3 ]; then
     zero="\
         \"zero_optimization\": {
           \"stage\": 3,
@@ -1082,7 +1085,7 @@ generateDSconfig() {
         },"
     fi
     # elif [[ $ZERO_STAGE == 1 ]]; then
-    if [[ $PP > 1 ]]; then
+    if [[ "${PP}" -gt 1 ]]; then
       extra="\
           \"data_types\": {
             \"grad_accum_dtype\": \"fp32\"
@@ -1107,7 +1110,7 @@ generateDSconfig() {
       echo 'Please add the correct config set!!!'
     fi
 # flops_profiler must at the end because no ',' is allowed at the end
-cat <<EOT > $1
+cat <<EOT > "$1"
 {
 $common
 $zero
