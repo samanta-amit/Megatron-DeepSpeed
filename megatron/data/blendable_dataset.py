@@ -91,6 +91,7 @@ class BlendableDataset(torch.utils.data.Dataset):
                 exit()
 
             if cache_hit:
+                print_rank_0(f"> index map files exists already, rank 0 will read them and broadcast to all the rank")
                 print_rank_0(f'> loading blendable dataset index: {index_path}')
                 self.dataset_index = np.load(index_path, allow_pickle=True, mmap_mode='r')
                 assert self.dataset_index.size == self.size
