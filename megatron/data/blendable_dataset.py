@@ -52,7 +52,8 @@ class BlendableDataset(torch.utils.data.Dataset):
         desc += f"Weights: {weights}\n"
         desc += f"Size: {size}\n"
         self.desc = desc
-
+        self.dataset_index = []
+        self.dataset_sample_index = []
         if data_cache_path:
             desc_hash = hashlib.md5(desc.encode('utf-8')).hexdigest()
             desc_path = os.path.join(data_cache_path, desc_hash + ".dsc")
@@ -77,8 +78,8 @@ class BlendableDataset(torch.utils.data.Dataset):
                     print('ensure you have write access to this directory or specify one that you do have')
                     print('write access to.')
                     cache_success = False
-
-            
+                self.dataset_index = dataset_index
+                self.dataset_sample_index = dataset_sample_index
             counts = get_accelerator().LongTensor([cache_success])
             torch.distributed.all_reduce(counts, group=mpu.get_data_parallel_group())
             torch.distributed.all_reduce(counts, group=mpu.get_pipeline_model_parallel_group())
@@ -89,14 +90,16 @@ class BlendableDataset(torch.utils.data.Dataset):
                 print_rank_0("Data index creation unsuccessful, exiting.")
                 exit()
 
-            # Load on all ranks.
-            print_rank_0(f'> loading blendable dataset index: {index_path}')
-            self.dataset_index = np.load(index_path, allow_pickle=True, mmap_mode='r')
-            assert self.dataset_index.size == self.size
+            if cache_hit:
+                print_rank_0(f'> loading blendable dataset index: {index_path}')
+                self.dataset_index = np.load(index_path, allow_pickle=True, mmap_mode='r')
+                assert self.dataset_index.size == self.size
 
-            print_rank_0(f'> loading blendable dataset sample index: {sample_index_path}')
-            self.dataset_sample_index = np.load(sample_index_path, allow_pickle=True, mmap_mode='r')
-            assert self.dataset_sample_index.size == self.size
+                print_rank_0(f'> loading blendable dataset sample index: {sample_index_path}')
+                self.dataset_sample_index = np.load(sample_index_path, allow_pickle=True, mmap_mode='r')
+                assert self.dataset_sample_index.size == self.size
+            torch.distributed.broadcast_object_list(self.dataset_sample_index, src=0)
+            torch.distributed.broadcast_object_list(self.dataset_index, src=0)                
         else:
             self.dataset_index, self.dataset_sample_index = _build_indices()
 
