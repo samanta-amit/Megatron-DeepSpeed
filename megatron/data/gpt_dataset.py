@@ -11,8 +11,8 @@ import torch
 from deepspeed.accelerator import get_accelerator
 from megatron import print_rank_0, is_rank_0, get_args, print_flush
 from megatron.core import mpu
-from megatron.data.blendable_dataset import BlendableDataset, DistributedBlendableDataset
-from megatron.data.dataset_utils import get_datasets_weights_and_num_samples
+from megatron.data.blendable_dataset import BlendableDataset
+from megatron.data.dataset_utils import get_datasets_weights_and_num_samples, get_datasets_corpuses_weights_and_num_samples
 from megatron.data.dataset_utils import get_train_valid_test_split_
 from megatron.data.indexed_dataset import make_dataset as make_indexed_dataset
 
@@ -39,9 +39,10 @@ def build_train_valid_test_datasets(data_prefix, data_impl, splits_string,
 
         # Blending dataset.
         # Parse the values.
-        output = get_datasets_weights_and_num_samples(data_prefix,
+        output = get_datasets_corpuses_weights_and_num_samples(data_prefix,
                                                       train_valid_test_num_samples)
-        prefixes, weights, datasets_train_valid_test_num_samples = output
+        prefixes, corpuses, weights, datasets_train_valid_test_num_samples = output
+        corpus_list = sorted(set(corpuses))
         train_num_samples, valid_num_samples, test_num_samples = map(
             sum,
             zip(*datasets_train_valid_test_num_samples)
@@ -51,14 +52,20 @@ def build_train_valid_test_datasets(data_prefix, data_impl, splits_string,
             ''' 
             This is for building individual dataset from each dataset file
             '''
-            def __init__(self, prefix, data_impl, splits_string,
-                num_samples, seq_length, seed, skip_warmup,
-                return_doc_ids,
-                data_cache_path=data_cache_path, name='train'):
+            def __init__(self, prefix, corpus, data_impl, splits_string,
+                         num_samples, seq_length, seed, skip_warmup,
+                         return_doc_ids,
+                         data_cache_path=data_cache_path, name='train'):
                 self.prefix = prefix
                 self.data_impl = data_impl
                 self.splits_string = splits_string
-                self.num_samples = num_samples
+                if name == 'train':
+                    self.num_samples = num_samples[0]
+                elif name == 'valid':
+                    self.num_samples = num_samples[1]
+                else:
+                    self.num_samples = num_samples[2]
+                self.num_samples_train_valid_test = num_samples
                 self.seq_length = seq_length
                 self.seed = seed
                 self.skip_warmup = skip_warmup
@@ -66,66 +73,114 @@ def build_train_valid_test_datasets(data_prefix, data_impl, splits_string,
                 self.data_cache_path = data_cache_path
                 self.dataset = None
                 self.name = name
-                self.desc = prefix + f"{num_samples}" + f"{seq_length}" + f"{seed}"
+                self.desc = prefix + f"{self.num_samples}" + f"{seq_length}" + f"{seed}"
                 self.build = False
+                self.corpus = corpus
             def Build(self):
                 self.dataset = _build_train_valid_test_datasets_single(self.prefix, self.data_impl, self.splits_string,
-                    self.num_samples, self.seq_length, self.seed, self.skip_warmup, self.name, self.return_doc_ids, 
+                    self.num_samples_train_valid_test, self.seq_length, self.seed, self.skip_warmup, self.name, self.return_doc_ids, 
                     data_cache_path=self.data_cache_path)
                 self.build = True
                 return self.dataset
 
-        # Predetermine whether need to build the specific dataset or not. 
+        class BuildConcatDataset(torch.utils.data.Dataset):
+            def __init__(self, dataset_builders):
+                self.dataset_builders = dataset_builders
+                self.num_datasets = len(dataset_builders)
+                self.num_samples = np.sum([d.num_samples for d in dataset_builders])
+                self.indices=[]
+                self.desc="ConcatDataset:"
+                for i in range(self.num_datasets):
+                    self.desc += dataset_builders[i].prefix + ","
+                    for j in range(dataset_builders[i].num_samples):
+                        self.indices.append((i, j))
+                assert(len(self.indices)==self.num_samples)
+                self.desc += f"-{self.num_samples}" + f"-{dataset_builders[0].seq_length}" + f"{dataset_builders[0].seed}"
+            def __len__(self):
+                return self.num_samples
+            def __getitem__(self, idx):
+                if idx >= self.num_samples:
+                    print_flush(f"WARNING: index overflow encountered {idx} > {self.num_samples} for {self.dataset_builders[0].corpus}; will randomly pick one sample")
+                    id = np.random.randint(self.num_samples)
+                else:
+                    id = idx
+                i, j = self.indices[id]
+                if self.dataset_builders[i].build:
+                    return self.dataset_builders[i].dataset[j]
+                else:
+                    return self.dataset_builders[i].Build()[j]
+            
 
+        # Predetermine whether need to build the specific dataset or not. 
+        start_time = time.time()
         print_rank_0(" >>> Started building datasets in distributed way ... ")
 
         a, b, c = [int(d) for d in splits_string.split(",")]
+
         train_datasets = []
         valid_datasets = []
         test_datasets = []
         # Build individual datasets.
+        def build_corpus_datasets(dataset_type='train'):
+            start_time = time.time()
+            print_rank_0(" >>> Building {dataset_type} corpus datasets ...")
+            datasets = []
+            corpus_builders = {}
+            corpus_weights = {}
+            for c in corpus_list:
+                corpus_builders[c] = []
+                corpus_weights[c] = 0.0
+            dataset_builders = [DatasetBuilder(prefixes[i], corpuses[i], data_impl, splits_string,
+                                               datasets_train_valid_test_num_samples[i],
+                                               seq_length, seed, skip_warmup,
+                                               return_doc_ids,data_cache_path, dataset_type) for i in  range(len(weights))]
+            for i in range(torch.distributed.get_rank(), len(weights), torch.distributed.get_world_size()):
+                dataset_builders[i].Build()
+            for i, d in zip(range(len(weights)), dataset_builders):
+                corpus_builders[d.corpus].append(d)
+                corpus_weights[d.corpus] += weights[i]
+            total = 0
+            print_rank_0(" > number of samples for each corpus ")
+            corpus_weights_achieved={}
+            for c in corpus_list:
+                datasets.append(BuildConcatDataset(corpus_builders[c]))
+                total += datasets[-1].num_samples
+                corpus_weights_achieved[c] =  float(datasets[-1].num_samples)/train_num_samples                
+                print_rank_0(f"    {c}: {datasets[-1].num_samples} w={corpus_weights_achieved[c]} (expected: {corpus_weights[c]})")
+
+            print_rank_0(f" > total number of samples: {total}")                
+            print_rank_0(f" >>> Finished building {dataset_type} corpus datasets in {time.time() - start_time} seconds")
+            return datasets, [corpus_weights_achieved[c] for c in corpus_list]
+
         if a > 0:
-            train_datasets = [DatasetBuilder(prefixes[i], data_impl, splits_string,
-                datasets_train_valid_test_num_samples[i],
-                seq_length, seed, skip_warmup,
-                return_doc_ids,data_cache_path, 'train') for i in  range(len(weights))]
-            for i in range(torch.distributed.get_rank(), len(weights), torch.distributed.get_world_size()):
-                train_datasets[i].Build()
+            train_datasets, train_weights = build_corpus_datasets('train')
+
         if b > 0:
-            valid_datasets = [DatasetBuilder(prefixes[i], data_impl, splits_string,
-                datasets_train_valid_test_num_samples[i],
-                seq_length, seed, skip_warmup,
-                return_doc_ids,data_cache_path, 'valid') for i in  range(len(weights))]
-            for i in range(torch.distributed.get_rank(), len(weights), torch.distributed.get_world_size()):
-                valid_datasets[i].Build()
+            valid_datasets, valid_weights = build_corpus_datasets('valid')
+            
         if c > 0:            
-            test_datasets = [DatasetBuilder(prefixes[i], data_impl, splits_string,
-                datasets_train_valid_test_num_samples[i],
-                seq_length, seed, skip_warmup,
-                return_doc_ids,data_cache_path, 'test') for i in  range(len(weights))]
-            for i in range(torch.distributed.get_rank(), len(weights), torch.distributed.get_world_size()):
-                test_datasets[i].Build()
+            test_datasets, test_weights = build_corpus_datasets('test')
 
         # This barrier is critical to make sure that all the datasets are built once
         # and the metadata were written to the cache folder before other ranks touch them
         torch.distributed.barrier()
-        
-        print_rank_0(" >>> Finished building datasets in distributed way ... ")
+        print_rank_0(f" >>> Finished building datasets in distributed way in {time.time() - start_time} seconds")
 
         # Blend.
         blending_train_dataset = None
         if train_datasets:
-            blending_train_dataset = DistributedBlendableDataset(train_datasets, weights, train_num_samples,
+            blending_train_dataset = BlendableDataset(train_datasets, train_weights, train_num_samples,
                                                       data_cache_path=data_cache_path)
         blending_valid_dataset = None
         if valid_datasets:
-            blending_valid_dataset = DistributedBlendableDataset(valid_datasets, weights, valid_num_samples,
+            blending_valid_dataset = BlendableDataset(valid_datasets, valid_weights, valid_num_samples,
                                                       data_cache_path=data_cache_path)
         blending_test_dataset = None
         if test_datasets:
-            blending_test_dataset = DistributedcBlendableDataset(test_datasets, weights, test_num_samples,
+            blending_test_dataset = BlendableDataset(test_datasets, test_weights, test_num_samples,
                                                      data_cache_path=data_cache_path)
-
+        torch.distributed.barrier()
+        print_rank_0(f" >>> Finished building BlendableDataset")
         return (blending_train_dataset, blending_valid_dataset,
                 blending_test_dataset)
 
@@ -511,7 +566,7 @@ def _build_index_mappings(name, data_prefix, documents, sizes,
         # Since this function will be called by all the rank in the very beginning. Therefore, we assume that all the 
         # ranks will first create the document files, and then read it. 
         # There will not be contension effects going on either
-        print_flush(f" > WARNING: could not find index map files, building ")
+        print_flush(f" > WARNING: could not find index map files, building on rank {torch.distributed.get_rank()}")
 
         # For the last epoch, decide whether include the entire epoch
         # in the global shuffle or not.
