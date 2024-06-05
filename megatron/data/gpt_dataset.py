@@ -94,13 +94,15 @@ def build_train_valid_test_datasets(data_prefix, data_impl, splits_string,
                 self.dataset_builders = dataset_builders
                 self.num_datasets = len(dataset_builders)
                 self.num_samples = np.sum([d.num_samples for d in dataset_builders])
-                self.indices=[]
+                self.indices=np.zeros((self.num_samples, 2), dtype=np.uint64)
                 self.desc="ConcatDataset:"
+                m = 0
                 for i in range(self.num_datasets):
                     self.desc += dataset_builders[i].prefix + ","
                     for j in range(dataset_builders[i].num_samples):
-                        self.indices.append((i, j))
-                assert(len(self.indices)==self.num_samples)
+                        self.indices[m] = [i, j]
+                        m+=1
+                assert(m==self.num_samples)
                 self.desc += f"-{self.num_samples}" + f"-{dataset_builders[0].seq_length}" + f"{dataset_builders[0].seed}"
             def __len__(self):
                 return self.num_samples
@@ -173,8 +175,9 @@ def build_train_valid_test_datasets(data_prefix, data_impl, splits_string,
 
         # This barrier is critical to make sure that all the datasets are built once
         # and the metadata were written to the cache folder before other ranks touch them
+        print_rank_0(f" >>> Rank 0 - finished building datasets in {time.time() - start_time} seconds")        
         torch.distributed.barrier()
-        print_rank_0(f" >>> Finished building datasets in distributed way in {time.time() - start_time} seconds")
+        print_rank_0(f" >>> Finished (all ranks) building datasets in distributed way in {time.time() - start_time} seconds")        
         print_rank_0(f" >>> Starting to build BlendableDataset")
         start_time = time.time()
         # Blend.

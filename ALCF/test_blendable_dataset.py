@@ -12,7 +12,7 @@ from megatron.core import mpu
 comm = MPI.COMM_WORLD
 from megatron.utils import PerfTrace, Profile
 
-dlp = Profile("TEST_BLENDABLEDATASET")
+
 import datetime
 def print_rank_0(msg):
     if comm.rank==0:
@@ -25,9 +25,11 @@ if os.getenv('DLIO_PROFILER_DATASET_DIR') is not None:
     extra_trace_path = os.environ['DLIO_PROFILER_DATASET_DIR']
 else:
     extra_trace_path=''
+PerfTrace.initialize_log(f"{args.trace_dir}/trace-{comm.rank}-of-{comm.size}.pfw",  f"{args.data_cache_path}:{extra_trace_path}:{args.data_path}:{args.save}:{args.load}", process_id=comm.rank)
+dlp = Profile("TEST_BLENDABLEDATASET")
 
 os.makedirs(args.trace_dir, exist_ok=True)
-PerfTrace.initialize_log(f"{args.trace_dir}/trace-{comm.rank}-of-{comm.size}.pfw",  f"{args.data_cache_path}:{extra_trace_path}:{args.data_path}:{args.save}:{args.load}", process_id=comm.rank)
+
 
 data_file_list = args.data_file_list
 print_rank_0(f"Reading data from {args.data_file_list}")
