@@ -1,4 +1,6 @@
 #!/usr/bin/env python
+import time
+start_time = time.time()
 from mpi4py import MPI
 from megatron.data.gpt_dataset import build_train_valid_test_datasets
 import numpy as np
@@ -6,17 +8,22 @@ from megatron.global_vars import set_args, set_global_variables, get_args
 from megatron.arguments import parse_args 
 from megatron.initialize import initialize_megatron
 from megatron.data.data_samplers import build_pretraining_data_loader
-import time
+
+import torch
 from megatron.core import mpu
+
+
 comm = MPI.COMM_WORLD
 
 import datetime
 def print_rank_0(msg):
     if comm.rank==0:
         print(f" [INFO][{datetime.datetime.now()}] {msg}", flush=True)
-        
-
+end_time = time.time()        
+print_rank_0(f"Loaded python modules in {end_time - start_time} seconds")
 initialize_megatron(allow_no_cuda=True)
+torch.distributed.barrier()
+print_rank_0(f"Barrier synchonization time:  {time.time() - end_time} seconds")
 args = get_args()
 
 data_file_list = args.data_file_list
@@ -51,6 +58,7 @@ splits_string = "1,0,0"
 
 # Build datasets
 start_build_dataset = time.time()
+
 print_rank_0(f"Starting to build the blendable dataset")
 train_ds, valid_ds, test_ds = build_train_valid_test_datasets(files, data_impl, splits_string,
                             train_valid_test_num_samples,
