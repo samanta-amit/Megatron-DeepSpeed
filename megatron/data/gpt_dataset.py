@@ -57,6 +57,7 @@ def build_train_valid_test_datasets(data_prefix, data_impl, splits_string,
             ''' 
             This is for building individual dataset from each dataset file
             '''
+            @dlp.log
             def __init__(self, prefix, corpus, data_impl, splits_string,
                          num_samples, seq_length, seed, skip_warmup,
                          return_doc_ids,
@@ -90,6 +91,7 @@ def build_train_valid_test_datasets(data_prefix, data_impl, splits_string,
                 return self.dataset
 
         class BuildConcatDataset(torch.utils.data.Dataset):
+            @dlp.log
             def __init__(self, dataset_builders):
                 self.dataset_builders = dataset_builders
                 self.num_datasets = len(dataset_builders)
@@ -175,12 +177,13 @@ def build_train_valid_test_datasets(data_prefix, data_impl, splits_string,
 
         # This barrier is critical to make sure that all the datasets are built once
         # and the metadata were written to the cache folder before other ranks touch them
-        print_rank_0(f" >>> Rank 0 - finished building datasets in {time.time() - start_time} seconds")        
-        torch.distributed.barrier()
-        print_rank_0(f" >>> Finished (all ranks) building datasets in distributed way in {time.time() - start_time} seconds")        
-        print_rank_0(f" >>> Starting to build BlendableDataset")
         start_time = time.time()
+        print_rank_0(f" >>> Rank 0 - finished building datasets in {time.time() - start_time} seconds")                
+        torch.distributed.barrier()
+        print_rank_0(f" >>> Finished building datasets (all ranks) in distributed way in {time.time() - start_time} seconds")
+        print_rank_0(f" >>> Starting to build BlendableDataset")
         # Blend.
+        start_time = time.time()
         blending_train_dataset = None
         if train_datasets:
             blending_train_dataset = BlendableDataset(train_datasets, train_weights, train_num_samples,

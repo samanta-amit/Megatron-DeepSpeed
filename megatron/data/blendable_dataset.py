@@ -104,7 +104,6 @@ class BlendableDataset(torch.utils.data.Dataset):
             print_rank_0(f'> loading blendable dataset sample index: {sample_index_path}')
             self.dataset_sample_index = np.load(sample_index_path, allow_pickle=True, mmap_mode='r')
             assert self.dataset_sample_index.size == self.size
-
             print_rank_0(f'> finished loading in {time.time() - start_time} seconds')            
         else:
             self.dataset_index, self.dataset_sample_index = _build_indices()
