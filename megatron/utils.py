@@ -38,7 +38,7 @@ if _DLIO_PROFILER_EXIST:
 else:
     from functools import wraps
     class Profile:
-        def __init__(type="PROFILER"):
+        def __init__(self, type="PROFILER"):
             self.type = type
         def log(self, func):
             @wraps(func)
@@ -49,7 +49,9 @@ else:
         def __init__(self,):
             self.type = None
         def initialize_log(self, logfile=None, data_dir=None, process_id=-1):
-            return 
+            return
+        def iter(self, a):
+            return a
     PerfTrace = dlio_logger()
 
 
