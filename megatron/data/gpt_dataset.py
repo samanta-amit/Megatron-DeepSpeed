@@ -175,7 +175,8 @@ def build_train_valid_test_datasets(data_prefix, data_impl, splits_string,
         # and the metadata were written to the cache folder before other ranks touch them
         torch.distributed.barrier()
         print_rank_0(f" >>> Finished building datasets in distributed way in {time.time() - start_time} seconds")
-
+        print_rank_0(f" >>> Starting to build BlendableDataset")
+        start_time = time.time()
         # Blend.
         blending_train_dataset = None
         if train_datasets:
@@ -189,8 +190,8 @@ def build_train_valid_test_datasets(data_prefix, data_impl, splits_string,
         if test_datasets:
             blending_test_dataset = BlendableDataset(test_datasets, test_weights, test_num_samples,
                                                      data_cache_path=data_cache_path)
-        torch.distributed.barrier()
-        print_rank_0(f" >>> Finished building BlendableDataset")
+        end_time = time.time()
+        print_rank_0(f" >>> Finished building BlendableDataset in {end_time - start_time} seconds")
         return (blending_train_dataset, blending_valid_dataset,
                 blending_test_dataset)
 
