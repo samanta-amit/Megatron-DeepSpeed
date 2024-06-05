@@ -4,7 +4,7 @@
 
 from datetime import datetime
 import math
-import sys
+import sys, os
 import time
 import json
 # The earliest we can measure the start time.
@@ -194,7 +194,7 @@ def pretrain(
         extra_trace_path = os.environ['DLIO_PROFILER_DATASET_DIR']
     else:
         extra_trace_path=''
-    makedirs(args.trace_dir, exist_ok=True)
+    os.makedirs(args.trace_dir, exist_ok=True)
     PerfTrace.initialize_log(f"{args.trace_dir}/trace-{ez.get_rank()}-of-{ez.get_world_size()}.pfw",  f"{args.data_cache_path}:{extra_trace_path}:{args.data_path}:{args.save}:{args.load}", process_id=ez.get_rank())
     timers = get_timers()
     assert args is not None

@@ -278,7 +278,7 @@ class IndexedDatasetBuilder(object):
         np.float32: 4,
         np.float64: 8,
     }
-
+    @dlp.log
     def __init__(self, out_file, dtype=np.int32):
         self.out_file = open(out_file, 'wb')
         self.dtype = dtype
@@ -425,6 +425,7 @@ class MMapIndexedDataset(torch.utils.data.Dataset):
 
             return _Writer()
 
+        @dlp.log
         def __init__(self, path, skip_warmup=False):
             with open(path, 'rb') as stream:
                 magic_test = stream.read(9)
@@ -500,6 +501,7 @@ class MMapIndexedDataset(torch.utils.data.Dataset):
     def __setstate__(self, state):
         self._do_init(state, skip_warmup=True)
 
+    @dlp.log
     def _do_init(self, path, skip_warmup):
         self._path = path
         self._index = self.Index(index_file_path(self._path), skip_warmup)
@@ -544,6 +546,7 @@ class MMapIndexedDataset(torch.utils.data.Dataset):
         else:
             raise TypeError("Unexpected type received for idx: {}".format(type(idx)))
 
+    @dlp.log
     def get(self, idx, offset=0, length=None):
         """ Retrieves a single item from the dataset with the option to only
         return a portion of the item.
