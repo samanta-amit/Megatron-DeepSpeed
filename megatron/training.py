@@ -190,10 +190,11 @@ def pretrain(
     print_datetime('after megatron is initialized')
 
     args = get_args()
-    if os.getenv('DLIO_PROFILER_DATA_DIR') is not None:
-        extra_trace_path = os.environ['DLIO_PROFILER_DATA_DIR']
+    if os.getenv('DLIO_PROFILER_DATASET_DIR') is not None:
+        extra_trace_path = os.environ['DLIO_PROFILER_DATASET_DIR']
     else:
         extra_trace_path=''
+    makedirs(args.trace_dir, exist_ok=True)
     PerfTrace.initialize_log(f"{args.trace_dir}/trace-{ez.get_rank()}-of-{ez.get_world_size()}.pfw",  f"{args.data_cache_path}:{extra_trace_path}:{args.data_path}:{args.save}:{args.load}", process_id=ez.get_rank())
     timers = get_timers()
     assert args is not None

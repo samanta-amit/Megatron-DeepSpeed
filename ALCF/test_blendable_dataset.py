@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 from mpi4py import MPI
+import os
 from megatron.data.gpt_dataset import build_train_valid_test_datasets
 import numpy as np
 from megatron.global_vars import set_args, set_global_variables, get_args
@@ -9,7 +10,9 @@ from megatron.data.data_samplers import build_pretraining_data_loader
 import time
 from megatron.core import mpu
 comm = MPI.COMM_WORLD
+from megatron.utils import PerfTrace, Profile
 
+dlp = Profile("TEST_BLENDABLEDATASET")
 import datetime
 def print_rank_0(msg):
     if comm.rank==0:
@@ -18,6 +21,13 @@ def print_rank_0(msg):
 
 initialize_megatron(allow_no_cuda=True)
 args = get_args()
+if os.getenv('DLIO_PROFILER_DATASET_DIR') is not None:
+    extra_trace_path = os.environ['DLIO_PROFILER_DATASET_DIR']
+else:
+    extra_trace_path=''
+
+os.makedirs(args.trace_dir, exist_ok=True)
+PerfTrace.initialize_log(f"{args.trace_dir}/trace-{ez.get_rank()}-of-{ez.get_world_size()}.pfw",  f"{args.data_cache_path}:{extra_trace_path}:{args.data_path}:{args.save}:{args.load}", process_id=comm.rank)
 
 data_file_list = args.data_file_list
 print_rank_0(f"Reading data from {args.data_file_list}")
@@ -77,7 +87,7 @@ print_rank_0(f"Starting loading the data")
 start_loading_time = time.time()
 NUM_ITEMS=100
 n=0
-for i in train_dataloader:
+for i in dlp.iter(train_dataloader):
     print(f"[{comm.rank}] DATA {i}")
     n+=1
     if (n%NUM_ITEMS==0):
