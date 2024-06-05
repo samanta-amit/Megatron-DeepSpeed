@@ -500,13 +500,16 @@ def train_valid_test_datasets_provider(train_val_test_num_samples):
         '> building train, validation, and test datasets for GPT ...'
     )
     files = []
+    # making it the default input method
+    assert(agrs.data_file_list is not None)
     if args.data_file_list is not None:
         log.info(f"Reading datasets from {args.data_file_list}")
         with open(args.data_file_list, 'r') as flist:
             for f in flist.readlines():
-                w, fname = f.split()
+                w, fname, c = f.split()
                 files.append(float(w))
                 files.append(fname)
+                files.append(c)
     elif len(args.data_path) == 1 and os.path.isdir(args.data_path[0]):
         path = args.data_path[0] + "/"
         for f in os.listdir(path):
@@ -523,8 +526,7 @@ def train_valid_test_datasets_provider(train_val_test_num_samples):
         train_valid_test_num_samples=train_val_test_num_samples,
         seq_length=args.seq_length,
         seed=args.seed,
-        skip_warmup=True,
-        # skip_warmup=(not args.mmap_warmup),
+        skip_warmup=(not args.mmap_warmup),
         train_data_prefix=args.train_data_path,
         valid_data_prefix=args.valid_data_path,
         test_data_prefix=args.test_data_path,
