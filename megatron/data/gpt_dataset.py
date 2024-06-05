@@ -101,9 +101,8 @@ def build_train_valid_test_datasets(data_prefix, data_impl, splits_string,
                 m = 0
                 for i in range(self.num_datasets):
                     self.desc += dataset_builders[i].prefix + ","
-                    for j in range(dataset_builders[i].num_samples):
-                        self.indices[m] = [i, j]
-                        m+=1
+                    self.indices[m:dataset_builders[i].num_samples+m] = [[i, j] for j in range(dataset_builders[i].num_samples)]
+                    m+=dataset_builders[i].num_samples
                 assert(m==self.num_samples)
                 self.desc += f"-{self.num_samples}" + f"-{dataset_builders[0].seq_length}" + f"{dataset_builders[0].seed}"
             def __len__(self):
@@ -150,6 +149,8 @@ def build_train_valid_test_datasets(data_prefix, data_impl, splits_string,
                                                return_doc_ids,data_cache_path, dataset_type) for i in  range(len(weights))]
             for i in range(torch.distributed.get_rank(), len(weights), torch.distributed.get_world_size()):
                 dataset_builders[i].Build()
+                print_rank_0(f" >>> Finished building individual datasets in time.time() - start_time() seconds")
+            start_concating_time = time.time()
             for i, d in zip(range(len(weights)), dataset_builders):
                 corpus_builders[d.corpus].append(d)
                 corpus_weights[d.corpus] += weights[i]
@@ -161,8 +162,9 @@ def build_train_valid_test_datasets(data_prefix, data_impl, splits_string,
                 total += datasets[-1].num_samples
                 corpus_weights_achieved[c] =  float(datasets[-1].num_samples)/train_num_samples                
                 print_rank_0(f"    {c}: {datasets[-1].num_samples} w={corpus_weights_achieved[c]} (expected: {corpus_weights[c]})")
-
-            print_rank_0(f" > total number of samples: {total}")                
+            
+            print_rank_0(f" > total number of samples: {total}")
+            print_rank_0(f" >>> Finished concating datasets in {time.time() - start_concating_time} seconds")
             print_rank_0(f" >>> Finished building {dataset_type} corpus datasets in {time.time() - start_time} seconds")
             return datasets, [corpus_weights_achieved[c] for c in corpus_list]
 
