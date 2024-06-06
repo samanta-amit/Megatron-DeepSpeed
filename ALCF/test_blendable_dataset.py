@@ -25,7 +25,7 @@ def print_rank_0(msg):
 end_time = time.time()        
 print_rank_0(f"Loaded python modules in {end_time - start_time} seconds")
 initialize_megatron(allow_no_cuda=True)
-torch.distributed.barrier()
+comm.Barrier()
 print_rank_0(f"Barrier synchonization time:  {time.time() - end_time} seconds")
 args = get_args()
 if os.getenv('DLIO_PROFILER_DATASET_DIR') is not None:
@@ -103,12 +103,11 @@ def compute(ct):
 n=0
 start_time = time.time()
 for i in dlp.iter(train_dataloader):
-    compute(SLEEP_TIME)
     print(f"[{comm.rank}] DATA {i}")
     n+=1
     if (n%NUM_ITEMS==0):
         print_rank_0(f"Proccessed {n}th-batch in {time.time() - start_time}")
-    if n>=100:
+    if n>=1000:
         break
     start_time = time.time()
 end_loading_time = time.time()

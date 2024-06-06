@@ -11,12 +11,14 @@ import torch
 from deepspeed.accelerator import get_accelerator
 from megatron import print_rank_0, is_rank_0, get_args, print_flush
 from megatron.core import mpu
+from megatron.data import helpers
 from megatron.data.blendable_dataset import BlendableDataset
 from megatron.data.dataset_utils import get_datasets_weights_and_num_samples, get_datasets_corpuses_weights_and_num_samples
 from megatron.data.dataset_utils import get_train_valid_test_split_
 from megatron.data.indexed_dataset import make_dataset as make_indexed_dataset
 
 from megatron.utils import PerfTrace, Profile
+from mpi4py import MPI
 
 dlp = Profile("DATASET")
 
@@ -99,11 +101,24 @@ def build_train_valid_test_datasets(data_prefix, data_impl, splits_string,
                 self.indices=np.zeros((self.num_samples, 2), dtype=np.uint64)
                 self.desc="ConcatDataset:"
                 m = 0
+                num_samples_list = np.array([d.num_samples for d in dataset_builders])
+                self.num_samples = np.sum(num_samples_list)
+                def _build_indices():
+                    start_time = time.time()
+                    dataset_index = np.zeros(self.num_samples, dtype=np.int64)
+                    dataset_sample_index = np.zeros(self.num_samples, dtype=np.int64)
+                    helpers.build_concat_indices(dataset_index, dataset_sample_index,
+                                                 num_samples_list, 
+                                                 self.num_datasets, 
+                                                 torch.distributed.get_rank()==0)
+                    print_rank_0('> elapsed time for building concat dataset indices: '
+                                 '{:.2f} (sec)'.format(time.time() - start_time))
+                    return dataset_index, dataset_sample_index
+                
+                self.dataset_index, self.dataset_sample_index = _build_indices()
                 for i in range(self.num_datasets):
                     self.desc += dataset_builders[i].prefix + ","
-                    self.indices[m:dataset_builders[i].num_samples+m] = [[i, j] for j in range(dataset_builders[i].num_samples)]
-                    m+=dataset_builders[i].num_samples
-                assert(m==self.num_samples)
+
                 self.desc += f"-{self.num_samples}" + f"-{dataset_builders[0].seq_length}" + f"{dataset_builders[0].seed}"
             def __len__(self):
                 return self.num_samples
@@ -115,7 +130,8 @@ def build_train_valid_test_datasets(data_prefix, data_impl, splits_string,
                     id = np.random.randint(self.num_samples)
                 else:
                     id = idx
-                i, j = self.indices[id]
+                i = self.dataset_index[idx]
+                j = self.dataset_sample_index[idx]
                 if self.dataset_builders[i].build:
                     return self.dataset_builders[i].dataset[j]
                 else:
@@ -149,7 +165,7 @@ def build_train_valid_test_datasets(data_prefix, data_impl, splits_string,
                                                return_doc_ids,data_cache_path, dataset_type) for i in  range(len(weights))]
             for i in range(torch.distributed.get_rank(), len(weights), torch.distributed.get_world_size()):
                 dataset_builders[i].Build()
-                print_rank_0(f" >>> Finished building individual datasets in time.time() - start_time() seconds")
+            print_rank_0(f" >>> Finished building individual datasets in {time.time() - start_time} seconds")
             start_concating_time = time.time()
             for i, d in zip(range(len(weights)), dataset_builders):
                 corpus_builders[d.corpus].append(d)
@@ -164,7 +180,7 @@ def build_train_valid_test_datasets(data_prefix, data_impl, splits_string,
                 print_rank_0(f"    {c}: {datasets[-1].num_samples} w={corpus_weights_achieved[c]} (expected: {corpus_weights[c]})")
             
             print_rank_0(f" > total number of samples: {total}")
-            print_rank_0(f" >>> Finished concating datasets in {time.time() - start_concating_time} seconds")
+            print_rank_0(f" >>> Finished concatenating datasets in {time.time() - start_concating_time} seconds")
             print_rank_0(f" >>> Finished building {dataset_type} corpus datasets in {time.time() - start_time} seconds")
             return datasets, [corpus_weights_achieved[c] for c in corpus_list]
 
@@ -179,9 +195,8 @@ def build_train_valid_test_datasets(data_prefix, data_impl, splits_string,
 
         # This barrier is critical to make sure that all the datasets are built once
         # and the metadata were written to the cache folder before other ranks touch them
-        start_time = time.time()
         print_rank_0(f" >>> Rank 0 - finished building datasets in {time.time() - start_time} seconds")                
-        torch.distributed.barrier()
+        MPI.COMM_WORLD.Barrier()
         print_rank_0(f" >>> Finished building datasets (all ranks) in distributed way in {time.time() - start_time} seconds")
         print_rank_0(f" >>> Starting to build BlendableDataset")
         # Blend.
