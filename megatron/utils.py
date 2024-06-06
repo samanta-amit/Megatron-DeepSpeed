@@ -41,10 +41,7 @@ else:
         def __init__(self, type="PROFILER"):
             self.type = type
         def log(self, func):
-            @wraps(func)
-            def wrapper(*args, **kwargs):
-                x = func(*args, **kwargs)
-                return x
+            return func
     class dlio_logger:
         def __init__(self,):
             self.type = None
