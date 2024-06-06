@@ -42,6 +42,8 @@ else:
             self.type = type
         def log(self, func):
             return func
+        def iter(self, a):
+            return a
     class dlio_logger:
         def __init__(self,):
             self.type = None
