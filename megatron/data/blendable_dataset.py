@@ -10,7 +10,7 @@ import numpy as np
 import torch
 
 from deepspeed.accelerator import get_accelerator
-from megatron import print_rank_0, print_flush
+from megatron import print_rank_0
 from megatron.core import mpu
 from megatron.utils import Profile, PerfTrace
 from mpi4py import MPI

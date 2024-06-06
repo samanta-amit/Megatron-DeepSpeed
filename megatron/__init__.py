@@ -14,7 +14,6 @@ from .global_vars import get_timers
 from .initialize  import initialize_megatron
 
 from .utils import (print_rank_0,
-                    print_flush, 
                     is_last_rank,
                     print_rank_last,
                     is_rank_0,

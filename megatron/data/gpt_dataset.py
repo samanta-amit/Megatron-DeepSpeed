@@ -9,7 +9,7 @@ import time
 import numpy as np
 import torch
 from deepspeed.accelerator import get_accelerator
-from megatron import print_rank_0, is_rank_0, get_args, print_flush
+from megatron import print_rank_0, is_rank_0, get_args
 from megatron.core import mpu
 from megatron.data import helpers
 from megatron.data.blendable_dataset import BlendableDataset
@@ -126,7 +126,7 @@ def build_train_valid_test_datasets(data_prefix, data_impl, splits_string,
             @dlp.log
             def __getitem__(self, idx):
                 if idx >= self.num_samples:
-                    print_flush(f"WARNING: index overflow encountered {idx} > {self.num_samples} for {self.dataset_builders[0].corpus}; will randomly pick one sample")
+                    print_rank_0(f"WARNING: index overflow encountered {idx} > {self.num_samples} for {self.dataset_builders[0].corpus}; will randomly pick one sample")
                     id = np.random.randint(self.num_samples)
                 else:
                     id = idx
@@ -303,7 +303,7 @@ def _build_train_valid_test_datasets_single(data_prefix, data_impl, splits_strin
     """Build train, valid, and test datasets."""
 
     # Each rank print out information
-    print_flush(f" >> building dataset for {data_prefix}")
+    print_rank_0(f" >> building dataset for {data_prefix}")
     # Indexed dataset.
     indexed_dataset = get_indexed_dataset_(data_prefix,
                                            data_impl,
@@ -601,7 +601,7 @@ def _build_index_mappings(name, data_prefix, documents, sizes,
         # Since this function will be called by all the rank in the very beginning. Therefore, we assume that all the 
         # ranks will first create the document files, and then read it. 
         # There will not be contension effects going on either
-        print_flush(f" > WARNING: could not find index map files, building on rank {torch.distributed.get_rank()}")
+        print_rank_0(f" > WARNING: could not find index map files, building on rank {torch.distributed.get_rank()}")
 
         # For the last epoch, decide whether include the entire epoch
         # in the global shuffle or not.
@@ -654,7 +654,7 @@ def _build_index_mappings(name, data_prefix, documents, sizes,
             doc_idx = _build_doc_idx(documents, num_epochs, np_rng,
                                      separate_last_epoch)
             np.save(idx_path['doc'], doc_idx, allow_pickle=True)
-            print_flush(' > elasped time to build and save doc-idx mapping '
+            print_rank_0(' > elasped time to build and save doc-idx mapping '
                          '(seconds): {:4f}'.format(time.time() - start_time))
             # sample-idx.
             start_time = time.time()
@@ -666,7 +666,7 @@ def _build_index_mappings(name, data_prefix, documents, sizes,
             sample_idx = helpers.build_sample_idx(sizes, doc_idx, seq_length,
                                                   num_epochs, tokens_per_epoch)
             np.save(idx_path['sample'], sample_idx, allow_pickle=True)
-            print_flush(' > elasped time to build and save sample-idx mapping '
+            print_rank_0(' > elasped time to build and save sample-idx mapping '
                          '(seconds): {:4f}'.format(time.time() - start_time))
             # shuffle-idx.
             start_time = time.time()
@@ -679,7 +679,7 @@ def _build_index_mappings(name, data_prefix, documents, sizes,
             shuffle_idx = _build_shuffle_idx(num_samples_,
                                              sample_idx.shape[0] - 1, np_rng)
             np.save(idx_path['shuffle'], shuffle_idx, allow_pickle=True)
-            print_flush(' > elasped time to build and save shuffle-idx mapping'
+            print_rank_0(' > elasped time to build and save shuffle-idx mapping'
                          ' (seconds): {:4f}'.format(time.time() - start_time))
         except OSError:
             print(f'There was an error trying to create the data cache directory ({data_cache_dir})')
@@ -691,20 +691,20 @@ def _build_index_mappings(name, data_prefix, documents, sizes,
 
     # Load mappings.
     start_time = time.time()
-    print_flush(f" > loading doc-idx mapping from {idx_path['doc']}")
+    print_rank_0(f" > loading doc-idx mapping from {idx_path['doc']}")
     doc_idx = np.load(idx_path['doc'], allow_pickle=True, mmap_mode='r')
 
-    print_flush(f" > loading sample-idx mapping from {idx_path['sample']}")
+    print_rank_0(f" > loading sample-idx mapping from {idx_path['sample']}")
     sample_idx = np.load(idx_path['sample'], allow_pickle=True, mmap_mode='r')
 
-    print_flush(f" > loading shuffle-idx mapping from {idx_path['shuffle']}")
+    print_rank_0(f" > loading shuffle-idx mapping from {idx_path['shuffle']}")
     shuffle_idx = np.load(idx_path['shuffle'], allow_pickle=True, mmap_mode='r')
 
-    print_flush('    loaded indexed file in {:3.3f} seconds'.format(
+    print_rank_0('    loaded indexed file in {:3.3f} seconds'.format(
         time.time() - start_time))
-    print_flush('    total number of samples: {}'.format(
+    print_rank_0('    total number of samples: {}'.format(
         sample_idx.shape[0]))
-    print_flush('    total number of epochs: {}'.format(num_epochs))
+    print_rank_0('    total number of epochs: {}'.format(num_epochs))
 
     return doc_idx, sample_idx, shuffle_idx, desc, desc_hash
 
