@@ -13,7 +13,7 @@ from deepspeed.accelerator import get_accelerator
 from megatron import print_rank_0, print_flush
 from megatron.core import mpu
 from megatron.utils import Profile, PerfTrace
-
+from mpi4py import MPI
 dlp = Profile("DATASET")
 class BlendableDataset(torch.utils.data.Dataset):
     @dlp.log
@@ -96,7 +96,7 @@ class BlendableDataset(torch.utils.data.Dataset):
                 print_rank_0("Data index creation unsuccessful, exiting.")
                 exit()
             '''
-            torch.distributed.barrier()                    
+            MPI.COMM_WORLD.Barrier()
             start_time = time.time()
             print_rank_0(f'> loading blendable dataset index: {index_path}')
             self.dataset_index = np.load(index_path, allow_pickle=True, mmap_mode='r')

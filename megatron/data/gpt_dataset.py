@@ -18,6 +18,7 @@ from megatron.data.dataset_utils import get_train_valid_test_split_
 from megatron.data.indexed_dataset import make_dataset as make_indexed_dataset
 
 from megatron.utils import PerfTrace, Profile
+from mpi4py import MPI
 
 dlp = Profile("DATASET")
 
@@ -195,7 +196,7 @@ def build_train_valid_test_datasets(data_prefix, data_impl, splits_string,
         # This barrier is critical to make sure that all the datasets are built once
         # and the metadata were written to the cache folder before other ranks touch them
         print_rank_0(f" >>> Rank 0 - finished building datasets in {time.time() - start_time} seconds")                
-        torch.distributed.barrier()
+        MPI.COMM_WORLD.Barrier()
         print_rank_0(f" >>> Finished building datasets (all ranks) in distributed way in {time.time() - start_time} seconds")
         print_rank_0(f" >>> Starting to build BlendableDataset")
         # Blend.
