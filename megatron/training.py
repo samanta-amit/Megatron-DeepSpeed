@@ -186,7 +186,7 @@ def pretrain(
     tdist.all_reduce(start_time_tensor, op=tdist.ReduceOp.MIN)
     # torch.distributed.all_reduce(start_time_tensor,
     #                              op=torch.distributed.ReduceOp.MIN)
-    log.info(f"allreduce call time: {time.time()} seconds")
+    log.info(f"allreduce call time: {time.time()-before_allreduce} seconds")
     _TRAIN_START_TIME = start_time_tensor.item()
     log.info('time to initialize megatron (seconds)={:.3f}'.format(
         time.time() - _TRAIN_START_TIME))
