@@ -10,12 +10,13 @@ import numpy as np
 import torch
 
 from deepspeed.accelerator import get_accelerator
-from megatron import print_rank_0, print_flush
+from megatron import print_rank_0
 from megatron.core import mpu
-
+from megatron.utils import Profile, PerfTrace
+from mpi4py import MPI
+dlp = Profile("DATASET")
 class BlendableDataset(torch.utils.data.Dataset):
-
-
+    @dlp.log
     def __init__(self, datasets, weights, size, *,
                  data_cache_path=None):
 
@@ -32,6 +33,7 @@ class BlendableDataset(torch.utils.data.Dataset):
         weights /= sum_weights
 
         # Build indicies.
+        @dlp.log
         def _build_indices():
             start_time = time.time()
             dataset_index = np.zeros(self.size, dtype=np.int64)
@@ -74,7 +76,7 @@ class BlendableDataset(torch.utils.data.Dataset):
                         np.save(index_path, dataset_index, allow_pickle=True)
                         np.save(sample_index_path, dataset_sample_index,
                                 allow_pickle=True)
-                    print_rank_0(f" > finished saving index map files in {time.time() - start_time} seconds")                        
+                    print_rank_0(f" > finished saving index map files in {time.time() - start_time} seconds")
                 except OSError:
                     print(f'There was an error trying to create the data cache directory ({data_cache_path})')
                     print('or a file in it. This is set with the --data-cache-path argument. Please')
@@ -83,16 +85,18 @@ class BlendableDataset(torch.utils.data.Dataset):
                     cache_success = False
                 self.dataset_index = dataset_index
                 self.dataset_sample_index = dataset_sample_index
+            ''' I don't think the following piece of code is necessary any more; I commented them out now
             counts = get_accelerator().LongTensor([cache_success])
             torch.distributed.all_reduce(counts, group=mpu.get_data_parallel_group())
             torch.distributed.all_reduce(counts, group=mpu.get_pipeline_model_parallel_group())
             if counts[0].item() != (
-                torch.distributed.get_world_size() //
-                torch.distributed.get_world_size(group=mpu.get_tensor_model_parallel_group()) //
-                torch.distributed.get_world_size(group=mpu.get_sequence_parallel_group())):
+                    torch.distributed.get_world_size() //
+                    torch.distributed.get_world_size(group=mpu.get_tensor_model_parallel_group()) //
+                    torch.distributed.get_world_size(group=mpu.get_sequence_parallel_group())):
                 print_rank_0("Data index creation unsuccessful, exiting.")
                 exit()
-
+            '''
+            MPI.COMM_WORLD.Barrier()
             start_time = time.time()
             print_rank_0(f'> loading blendable dataset index: {index_path}')
             self.dataset_index = np.load(index_path, allow_pickle=True, mmap_mode='r')
@@ -100,7 +104,6 @@ class BlendableDataset(torch.utils.data.Dataset):
             print_rank_0(f'> loading blendable dataset sample index: {sample_index_path}')
             self.dataset_sample_index = np.load(sample_index_path, allow_pickle=True, mmap_mode='r')
             assert self.dataset_sample_index.size == self.size
-            torch.distributed.barrier()
             print_rank_0(f'> finished loading in {time.time() - start_time} seconds')            
         else:
             self.dataset_index, self.dataset_sample_index = _build_indices()
@@ -120,7 +123,7 @@ class BlendableDataset(torch.utils.data.Dataset):
     def __len__(self):
         return self.size
 
-
+    @dlp.log
     def __getitem__(self, idx):
         dataset_idx = self.dataset_index[idx]
         sample_idx = self.dataset_sample_index[idx]

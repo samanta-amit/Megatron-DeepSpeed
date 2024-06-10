@@ -26,6 +26,32 @@ from megatron.core import mpu
 from megatron.core.tensor_parallel import param_is_not_tensor_parallel_duplicate
 from megatron.model.module import param_is_not_shared
 from megatron.model.rotary_pos_embedding import RotaryEmbedding
+_DLIO_PROFILER_EXIST=True
+try:
+    import dlio_profiler
+except:
+    _DLIO_PROFILER_EXIST=False
+
+if _DLIO_PROFILER_EXIST:
+    from dlio_profiler.logger import fn_interceptor as Profile
+    from dlio_profiler.logger import dlio_logger as PerfTrace
+else:
+    from functools import wraps
+    class Profile:
+        def __init__(self, type="PROFILER"):
+            self.type = type
+        def log(self, func):
+            return func
+        def iter(self, a):
+            return a
+    class dlio_logger:
+        def __init__(self,):
+            self.type = None
+        def initialize_log(self, logfile=None, data_dir=None, process_id=-1):
+            return
+        def iter(self, a):
+            return a
+    PerfTrace = dlio_logger()
 
 
 def update_rotary_pos_emb(seq_length):
@@ -233,9 +259,6 @@ def print_rank_0(message):
             print(message, flush=True)
     else:
         print(message, flush=True)
-
-def print_flush(message):
-    print(f"[{torch.distributed.get_rank()}] {message}", flush=True)
 
 def is_last_rank():
     return torch.distributed.get_rank() == (

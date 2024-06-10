@@ -49,7 +49,7 @@ def get_datasets_corpuses_weights_and_num_samples(data_prefix, train_valid_test_
         data_new_prefix += [data_prefix[3*i], data_prefix[3*i+1]]
         corpuses.append(data_prefix[3*i+2])
     prefixes, weights, datasets_train_valid_test_num_samples = \
-        get_datasets_weights_and_num_samples(data_prefix,
+        get_datasets_weights_and_num_samples(data_new_prefix,
                                              train_valid_test_num_samples)
     return prefixes, corpuses, weights, datasets_train_valid_test_num_samples
 

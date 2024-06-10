@@ -15,7 +15,23 @@ namespace py = pybind11;
 using namespace std;
 
 const int32_t LONG_SENTENCE_LEN = 512;
-
+void build_concat_indices(py::array_t<int64_t>& dataset_index, py::array_t<int64_t>& dataset_sample_index,
+			  const py::array_t<int64_t> &num_samples,
+			  const int64_t num_datasets, const bool verbose) {
+  if (verbose) {
+    std::cout << "> building indices for corpus datasets ..." << std::endl;    
+  }
+  auto dataset_index_ptr = dataset_index.mutable_unchecked<1>();
+  auto num_samples_ptr = num_samples.unchecked<1>();  
+  auto dataset_sample_index_ptr = dataset_sample_index.mutable_unchecked<1>();  
+  int64_t m = 0; 
+  for(uint64_t i=0; i<num_datasets; i++)
+    for(uint64_t j=0; j<num_samples_ptr[i]; j++) {
+      dataset_index_ptr[m] = i;
+      dataset_sample_index_ptr[m] = j;
+      m++;
+    }
+}
 
 void build_blending_indices(py::array_t<int64_t>& dataset_index,
 			    py::array_t<int64_t>& dataset_sample_index,
@@ -698,4 +714,5 @@ PYBIND11_MODULE(helpers, m) {
     m.def("build_blocks_mapping", &build_blocks_mapping);
     m.def("build_sample_idx", &build_sample_idx);
     m.def("build_blending_indices", &build_blending_indices);
+    m.def("build_concat_indices", &build_concat_indices);
 }
