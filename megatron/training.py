@@ -179,11 +179,14 @@ def pretrain(
     # Adjust the startup time so it reflects the largest value.
     # This will be closer to what scheduler will see (outside of
     # image ... launches.
+    before_allreduce = time.time()
     global _TRAIN_START_TIME
+    log.info(f"time to finish initialize_megatron: {time.time() - _TRAIN_START_TIME} seconds")
     start_time_tensor = get_accelerator().DoubleTensor([_TRAIN_START_TIME])
     tdist.all_reduce(start_time_tensor, op=tdist.ReduceOp.MIN)
     # torch.distributed.all_reduce(start_time_tensor,
     #                              op=torch.distributed.ReduceOp.MIN)
+    log.info(f"allreduce call time: {time.time()} seconds")
     _TRAIN_START_TIME = start_time_tensor.item()
     log.info('time to initialize megatron (seconds)={:.3f}'.format(
         time.time() - _TRAIN_START_TIME))

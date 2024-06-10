@@ -1,7 +1,8 @@
 # Copyright (c) 2023, NVIDIA CORPORATION.  All rights reserved.
 
 """Pretrain GPT"""
-
+import time
+python_start_time = time.time()
 from pathlib import Path
 from mpi4py import MPI
 import os
@@ -41,11 +42,12 @@ import wandb
 from torch import nn
 import torch.nn.functional as F
 import ezpz as ez
-
-
+import_time = time.time() - python_start_time
+start_setup_time = time.time()
 # ---- [SETUP COMMS] ------------------------
 # if str(os.environ.get('LAUNCH_CMD', 'mpich')).lower() == 'mpich':
 RANK = ez.setup_torch(backend="deepspeed", timeout=7200)
+setup_time = time.time() - start_setup_time
 # else:
 #     RANK = ez.get_rank()
 WORLD_SIZE = ez.get_world_size()
@@ -57,6 +59,9 @@ if torch.cuda.is_available():
 # --- [TURN OFF LOGGER ON ALL RANK != 0] ----
 log = logging.getLogger(__name__)
 log.setLevel("INFO") if RANK == 0 else log.setLevel("CRITICAL")
+log.info(f"Import python modules in {import_time} seconds")
+log.info(f"ez.setup_torch time: {setup_time} seconds")
+
 # ---- [SETUP WANDB FROM RANK 0] --------------
 WANDB_MODE = os.environ.get('WANDB_MODE', None)
 DISABLE_WANDB = (
