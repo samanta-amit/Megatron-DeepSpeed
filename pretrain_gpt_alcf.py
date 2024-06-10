@@ -1,7 +1,8 @@
 # Copyright (c) 2023, NVIDIA CORPORATION.  All rights reserved.
 
 """Pretrain GPT"""
-
+import time
+python_start_time = time.time()
 from pathlib import Path
 from mpi4py import MPI
 import os
@@ -21,6 +22,8 @@ from megatron.training import pretrain
 from megatron.utils import get_ltor_masks_and_position_ids
 from megatron.utils import average_losses_across_data_parallel_group, update_rotary_pos_emb
 from megatron.arguments import core_transformer_config_from_args
+from megatron.utils import Profile, PerfTrace
+
 # from megatron.utils import (
 #     # report_memory,
 #     # throughput_calculator,
@@ -39,11 +42,12 @@ import wandb
 from torch import nn
 import torch.nn.functional as F
 import ezpz as ez
-
-
+import_time = time.time() - python_start_time
+start_setup_time = time.time()
 # ---- [SETUP COMMS] ------------------------
 # if str(os.environ.get('LAUNCH_CMD', 'mpich')).lower() == 'mpich':
 RANK = ez.setup_torch(backend="deepspeed", timeout=7200)
+setup_time = time.time() - start_setup_time
 # else:
 #     RANK = ez.get_rank()
 WORLD_SIZE = ez.get_world_size()
@@ -55,6 +59,9 @@ if torch.cuda.is_available():
 # --- [TURN OFF LOGGER ON ALL RANK != 0] ----
 log = logging.getLogger(__name__)
 log.setLevel("INFO") if RANK == 0 else log.setLevel("CRITICAL")
+log.info(f"Import python modules in {import_time} seconds")
+log.info(f"ez.setup_torch time: {setup_time} seconds")
+
 # ---- [SETUP WANDB FROM RANK 0] --------------
 WANDB_MODE = os.environ.get('WANDB_MODE', None)
 DISABLE_WANDB = (
@@ -499,7 +506,7 @@ def train_valid_test_datasets_provider(train_val_test_num_samples):
     )
     files = []
     # making it the default input method
-    assert(agrs.data_file_list is not None)
+    assert(args.data_file_list is not None)
     if args.data_file_list is not None:
         log.info(f"Reading datasets from {args.data_file_list}")
         with open(args.data_file_list, 'r') as flist:
@@ -572,7 +579,7 @@ def git_ds_info():
 
 
 def main():
-    if os.getenv('TORCH_PROFILER_ENABLED') == '1':
+    if os.getenv('TORCH_PROFILER_ENABLE') == '1':
         from torch.profiler import profile, record_function, ProfilerActivity
         with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA]) as prof:
             model = pretrain(
@@ -584,13 +591,8 @@ def main():
                 data_post_process=data_post_process
             )
         args = get_args()
-        assert args is not None
-        trace_output = Path(f"{args.tensorboard_dir}").joinpath(
-            f"torch-trace-{RANK}-of-{WORLD_SIZE}.json"
-        )
-        prof.export_chrome_trace(trace_output.as_posix())
-        log.info(
-            f'Saved trace output to: {trace_output.as_posix()}'
+        prof.export_chrome_trace(
+            f"{args.trace_dir}/torch-trace-{RANK}-of-{WORLD_SIZE}.json"
         )
     else:
         model = pretrain(
