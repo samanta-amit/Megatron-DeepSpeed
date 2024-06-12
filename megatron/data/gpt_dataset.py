@@ -610,8 +610,8 @@ def _build_index_mappings(name, data_prefix, documents, sizes,
         # not mean anything.
         if num_epochs == 1:
             separate_last_epoch = False
-            print(' > only one epoch required, setting '
-                  'separate_last_epoch to False', flush=True)
+            print_rank_0(' > only one epoch required, setting '
+                  'separate_last_epoch to False')
 
         else:
             # Get the number of samples for the last epoch
@@ -638,8 +638,8 @@ def _build_index_mappings(name, data_prefix, documents, sizes,
                 string = ' > last epoch number of samples ({}) is larger '\
                          'than 80% of number of samples per epoch ({}), '\
                          'setting separate_last_epoch to False'
-            print(string.format(last_epoch_num_samples,
-                                num_samples_per_epoch), flush=True)
+            print_rank_0(string.format(last_epoch_num_samples,
+                                num_samples_per_epoch))
 
 
         try:
