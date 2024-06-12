@@ -109,7 +109,7 @@ def model_provider(pre_process=True, post_process=True):
         dpg = mpu.get_data_parallel_group()
     else:
         dpg = None
-    with deepspeed.zero.Init(
+    with deepspeed.zero.MiCS_Init(
             data_parallel_group=dpg,
             remote_device=(
                 None if args.remote_device == 'none' else args.remote_device
