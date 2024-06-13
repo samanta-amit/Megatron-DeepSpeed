@@ -664,7 +664,7 @@ def _build_index_mappings(name, data_prefix, documents, sizes,
             assert doc_idx.dtype == np.int32
             assert sizes.dtype == np.int32
             sample_idx = helpers.build_sample_idx(sizes, doc_idx, seq_length,
-                                                  num_epochs, tokens_per_epoch)
+                                                  num_epochs, tokens_per_epoch, torch.distributed.get_rank()==0)
             np.save(idx_path['sample'], sample_idx, allow_pickle=True)
             print_rank_0(' > elasped time to build and save sample-idx mapping '
                          '(seconds): {:4f}'.format(time.time() - start_time))
@@ -796,8 +796,8 @@ def _build_sample_idx(sizes, doc_idx, seq_length,
 @dlp.log
 def _build_shuffle_idx(num_samples, total_size, np_rng):
     """Build the range [0, size) and shuffle."""
-    print(' > building shuffle index with split [0, {}) and [{}, {}) '
-          '...'.format(num_samples, num_samples, total_size), flush=True)
+    print_rank_0(' > building shuffle index with split [0, {}) and [{}, {}) '
+          '...'.format(num_samples, num_samples, total_size))
 
     dtype_ = np.uint32
     if total_size >= (np.iinfo(np.uint32).max - 1):
