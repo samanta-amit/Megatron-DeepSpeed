@@ -2,9 +2,12 @@
 
 """Pretrain GPT"""
 import time
+from mpi4py import MPI
+comm = MPI.COMM_WORLD
+comm.Barrier()
 python_start_time = time.time()
 from pathlib import Path
-from mpi4py import MPI
+
 import os
 from rich import print
 import torch
@@ -109,7 +112,11 @@ def model_provider(pre_process=True, post_process=True):
         dpg = mpu.get_data_parallel_group()
     else:
         dpg = None
-    with deepspeed.zero.MiCS_Init(
+
+    deepspeed_zero_init = deepspeed.zero.Init
+    if args.use_mics:
+        deepspeed_zero_init = deepspeed.zero.MiCS_Init
+    with deepspeed_zero_init(
             data_parallel_group=dpg,
             remote_device=(
                 None if args.remote_device == 'none' else args.remote_device
