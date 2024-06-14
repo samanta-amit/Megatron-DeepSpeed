@@ -903,33 +903,9 @@ setup_tokenizer_and_data() {
 #     fallback to default values if necessary.
 ###############################################
 setData() {  # ------------------------[dfl: abbrv. for DATA_FILE_LIST]
-    # if [[ "$#" -ne 1 ]]; then
-    #     tok="${TOKENIZER_TYPE:-Llama2}"
-    # else
-    #     tok="$1"
-    # fi
-    # echo "Setting up tokenizer with ${tok}"
-    # setup_tokenizer "${tok}"
-    # tok="${TOKENIZER_TYPE:-}"
-    # if [[ ${tok} == gpt* || ${tok} == GPT* ]]; then
-    #     export TOKENIZER_TYPE="GPT2"
-    #     export DATA_PARENT="${DATA_PARENT:-/gila/Aurora_deployment/foremans/anl_24_q2_release/Megatron-DeepSpeed/dataset}"
-    #     export VOCAB_FILE="${DATA_PARENT}/gpt2-vocab.json"
-    #     export MERGE_FILE="${DATA_PARENT}/gpt2-merges.txt"
-    #     export DATA_PATH="${DATA_PARENT}/BookCorpusDataset_text_document"
-    #     # TOKENIZER_FLAGS="--data-path $DATA_PATH--vocab-file $VOCAB_FILE --merge-file ${MERGE_FILE}"
-    #     DATA_FLAGS="--data-path ${DATA_PATH} --vocab-file ${VOCAB_FILE} --merge-file ${MERGE_FILE}"
-    #     # export TOKENIZER_TYPE="${TOKENIZER_TYPE:-GPT2}"
-    # # else [[ ${tok} == Llama* || ${tok} == llama* || ${tok} == LLAMA* ]]; then
-    # else 
-    # export TOKENIZER_TYPE="Llama2"
-    # tm="${WORKING_DIR}/ALCF/tokenizer.model"            # fallback: Megatron-DeepSpeed/ALCF/tokenizer.model
-    # export TOKENIZER_MODEL="${TOKENIZER_MODEL:-${tm}}"  # USE TOKENIZER_MODEL from env, else fallback from ^
-    # TOKENIZER_FLAGS="${TOKENIZER_FLAGS} --tokenizer-type Llama2Tokenizer"
-    # dfldir="${WORKING_DIR}/ALCF/data-lists"
     # =====[Set DATA_FILE_LIST_FALLBACK based on current machine]==============
     if [[ $(hostname) == x4* ]]; then    # -----------------------------[AURORA]
-        dfl_fallback="/home/foremans/anl_24_release_q4/llm.devkit/Megatron-DeepSpeed/data_file_list_reweighted.txt"
+        dfl_fallback="${WORKING_DIR}/ALCF/data-lists/aurora/dolma_v1_7_file_list.txt"
     elif [[ $(hostname) == x1* ]]; then  # ----------------------------[SUNSPOT]
         # shellcheck source=./data-lists/sunspot/books.txt
         dfl_fallback="${WORKING_DIR}/ALCF/data-lists/sunspot/dolma_v1_7_file_list.txt"
