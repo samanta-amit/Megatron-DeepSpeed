@@ -512,8 +512,6 @@ def train_valid_test_datasets_provider(train_val_test_num_samples):
         '> building train, validation, and test datasets for GPT ...'
     )
     files = []
-    # making it the default input method
-    assert(args.data_file_list is not None)
     if args.data_file_list is not None:
         log.info(f"Reading datasets from {args.data_file_list}")
         with open(args.data_file_list, 'r') as flist:
