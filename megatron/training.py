@@ -1346,7 +1346,11 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
         args.curr_iteration = iteration
         if os.getenv("TORCH_PROFILER_ENABLE")=='2':
             from torch.profiler import profile, record_function, ProfilerActivity
-            with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA]) as prof:
+            try:
+                activities = [ProfilerActivity.CPU, ProfilerActivity.CUDA, ProfilerActivity.XPU]
+            except:
+                activities = [ProfilerActivity.CPU, ProfilerActivity.CUDA]
+            with profile(activities=activities) as prof:
                 loss_dict, skipped_iter, grad_norm, num_zeros_in_grad = \
                     train_step(forward_step_func,
                                train_data_iterator,
