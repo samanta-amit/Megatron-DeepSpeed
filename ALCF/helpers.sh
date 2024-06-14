@@ -1,5 +1,17 @@
 #!/bin/bash --login
 #
+# Contains helper functions for launching `../train_llama_alcf.sh`
+#
+# Example for interactive use:
+#
+# ```bash
+# $ git clone https://github.com/argonne-lcf/Megatron-DeepSpeed
+# $ cd Megatron-DeepSpeed
+# $ PBS_O_WORKDIR=$(pwd) source ALCF/helpers.sh
+# $ setEnv  # will setup conda + virtual environment
+# ```
+
+# for debug mode, uncomment below:
 # set -euxo pipefail
 
 ####################################################################
@@ -8,18 +20,20 @@
 # 2. else, if `${SLURM_SUBMIT_DIR}` has nonzero value, use that
 # 3. else, use `$(pwd)`
 ####################################################################
-if [[ -n "${PBS_O_WORKDIR}" ]]; then
-    WORKING_DIR="${PBS_O_WORKDIR}"
-elif [[ -n "${SLURM_SUBMIT_DIR}" ]]; then
-    WORKING_DIR="${SLURM_SUBMIT_DIR}"
-else
-    echo "Unable to detect PBS or SLURM working directory info..."
-    WORKING_DIR=$(python3 -c 'import os; print(os.getcwd())')
-    echo "Using ${WORKING_DIR} as working directory..."
-fi
+main() {
+    if [[ -n "${PBS_O_WORKDIR}" ]]; then
+        WORKING_DIR="${PBS_O_WORKDIR}"
+    elif [[ -n "${SLURM_SUBMIT_DIR}" ]]; then
+        WORKING_DIR="${SLURM_SUBMIT_DIR}"
+    else
+        echo "Unable to detect PBS or SLURM working directory info..."
+        WORKING_DIR=$(python3 -c 'import os; print(os.getcwd())')
+        echo "Using ${WORKING_DIR} as working directory..."
+    fi
 
-export WORKING_DIR="${WORKING_DIR}"
-printf "Using WORKING_DIR: %s\n" "${WORKING_DIR}"
+    export WORKING_DIR="${WORKING_DIR}"
+    printf "Using WORKING_DIR: %s\n" "${WORKING_DIR}"
+}
 
 ##############################################################################
 # `setup`: All-in-one helper function.
@@ -541,8 +555,8 @@ setup_ezpz() {
     fi
     ezloc=$(python3 -m pip list | grep ezpz | awk '{print $NF}')
     if [[ -n "${ezloc}" ]]; then
-        ezpz_savejobenv
-        python3 -m ezpz.jobs && source "./.jobenv"
+        # ezpz_savejobenv
+        # python3 -m ezpz.jobs && source "./.jobenv"
         make_ds_hostfile || exit
     else
         echo "No ezpz detected. Attempting to install with $(which python3)"
@@ -1152,6 +1166,8 @@ printCyan() {
 printWhite() {
     printf "\e[1;37m%s\e[0m\n" "$@"
 }
+
+main
 
 #### [DEPRECATED] ###########################################################
 # if [[ -z "${HOSTFILE}" ]]; then

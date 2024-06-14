@@ -20,35 +20,26 @@ if [[ -v NOOP ]]; then         # to use: `NOOP=1 bash train_llama_alcf.sh`
   set -o noexec                # same as set -n
 fi
 
-##################################################
-# Helper function for `source`-ing another file
-##################################################
-sourceFile() {
-    fp="$1"
-    echo "source-ing ${fp}"
-    if [[ -f "${fp}" ]]; then
-        source "${fp}"
-    else
-        echo "ERROR: UNABLE TO SOURCE ${fp}"
-    fi
+main() {
+    #####################
+    # MAIN PROGRAM LOGIC
+    #####################
+    #### 1. Navigate into `$PBS_O_WORKDIR`
+    cd "${PBS_O_WORKDIR}" || exit
+    #### 2. source `ALCF/helpers.sh`
+    HERE=$(python3 -c 'import os; print(os.getcwd())') && export HERE
+    source "${HERE}/ALCF/helpers.sh" || exit
+    #### 3. call `setup` from `./ALCF/helpers.sh`
+    setup || exit
+
+    # Take custom args
+    export custom_args=" $@"
+    export run_cmd="${run_cmd} ${custom_args}"
+
+    echo "${run_cmd}" | tee -a "${OUTPUT_LOG}"
+    printf "[!! %s] View output at:\n %s\n" "$(printBlue "NOTE")" "$(printYellow "${OUTPUT_LOG}")" | tee -a "${OUTPUT_LOG}"
+    eval "${run_cmd}" |& tee -a "${OUTPUT_LOG}"
+    set +x
 }
 
-#####################
-# MAIN PROGRAM LOGIC
-#####################
-# ----[1. Navigate into `$PBS_O_WORKDIR`]--------------------------------------
-cd "${PBS_O_WORKDIR}" || exit
-HERE=$(python3 -c 'import os; print(os.getcwd())') && export HERE
-sourceFile "${HERE}/ALCF/helpers.sh" || exit
-setup || exit
-###############################################################################
-
-# Take custom args
-export custom_args=" $@"
-export run_cmd="${run_cmd} ${custom_args}"
-
-echo "${run_cmd}" | tee -a "${OUTPUT_LOG}"
-printf "[!! %s] View output at:\n %s\n" "$(printBlue "NOTE")" "$(printYellow "${OUTPUT_LOG}")" | tee -a "${OUTPUT_LOG}"
-# eval "${run_cmd}" >> "${OUTPUT_LOG}" 2>&1  &
-eval "${run_cmd}" |& tee -a "${OUTPUT_LOG}"
-set +x
+main
