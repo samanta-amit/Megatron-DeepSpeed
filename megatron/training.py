@@ -345,7 +345,7 @@ def update_train_iters(args):
 
     log.info('setting training iterations to {}'.format(args.train_iters))
 
-
+@dlp.log
 def setup_teacher_model(args, model_provider):        
     
     log.info('***>>>>> Student model checkpoint iteration:{}'.format(args.iteration))
@@ -488,7 +488,7 @@ def get_model(model_provider_func, model_type=ModelType.encoder_or_decoder, wrap
 
     return model
 
-
+@dlp.log
 def get_optimizer_param_scheduler(optimizer):
     """Build the learning rate scheduler."""
     args = get_args()
@@ -570,7 +570,7 @@ def load_model_weights_only(model_provider_func):
 
     return model, optimizer, lr_scheduler
 
-
+@dlp.log
 def setup_model_and_optimizer(model_provider_func,
                               model_type,
                               no_wd_decay_cond=None,

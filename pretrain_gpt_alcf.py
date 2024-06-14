@@ -517,8 +517,17 @@ def train_valid_test_datasets_provider(train_val_test_num_samples):
     if args.data_file_list is not None:
         log.info(f"Reading datasets from {args.data_file_list}")
         with open(args.data_file_list, 'r') as flist:
-            for f in flist.readlines():
-                w, fname, c = f.split()
+            lines = flist.readlines()
+            if len(lines[0].split()) < 3:
+                log.warning(f"> Corpus type is not provided in {args.data_file_list}; will assume the datasets are from different corpuses; suggesting to add corpus type to improve the performance.")
+            for i, f in enumerate(lines):
+                try: 
+                    w, fname, c = f.split()
+                except:
+                    w, fname = f.split()
+                    c = str(i)
+                if fname.find(".bin") != -1:
+                    fname = fname.split(".bin")[0]
                 files.append(float(w))
                 files.append(fname)
                 files.append(c)
