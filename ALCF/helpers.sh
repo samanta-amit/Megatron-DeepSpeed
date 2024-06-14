@@ -531,13 +531,13 @@ make_ds_hostfile() {
 }
 
 ezpz_savejobenv() {
-    local outfile="${WORKING_DIR}/savejobenv"
-    curl -Ls https://raw.githubusercontent.com/saforem2/ezpz/jobs-cleanup/src/ezpz/bin/savejobenv > "${outfile}" && source "${outfile}"
+    local outfile="${WORKING_DIR}/bin/savejobenv" ; mkdir -p $(dirname "${outfile}")
+    curl -Ls https://raw.githubusercontent.com/saforem2/ezpz/main/src/ezpz/bin/savejobenv > "${outfile}" && source "${outfile}"
 }
 
 ezpz_getjobenv() {
-    local outfile="${WORKING_DIR}/getjobenv"
-    curl -Ls https://raw.githubusercontent.com/saforem2/ezpz/jobs-cleanup/src/ezpz/bin/getjobenv > "${outfile}" && source "${outfile}"
+    local outfile="${WORKING_DIR}/bin/getjobenv" ; mkdir -p $(dirname "${outfile}")
+    curl -Ls https://raw.githubusercontent.com/saforem2/ezpz/main/src/ezpz/bin/getjobenv > "${outfile}" && source "${outfile}"
 }
 
 # +---------------------------------------+
