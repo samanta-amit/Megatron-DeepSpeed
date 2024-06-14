@@ -677,6 +677,12 @@ setup_conda_sunspot() {
     fi
 }
 
+setup_conda_aurora() {
+    if [[ -z "${CONDA_PREFIX:-}" ]]; then
+        module use -a /soft/modulefiles ; module load frameworks/2024.1
+    fi
+}
+
 ########################
 # Setup conda on Sirius
 ########################
