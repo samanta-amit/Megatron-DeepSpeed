@@ -363,7 +363,7 @@ get_batch_size_on_polaris() {
 #         ```
 ##############################################################################
 setParams() {
-    LLAMA_ARGS=""
+    LLAMA_ARGS="--attention-dropout 0 --hidden-dropout 0"
     # +----[Parallelism Settings] -------------------------------------------+
     # +------[Aurora]--------||-------[SunSpot]-------------+
     if [[ $(hostname) == x4* || $(hostname) == x1* ]]; then
