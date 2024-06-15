@@ -87,7 +87,7 @@ To launch on {`Polaris`, `Sunspot`} @ [ALCF](https://alcf.anl.gov):
          
                 ```bash
                 # [10:04:02 PM][foremans@x4415c0s2b0n0][/gecko/A/fo/p/a/Megatron-DeepSpeed]
-                $ PBS_O_WORKDIR=$(pwd) ; source ALCF/helpers.sh ; setEnv # ; setup_conda_aurora ; setup_venv_from_conda ; #DATA_FILE_LIST=./ALCF/data-lists/aurora/dolma.txt bash train_llama_alcf.sh
+                $ PBS_O_WORKDIR=$(pwd) source ALCF/helpers.sh && setEnv
                 Using WORKING_DIR: /gecko/Aurora_deployment/foremans/projects/argonne-lcf/Megatron-DeepSpeed
                 No conda_prefix or virtual_env found in environment...
                 Setting up conda...
