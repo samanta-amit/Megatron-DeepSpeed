@@ -506,11 +506,10 @@ def forward_step(data_iterator, model):
 
 def train_valid_test_datasets_provider(train_val_test_num_samples):
     """Build train, valid, and test datasets."""
+    t0 = time.perf_counter()
     args = get_args()
     assert args is not None
-    log.info(
-        '> building train, validation, and test datasets for GPT ...'
-    )
+    log.info('> building train, validation, and test datasets for GPT ...')
     files = []
     # making it the default input method
     assert(args.data_file_list is not None)
@@ -518,12 +517,10 @@ def train_valid_test_datasets_provider(train_val_test_num_samples):
         log.info(f"Reading datasets from {args.data_file_list}")
         # [!NOTE]:
         # - We expect each line of args.data_file_list to be of the form:
-        #   ```bash
-        #    weight /path/tp/data_text_document corpus
-        #    ```
-        #    where:
+        #       `weight /path/tp/data_text_document corpus`
+        #   where:
         #     - `weight` is the relative weight of that document
-        #       across all documents (i.e. lines in `args.data_file_list`)
+        #        across all documents (i.e. lines in `args.data_file_list`)
         #     - `/path/to/data_text_document` is the path to the text document
         #     - `corpus` is the corpus (~ source, can be made up) where that
         #        document came from (i.e. `books`, `arxiv`, etc.)
@@ -560,8 +557,8 @@ def train_valid_test_datasets_provider(train_val_test_num_samples):
         test_data_prefix=args.test_data_path,
         data_cache_path=args.data_cache_path,
     )
-    log.info("> finished creating GPT datasets ...")
-
+    dt = time.perf_counter_ns() - t0
+    log.info(f"> finished creating GPT datasets. Took: {dt:.5f}s")
     return train_ds, valid_ds, test_ds
 
 
