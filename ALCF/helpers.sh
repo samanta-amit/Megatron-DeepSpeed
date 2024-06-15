@@ -39,47 +39,57 @@ main() {
 # `setup`: All-in-one helper function.
 #
 # - Explicitly, this will:
-#     01. Identify the machine we're on
-#     02. Setup `python`
+#      1. Identify the machine we're on
+#      2. Setup `python`
 #         1. Load `conda`
 #         2. Setup `venv` on top of `conda`
-#     03. Clone + Install [`saforem2/ezpz`](https://github.com/saforem2/ezpz)
+#      3. Clone + Install [`saforem2/ezpz`](https://github.com/saforem2/ezpz)
 #         1. Additionally, call `source deps/ezpz/src/ezpz/bin/savejobenv`,
 #            which will automatically build a `alias launch=mpiexec ...`
 #            according to the specifics of our active job.
-#     04. Set runtime options
-#     05. Build `deepspeed_config.json`
-#     06. Build {logs, checkpoints, etc} dirs, named according to specifics of
+#      4. Set runtime options
+#      5. Build `deepspeed_config.json`
+#      6. Build {logs, checkpoints, etc} dirs, named according to specifics of
 #         current run
-#     07. Specify additional `deepspeed` arguments
-#     08. Ensure executable exists at expected path
-#     09. Setup data + tokenizer via `TOKENIZER_TYPE`
+#      7. Specify additional `deepspeed` arguments
+#      8. Ensure executable exists at expected path
+#      9. Setup data + tokenizer via `TOKENIZER_TYPE`
 #     10. Print job info
 #     11. Save `.env` to `CKPT_DIR` for safe keeping
 #     12. Check that we're not already running, and if so, exit.
 #     13. Setup run command to be executed.
 ##############################################################################
 setup() {
-    # echo "ezpz detected. Sourcing ${ezloc}/bin/savejobenv"
-    # source "${ezloc}/src/ezpz/bin/savejobenv" > /dev/null 2>&1
-    # source "${ezloc}/src/ezpz/bin/getjobenv" || exit
-    get_machine || exit                   # 01. Identify machine we're on
-    setEnv || exit                        # 02. Load `conda` environment
-    # saveDSenv || exit
-    setup_ezpz || exit                          # 03. Determine WORLD_SIZE, etc. from `PBS_*` vars
-    setParams || exit                     # 04. Set command line arguments to pass to `"${EXEC}"`
-    buildDSconfig || exit                 # 05. Create `deepspeed_config.json` from runtime params from ^
-    setOutput || exit                     # 06. Specify output directory for {logs, checkpoints, etc.}
-    setArgs || exit                       # 07. Specify additional `deepspeed` arguments
+    #  1. Identify machine we're on
+    get_machine || exit
+    #  2. Load `conda` environment
+    setEnv || exit
+    #  3. Determine WORLD_SIZE, etc. from `PBS_*` vars
+    setup_ezpz || exit
+    #  4. Set command line arguments to pass to `"${EXEC}"`
+    setParams || exit
+    #  5. Create `deepspeed_config.json` from runtime params from ^
+    buildDSconfig || exit
+    #  6. Specify output directory for {logs, checkpoints, etc.}
+    setOutput || exit
+    #  7. Specify additional `deepspeed` arguments (dependent on _newly created_ variables)
+    setArgs || exit
+    #  8. Ensure executable exists in expected path
     export EXEC="${EXEC:-${HERE}/pretrain_gpt_alcf.py}"
-    check_executable "${EXEC}"            # 08. Ensure executable exists in expected path
-    dfl="${DATA_FILE_LIST:-}"             # 09. Setup data + tokenizer
-    tok="${TOKENIZER_TYPE:-Llama2}"       #     via `DATA_FILE_LIST` and `TOKENIZER_TYPE`
+    check_executable "${EXEC}"
+    dfl="${DATA_FILE_LIST:-}"
+    #  9. Setup data + tokenizer
+    #     via `DATA_FILE_LIST` and `TOKENIZER_TYPE`
+    tok="${TOKENIZER_TYPE:-Llama2}"
     setup_tokenizer_and_data "${tok}" "${dfl}" || exit
-    printJobInfo || exit                  # 10. Print job info
-    save_dotenv "${CKPT_DIR}" || exit     # 11. Print info about loaded modules and runtime environment
-    check_and_kill_if_running || exit     # 12. Check that were not already running, if so, exit.
-    setup_run_cmd || exit                 # 13. Setup run command to be executed
+    # 10. Print job info
+    printJobInfo || exit
+    # 11. Print info about loaded modules and runtime environment
+    save_dotenv "${CKPT_DIR}" || exit
+    # 12. Check that were not already running, if so, exit.
+    check_and_kill_if_running || exit
+    # 13. Setup run command to be executed
+    setup_run_cmd || exit
     # make_ds_hostfile || exit
 }
 
@@ -767,6 +777,27 @@ check_executable() {
 
 
 
+##############################################################################
+# `setEnv`:
+#
+# 1. Setup `conda`
+#    - if `conda` nonempty, and `venv` empty, use `conda` to setup `venv`.
+#    - if `venv` nonempty, and `conda` empty, what do (???)
+#    - if `venv` nonempty and `conda` nonempty, use these
+#    - if `conda` empty and `venv` empty:
+#       - if `hostname == x4*`, we're on Aurora
+#       - if `hostname == x1*`, we're on Sunspot
+#       - if `hostname == x3*`, we're on Polaris
+#       - if `hostname == nid*`, we're on Perlmutter
+#       - otherwise, you're on you're own
+#
+# 2. Activate (creating, if necessary) a `venv` on top of `base` conda
+#    - use the $CONDA_PREFIX to create a venv in
+#      `Megatron-DeepSpeed/venvs/${CONDA_PREFIX}`
+#      - activate and use this
+#
+# 3. Print info about which python we're using
+##############################################################################
 setEnv() {
     local virtual_env="${VIRTUAL_ENV:-}"
     local conda_prefix="${CONDA_PREFIX:-}"
@@ -786,34 +817,19 @@ setEnv() {
         ######################## setup_conda ############################
         # ---- [SunSpot @ ALCF]  || [Aurora @ ALCF] ---------------------
         if [[ $(hostname) == x1* || $(hostname) == x4* ]]; then
-            # ----- [Aurora] --------------------------------------------
-            # if [[ -z "${conda_prefix}" && -z "${virtual_env}" ]]; then
             if [[ $(hostname) == x4* ]]; then
-                # TODO: Update once Aurora back online
-                eval "$(conda shell.zsh hook)" && conda activate anl_release_q4v2
-            # ----- [SunSpot] ---------------------------------------
+                setup_conda_aurora
             elif [[ $(hostname) == x1* ]]; then
-                echo "Running on SunSpot !!"
                 setup_conda_sunspot
             fi
-            # fi
-            # MPICH_MODULES=$(echo $LOADEDMODULES | tr ':' '\n' | grep mpich)
-            # if [[ -z "${MPICH_MODULES" ]]; then
-            #     source "${WORKING_DIR}/ALCF/sunspot-env.sh" || exit
-            # else
-            #     echo "Caught MPICH_MODULES: ${MPICH_MODULES}"
-            # fi
-        # ----- [Polaris @ ALCF] --------------------------------------------
+        # ----- [Polaris ( / Sirius ) @ ALCF] ----------------------------
         elif [[ $(hostname) == x3* ]]; then
             if [[ "${PBS_O_HOST}" == sirius* ]]; then
-                echo "Running on Sirius !!"
                 setup_conda_sirius
             else
-                echo "Running on Polaris !!"
-                # ---- [load conda] -------------------------------------
                 setup_conda_polaris
             fi
-        # ----- [Perlmutter @ NERSC] ----------------------------------------
+        # ----- [Perlmutter @ NERSC] -------------------------------------
         elif [[ $(hostname) == login* || $(hostname) == nid* ]]; then
             echo "Running on Perlmutter !!"
             module load pytorch
@@ -829,7 +845,6 @@ setEnv() {
     if [[ -z "${virtual_env}" ]]; then
         setup_venv_from_conda
     fi
-    #####################################################################
     pystr="Using: $(which python3)"
     printf "[python] %s" "$(printMagenta ${pystr})"
     printf "\n"
