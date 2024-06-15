@@ -507,7 +507,7 @@ def forward_step(data_iterator, model):
 def train_valid_test_datasets_provider(train_val_test_num_samples):
     """Build train, valid, and test datasets."""
     args = get_args()
-
+    assert args is not None
     log.info(
         '> building train, validation, and test datasets for GPT ...'
     )
@@ -516,12 +516,28 @@ def train_valid_test_datasets_provider(train_val_test_num_samples):
     assert(args.data_file_list is not None)
     if args.data_file_list is not None:
         log.info(f"Reading datasets from {args.data_file_list}")
+        # [!NOTE]:
+        # - We expect each line of args.data_file_list to be of the form:
+        #   ```bash
+        #    weight /path/tp/data_text_document corpus
+        #    ```
+        #    where:
+        #     - `weight` is the relative weight of that document
+        #       across all documents (i.e. lines in `args.data_file_list`)
+        #     - `/path/to/data_text_document` is the path to the text document
+        #     - `corpus` is the corpus (~ source, can be made up) where that
+        #        document came from (i.e. `books`, `arxiv`, etc.)
         with open(args.data_file_list, 'r') as flist:
             for f in flist.readlines():
-                w, fname, c = f.split()
-                files.append(float(w))
-                files.append(fname)
-                files.append(c)
+                if len(f.strip()) != 0:
+                    w, fname, c = f.split()
+                    files.extend(
+                        [
+                            float(w),  # weight
+                            fname,     # filename
+                            c          # corpus
+                        ]
+                    )
     elif len(args.data_path) == 1 and os.path.isdir(args.data_path[0]):
         path = args.data_path[0] + "/"
         for f in os.listdir(path):
