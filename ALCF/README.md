@@ -57,7 +57,7 @@ To launch on {`Polaris`, `Sunspot`} @ [ALCF](https://alcf.anl.gov):
             - <details closed><summary><code>[Polaris]</code>:</summary>
             
                 ```bash
-                # [05:47:13 PM][foremans@x3001c0s13b1n0][/eagle/a/f/p/ar/Megatron-DeepSpeed-D/Megatron-DeepSpeed][sequence-parallel 5 ?9]
+                # [05:47:13 PM][foremans@x3001c0s13b1n0][/eagle/a/f/p/ar/Megatron-DeepSpeed-D/Megatron-DeepSpeed]
                 $ PBS_O_WORKDIR=$(pwd) source ALCF/helpers.sh && setEnv
                 Using WORKING_DIR: /eagle/argonne_tpc/foremans/projects/argonne-lcf/Megatron-DeepSpeed-DistributedDataLoading/Megatron-DeepSpeed
                 No conda_prefix or virtual_env found in environment...
@@ -82,11 +82,33 @@ To launch on {`Polaris`, `Sunspot`} @ [ALCF](https://alcf.anl.gov):
                 ```
                 
                </details>
+
+           - <details closed><summary><code>[Aurora]</code>:</summary>
+         
+                ```bash
+                # [10:04:02 PM][foremans@x4415c0s2b0n0][/gecko/A/fo/p/a/Megatron-DeepSpeed]
+                $ PBS_O_WORKDIR=$(pwd) source ALCF/helpers.sh && setEnv
+                Using WORKING_DIR: /gecko/Aurora_deployment/foremans/projects/argonne-lcf/Megatron-DeepSpeed
+                No conda_prefix or virtual_env found in environment...
+                Setting up conda...
+                
+                The following have been reloaded with a version change:
+                  1) intel_compute_runtime/release/821.36 => intel_compute_runtime/release/803.29     2) oneapi/eng-compiler/2024.04.15.002 => oneapi/release/2024.1
+                
+                Found conda at: /opt/aurora/24.086.0/frameworks/aurora_nre_models_frameworks-2024.1
+                No VIRTUAL_ENV found in environment!
+                    - Trying to setup from /opt/aurora/24.086.0/frameworks/aurora_nre_models_frameworks-2024.1
+                    - Using VENV_DIR=/gecko/Aurora_deployment/foremans/projects/argonne-lcf/Megatron-DeepSpeed/venvs/aurora_nre_models_frameworks-2024.1
+                    - Found existing venv, activating from /gecko/Aurora_deployment/foremans/projects/argonne-lcf/Megatron-DeepSpeed/venvs/aurora_nre_models_frameworks-2024.1
+                [python] Using: /gecko/Aurora_deployment/foremans/projects/argonne-lcf/Megatron-DeepSpeed/venvs/aurora_nre_models_frameworks-2024.1/bin/python3
+                ```
+
+               </details>
    
            - <details closed><summary><code>[Sunspot]</code>:</summary>
             
                 ```bash
-                # [05:37:18 PM][foremans@x1921c0s0b0n0][/gila/A/fo/p/a/Megatron-DeepSpeed][main *1 31 ?32]
+                # [05:37:18 PM][foremans@x1921c0s0b0n0][/gila/A/fo/p/a/Megatron-DeepSpeed]
                 $ PBS_O_WORKDIR=$(pwd) source ALCF/helpers.sh && setEnv
                 Using WORKING_DIR: /gila/Aurora_deployment/foremans/projects/argonne-lcf/Megatron-DeepSpeed
                 No conda_prefix or virtual_env found in environment...
