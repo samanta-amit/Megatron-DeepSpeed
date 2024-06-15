@@ -126,7 +126,10 @@ setup_run_cmd() {
     # [hacky]: to disable Llama-type architectures, toggle via:
     # `NO_LLAMA=1 bash train_llama_alcf.sh`
     if [[ -z "${NO_LLAMA:-}" ]]; then
-        llama_flags="${LLAMA_ARGS}"
+        llama_flags="${LLAMA_ARGS}\
+            --num-key-value-heads ${NUM_KV_HEAD} \
+            --ffn-hidden-size ${FFN_HIDDEN_SIZE} \
+            "
     else
         echo "!! Running in NO_LLAMA MODE !!"
         llama_flags=""
@@ -154,8 +157,6 @@ setup_run_cmd() {
         --tensor-model-parallel-size ${TP} \
         --global-batch-size ${GLOBAL_BATCH} \
         --pipeline-model-parallel-size ${PP} \
-        --num-key-value-heads ${NUM_KV_HEAD} \
-        --ffn-hidden-size ${FFN_HIDDEN_SIZE} \
         --data-cache-path ${data_cache_path} \
         ${DATA_FLAGS} \
         ${LR_ARGS} \
