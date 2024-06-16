@@ -132,6 +132,19 @@ setup_run_cmd() {
     if [[ "${SP}" -ge 2 ]]; then
         export DEFAULTS="${DEFAULTS} --ds-sequence-parallel-size ${SP} --force-ds-sequence-parallel"
     fi
+
+    # [hacky]: to disable Llama-type architectures, toggle via:
+    # `NO_LLAMA=1 bash train_llama_alcf.sh`
+    if [[ -z "${NO_LLAMA:-}" ]]; then
+        llama_flags="${LLAMA_ARGS}\
+            --num-key-value-heads ${NUM_KV_HEAD} \
+            --ffn-hidden-size ${FFN_HIDDEN_SIZE} \
+            "
+    else
+        echo "!! Running in NO_LLAMA MODE !!"
+        llama_flags=""
+    fi
+
     export run_cmd="
         ${LAUNCHER} \
         --${DTYPE} \
@@ -154,17 +167,17 @@ setup_run_cmd() {
         --tensor-model-parallel-size ${TP} \
         --global-batch-size ${GLOBAL_BATCH} \
         --pipeline-model-parallel-size ${PP} \
-        --num-key-value-heads ${NUM_KV_HEAD} \
-        --ffn-hidden-size ${FFN_HIDDEN_SIZE} \
         --data-cache-path ${data_cache_path} \
         ${DATA_FLAGS} \
         ${LR_ARGS} \
-        ${LLAMA_ARGS} \
+        ${llama_flags} \
+        ${FLASH_ARG} \
         ${TIMING_STR} \
         ${TOKENIZER_FLAGS} \
-        $ds_args \
+        ${ds_args} \
         ${gpt_args[*]}
         "
+        # ${LLAMA_ARGS} \
 }
 
 save_dotenv() {
@@ -402,7 +415,8 @@ setParams() {
         if [[ -n "${NO_FLASH_ATTN-}" ]]; then
             echo "Not using flash-attn!!"
         else
-            LLAMA_ARGS="${LLAMA_ARGS} --use-flash-attn-builder"
+            # LLAMA_ARGS="${LLAMA_ARGS} --use-flash-attn-builder"
+            FLASH_ARG="--use-flash-attn-builder"
         fi
         ##############################################################
     # +--------[Polaris]-----------------------------------+
@@ -420,7 +434,8 @@ setParams() {
         if [[ -n "${NO_FLASH_ATTN-}" ]]; then
             echo "Not using flash-attn!!"
         else
-            LLAMA_ARGS="${LLAMA_ARGS} --use-flash-attn-v2"
+            # LLAMA_ARGS="${LLAMA_ARGS} --use-flash-attn-v2"
+            FLASH_ARG="--use-flash-attn-v2"
         fi
         echo "Setting up AWS NCCL OFI Plugin on Polaris..."
         source "${WORKING_DIR}/ALCF/aws_ofi_nccl_plugin.sh" || exit
@@ -434,7 +449,8 @@ setParams() {
         if [[ -n "${NO_FLASH_ATTN-}" ]]; then
             echo "Not using flash-attn!!"
         else
-            LLAMA_ARGS="${LLAMA_ARGS} --use-flash-attn-v2"
+            # LLAMA_ARGS="${LLAMA_ARGS} --use-flash-attn-v2"
+            FLASH_ARG="--use-flash-attn-v2"
         fi
     fi
     # +----------------------------------------------------------------------+
