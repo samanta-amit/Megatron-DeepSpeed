@@ -506,29 +506,38 @@ def forward_step(data_iterator, model):
 
 def train_valid_test_datasets_provider(train_val_test_num_samples):
     """Build train, valid, and test datasets."""
+    t0 = time.perf_counter()
     args = get_args()
-
-    log.info(
-        '> building train, validation, and test datasets for GPT ...'
-    )
+    assert args is not None
+    log.info('> building train, validation, and test datasets for GPT ...')
     files = []
     if args.data_file_list is not None:
         log.info(f"Reading datasets from {args.data_file_list}")
+        # [!NOTE]:
+        # - We expect each line of args.data_file_list to be of the form:
+        #       `weight /path/tp/data_text_document corpus`
+        #   where:
+        #     - `weight` is the relative weight of that document
+        #        across all documents (i.e. lines in `args.data_file_list`)
+        #     - `/path/to/data_text_document` is the path to the text document
+        #     - `corpus` is the corpus (~ source, can be made up) where that
+        #        document came from (i.e. `books`, `arxiv`, etc.)
         with open(args.data_file_list, 'r') as flist:
-            lines = flist.readlines()
-            if len(lines[0].split()) < 3:
-                log.warning(f"> Corpus type is not provided in {args.data_file_list}; will assume the datasets are from different corpuses; suggesting to add corpus type to improve the performance.")
-            for i, f in enumerate(lines):
-                try: 
-                    w, fname, c = f.split()
-                except:
-                    w, fname = f.split()
-                    c = str(i)
-                if fname.find(".bin") != -1:
-                    fname = fname.split(".bin")[0]
-                files.append(float(w))
-                files.append(fname)
-                files.append(c)
+            for f in flist.readlines():
+                if len(f.strip()) != 0:
+                    try:
+                        w, fname, c = f.split()
+                    except:
+                        raise Exception("Please provide the file list as 'weight, filename, corpus'")
+                    if fname.find(".bin") != -1:
+                        fname = fname.split(".bin")[0]
+                    files.extend(
+                        [
+                            float(w),  # weight
+                            fname,     # filename
+                            c          # corpus
+                        ]
+                    )
     elif len(args.data_path) == 1 and os.path.isdir(args.data_path[0]):
         path = args.data_path[0] + "/"
         for f in os.listdir(path):
@@ -551,8 +560,8 @@ def train_valid_test_datasets_provider(train_val_test_num_samples):
         test_data_prefix=args.test_data_path,
         data_cache_path=args.data_cache_path,
     )
-    log.info("> finished creating GPT datasets ...")
-
+    dt = time.perf_counter_ns() - t0
+    log.info(f"> finished creating GPT datasets. Took: {dt:.5f}s")
     return train_ds, valid_ds, test_ds
 
 
