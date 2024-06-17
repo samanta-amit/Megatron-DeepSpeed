@@ -1350,6 +1350,7 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
             try:
                 activities = [ProfilerActivity.CPU, ProfilerActivity.CUDA, ProfilerActivity.XPU]
             except:
+                log.warning("TORCH PROFILER WARNING: XPU is not supported")
                 activities = [ProfilerActivity.CPU, ProfilerActivity.CUDA]
             with profile(activities=activities) as prof:
                 loss_dict, skipped_iter, grad_norm, num_zeros_in_grad = \

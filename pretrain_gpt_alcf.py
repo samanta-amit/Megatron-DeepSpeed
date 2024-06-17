@@ -607,6 +607,7 @@ def main():
         try:
             activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA, ProfilerActivity.XPU]
         except:
+            log.warning("TORCH PROFILER WARNING: XPU is not supported")            
             activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA]
         with profile(activities=activities) as prof:
             model = pretrain(
