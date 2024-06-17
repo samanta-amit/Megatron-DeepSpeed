@@ -654,15 +654,16 @@ def setup_model_and_optimizer(model_provider_func,
                 # Build the datasets.
                 train_ds, _, _ = build_train_valid_test_datasets_provider(
                     train_val_test_num_samples)
-            model, optimizer, args.deepspeed_dataloader, opt_param_scheduler = deepspeed.initialize(
-                model=model[0],
-                optimizer=optimizer,
-                args=args,
-                lr_scheduler=opt_param_scheduler,
-                training_data=train_ds,
-                mpu=mpu if args.no_pipeline_parallel else None,
-                config=args.deepspeed_config_dict,
-            )
+            with Profile("deepspeed.initialize"):
+                model, optimizer, args.deepspeed_dataloader, opt_param_scheduler = deepspeed.initialize(
+                    model=model[0],
+                    optimizer=optimizer,
+                    args=args,
+                    lr_scheduler=opt_param_scheduler,
+                    training_data=train_ds,
+                    mpu=mpu if args.no_pipeline_parallel else None,
+                    config=args.deepspeed_config_dict,
+                )
             model.set_data_post_process_func(data_post_process)
         else:
             model, optimizer, _, opt_param_scheduler = deepspeed.initialize(
@@ -845,7 +846,7 @@ def train_step(forward_step_func, data_iterator,
             return loss_reduced, skipped_iter, grad_norm, num_zeros_in_grad
     return {}, skipped_iter, grad_norm, num_zeros_in_grad
 
-
+@dlp.log
 def training_log(loss_dict, total_loss_dict, learning_rate, iteration,
                  loss_scale, report_memory_flag, skipped_iter,
                  grad_norm, params_norm, num_zeros_in_grad,
@@ -1275,7 +1276,7 @@ def training_log(loss_dict, total_loss_dict, learning_rate, iteration,
 
     return report_memory_flag
 
-
+@dlp.log
 def save_checkpoint_and_time(iteration, model, optimizer, opt_param_scheduler):
     timers = get_timers()
     # Extra barrier is added to make sure
@@ -1576,6 +1577,7 @@ def evaluate(forward_step_func,
 
     return total_loss_dict, collected_non_loss_data
 
+@dlp.log
 def evaluate_and_print_results(prefix, forward_step_func,
                                data_iterator, model,
                                iteration, process_non_loss_data_func, config,
@@ -1629,7 +1631,7 @@ def cyclic_iter(iter):
         for x in iter:
             yield x
 
-
+@dlp.log
 def build_train_valid_test_datasets(build_train_valid_test_datasets_provider):
     """Build pretraining datasets."""
 
