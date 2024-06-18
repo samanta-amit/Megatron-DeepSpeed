@@ -18,8 +18,8 @@
 # > ```
 ##############################################################################
 
-####################################################################
-# `main`:
+##############################################################################
+# `helpers_main`:
 #
 # This will get called automatically when
 #
@@ -27,11 +27,15 @@
 # $ source ALCF/helpers.sh
 # ```
 #
-# This will:
-# 1. if `${PBS_O_WORKDIR}` has nonzero value, use this
-# 2. else, if `${SLURM_SUBMIT_DIR}` has nonzero value, use that
-# 3. else, use `$(pwd)`
-####################################################################
+# - This will set `"${WORKING_DIR}"`, according to:
+#       1. `${PBS_O_WORKDIR}` is nonzero, use this
+#       2. else, if `${SLURM_SUBMIT_DIR}` is nonzero use this
+#       3. else, use `$(pwd)`
+#
+#   this is crucial since many of the functions below use paths 
+#   which are defined relative to this "${WORKING_DIR}"
+#   (e.g. virtual environment, location of executables, etc.)
+##############################################################################
 helpers_main() {
     # for debug mode, run with `DEBUG=1`
     if [[ -n "${DEBUG:-}" ]]; then
@@ -46,7 +50,6 @@ helpers_main() {
         WORKING_DIR=$(python3 -c 'import os; print(os.getcwd())')
         echo "Using ${WORKING_DIR} as working directory..."
     fi
-
     export WORKING_DIR="${WORKING_DIR}"
     printf "Using WORKING_DIR: %s\n" "${WORKING_DIR}"
 }
@@ -148,7 +151,6 @@ setup_run_cmd() {
     if [[ "${SP}" -ge 2 ]]; then
         export DEFAULTS="${DEFAULTS} --ds-sequence-parallel-size ${SP} --force-ds-sequence-parallel"
     fi
-
     # [hacky]: to disable Llama-type architectures, toggle via:
     # `NO_LLAMA=1 bash train_llama_alcf.sh`
     if [[ -z "${NO_LLAMA:-}" ]]; then
@@ -160,7 +162,6 @@ setup_run_cmd() {
         echo "!! Running in NO_LLAMA MODE !!"
         llama_flags=""
     fi
-
     export run_cmd="
         ${LAUNCHER} \
         --${DTYPE} \
@@ -200,7 +201,7 @@ save_dotenv() {
     if [[ "$#" -ne 1 ]]; then
         estr="[error]"
         # echo "Expected exactly one argument, specifying outputdir. Received $#"
-        printf "%s Expected one argument (outdir). Received: %s" "$(printRed ${estr})" "$#"
+        printf "%s Expected one argument (outdir). Received: %s" "$(printRed "${estr}")" "$#"
     else
         outdir="$1"
         mkdir -p "${outdir}"
@@ -880,82 +881,6 @@ setup_python() {
     export "PYTHON_EXEC=$(which python3)"
 }
 
-#
-# ##############################################################################
-# # `setEnv`:
-# #
-# # 1. Setup `conda`
-# #    - if `conda` nonempty, and `venv` empty, use `conda` to setup `venv`.
-# #    - if `venv` nonempty, and `conda` empty, what do (???)
-# #    - if `venv` nonempty and `conda` nonempty, use these
-# #    - if `conda` empty and `venv` empty:
-# #       - if `hostname == x4*`, we're on Aurora
-# #       - if `hostname == x1*`, we're on Sunspot
-# #       - if `hostname == x3*`, we're on Polaris
-# #       - if `hostname == nid*`, we're on Perlmutter
-# #       - otherwise, you're on you're own
-# #
-# # 2. Activate (creating, if necessary) a `venv` on top of `base` conda
-# #    - use the $CONDA_PREFIX to create a venv in
-# #      `Megatron-DeepSpeed/venvs/${CONDA_PREFIX}`
-# #      - activate and use this
-# #
-# # 3. Print info about which python we're using
-# ##############################################################################
-# setEnv() {
-#     local virtual_env="${VIRTUAL_ENV:-}"
-#     local conda_prefix="${CONDA_PREFIX:-}"
-#     if [[ -n "${conda_prefix}" && -z "${virtual_env}" ]]; then
-#         echo "No virtual environment found."
-#         echo "Using conda from: ${conda_prefix}"
-#         echo "Setting up venv from ${CONDA_PROMPT_MODIFIER:-}"
-#         setup_venv_from_conda
-#     elif [[ -n "${virtual_env}" && -z "${conda_prefix}" ]]; then
-#         echo "No conda found."
-#         echo "Using virtual_env from: ${virtual_env}"
-#     elif [[ -n "${virtual_env}" && -n "${conda_prefix}" ]]; then
-#         echo "Using virtual_env: ${virtual_env} on top of conda from: ${conda_prefix}"
-#     elif [[ -z "${conda_prefix}" && -z "${virtual_env}" ]]; then
-#         echo "No conda_prefix or virtual_env found in environment..."
-#         echo "Setting up conda..."
-#         ######################## setup_conda ############################
-#         # ---- [SunSpot @ ALCF]  || [Aurora @ ALCF] ---------------------
-#         if [[ $(hostname) == x1* || $(hostname) == x4* ]]; then
-#             if [[ $(hostname) == x4* ]]; then
-#                 setup_conda_aurora
-#             elif [[ $(hostname) == x1* ]]; then
-#                 setup_conda_sunspot
-#             fi
-#         # ----- [Polaris ( / Sirius ) @ ALCF] ----------------------------
-#         elif [[ $(hostname) == x3* ]]; then
-#             if [[ "${PBS_O_HOST}" == sirius* ]]; then
-#                 setup_conda_sirius
-#             else
-#                 setup_conda_polaris
-#             fi
-#         # ----- [Perlmutter @ NERSC] -------------------------------------
-#         elif [[ $(hostname) == login* || $(hostname) == nid* ]]; then
-#             echo "Running on Perlmutter !!"
-#             module load pytorch
-#             source "${SLURM_SUBMIT_DIR}/venvs/perlmutter/pytorch-2.1.0-cu12/bin/activate"
-#         else # ------------------------------------- [Unknown] -------------------
-#             echo "Unknown hostname $(hostname)"
-#             exit 1
-#         fi
-#     else
-#         echo "Unable to setup python environment. Exiting"
-#         exit 1
-#     fi
-#     if [[ -z "${virtual_env}" ]]; then
-#         setup_venv_from_conda
-#     fi
-#     pystr="Using: $(which python3)"
-#     printf "[python] %s" "$(printMagenta ${pystr})"
-#     printf "\n"
-#     export "PYTHON_EXEC=$(which python3)"
-# }
-#
-
 ######################################################################
 # `makeHostiles`:
 #     Detect if `HOSTFILE` set in active environment.
@@ -1017,7 +942,6 @@ setup_tokenizer_and_data() {
     printf "[setData] TOKENIZER_FLAGS: %s\n" "$(printMagenta ${TOKENIZER_FLAGS})"
 }
 
-
 ###############################################
 # `setData`:
 #     Ensure `DATA_FILE_LIST` is set,
@@ -1040,7 +964,6 @@ setData() {  # ------------------------[dfl: abbrv. for DATA_FILE_LIST]
         fi
     elif [[ $(hostname) == login* || $(hostname) == nid* ]]; then # [PERLMUTTER]
         dfl_fallback="${SLURM_SUBMIT_DIR}/genslm-subsample.txt"
-
     else  # -----------------------------------------------------------[UNKNOWN]
         echo "Unknown hostname. Must manually specify DATA_FILE_LIST."
     fi
@@ -1270,25 +1193,6 @@ printWhite() {
     printf "\e[1;37m%s\e[0m\n" "$@"
 }
 
+################
+# call helpers_main()
 helpers_main
-
-#### [DEPRECATED] ###########################################################
-# if [[ -z "${HOSTFILE}" ]]; then
-#     makeHostfiles || exit         # 4. create `deepspeed` hostfile from `$PBS_NODEFILE`
-# else
-#     echo "!! USING CUSTOM HOSTFILE FROM: ${HOSTFILE}"
-# fi
-# ----------------------------------------------------------------------------
-# setDSlauncher "${HERE}" || exit   # 10. set `launcher` args for `deepspeed ${launcher} ${EXEC} ${args}`
-# ----------------------------------------------------------------------------
-# TORCH_DEVICE=$(python3 -c 'import ezpz as ez; print(ez.get_torch_device())')
-# printf %s "Using TORCH_DEVICE=${TORCH_DEVICE}"
-# if [[ "${TORCH_DEVICE}" == "cuda" ]]; then
-#     printf %s "Setting PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True"
-#     PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
-# fi
-# ----------------------------------------------------------------------------
-# export MPICH_GPU_SUPPORT_ENABLED=1
-# export CUDA_DEVICE_MAX_CONNECTIONS=1
-# export NCCL_DEBUG=INFO
-#############################################################################
