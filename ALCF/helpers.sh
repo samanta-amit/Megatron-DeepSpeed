@@ -1,26 +1,42 @@
 #!/bin/bash --login
+
+###############################################################################
+# `ALCF/helpers.sh`
+# <https://github.com/argonne-lcf/Megatron-DeepSpeed/blob/main/ALCF/helpers.sh>
 #
 # Contains helper functions for launching `../train_llama_alcf.sh`
 #
-# Example for interactive use:
-#
-# ```bash
-# $ git clone https://github.com/argonne-lcf/Megatron-DeepSpeed
-# $ cd Megatron-DeepSpeed
-# $ PBS_O_WORKDIR=$(pwd) source ALCF/helpers.sh
-# $ setEnv  # will setup conda + virtual environment
-# ```
-
-# for debug mode, uncomment below:
-# set -euxo pipefail
+# > [!NOTE]
+# > On any of {Polaris, Aurora, Sunspot} @ ALCF:
+# >
+# > ```bash
+# > $ git clone https://github.com/argonne-lcf/Megatron-DeepSpeed
+# > $ cd Megatron-DeepSpeed
+# > $ PBS_O_WORKDIR=$(pwd) source ALCF/helpers.sh
+# > # on any of {Polaris, Sunspot, Aurora} @ ALCF
+# > $ setup_python
+# > ```
+##############################################################################
 
 ####################################################################
-# `WORKING_DIR`:
+# `main`:
+#
+# This will get called automatically when
+#
+# ```bash
+# $ source ALCF/helpers.sh
+# ```
+#
+# This will:
 # 1. if `${PBS_O_WORKDIR}` has nonzero value, use this
 # 2. else, if `${SLURM_SUBMIT_DIR}` has nonzero value, use that
 # 3. else, use `$(pwd)`
 ####################################################################
-main() {
+helpers_main() {
+    # for debug mode, run with `DEBUG=1`
+    if [[ -n "${DEBUG:-}" ]]; then
+        set -euxo
+    fi
     if [[ -n "${PBS_O_WORKDIR}" ]]; then
         WORKING_DIR="${PBS_O_WORKDIR}"
     elif [[ -n "${SLURM_SUBMIT_DIR}" ]]; then
@@ -63,7 +79,7 @@ setup() {
     #  1. Identify machine we're on
     get_machine || exit
     #  2. Load `conda` environment
-    setEnv || exit
+    setup_python || exit
     #  3. Determine WORLD_SIZE, etc. from `PBS_*` vars
     setup_ezpz || exit
     #  4. Set command line arguments to pass to `"${EXEC}"`
@@ -196,13 +212,12 @@ save_dotenv() {
     fi
 }
 
-
-where_am_i() {
-    if [[ $(hostname) == x4* ]]; then
+get_machine_name() {
+    if [[ $(hostname) == x4* || $(hostname) == aurora* ]]; then
         machine="aurora"
-    elif [[ $(hostname) == x1* ]]; then
+    elif [[ $(hostname) == x1* || $(hostname) == uan* ]]; then
         machine="sunspot"
-    elif [[ $(hostname) == x3* ]]; then
+    elif [[ $(hostname) == x3* || $(hostname) == polaris* ]]; then
         if [[ "${PBS_O_HOST}" == sirius* ]]; then
             machine="sirius"
         else
@@ -377,7 +392,7 @@ set_lr_args() {
 #########################################################################
 get_batch_size_on_polaris() {
     if [[ $(hostname) == x3* ]]; then
-        nhosts=$(wc -l < "${PBS_NODEFILE}")
+        nhosts=$(wc -l < "${HOSTFILE:-${PBS_NODEFILE}}")
         if [[ "${nhosts}" == 1  || "${nhosts}" == 2 ]]; then
             mbs=1
         elif [[ "${nhosts}" -ge 3 ]]; then
@@ -571,7 +586,7 @@ ezpz_getjobenv() {
 # | 2. Install ezpz (if not installed)  |
 # +---------------------------------------+
 setup_ezpz() {
-    [ -n "${PBS_NODEFILE}" ] && ezpz_savejobenv || ezpz_getjobenv
+    [ -n "${HOSTFILE:-${PBS_NODEFILE}}" ] && ezpz_savejobenv || ezpz_getjobenv
     python3 -m ezpz.jobs && source "./.jobenv"
     if [[ ! -d "${WORKING_DIR}/deps/ezpz" ]]; then
         mkdir -p "${WORKING_DIR}/deps"
@@ -791,10 +806,8 @@ check_executable() {
     fi
 }
 
-
-
 ##############################################################################
-# `setEnv`:
+# `setup_python`:
 #
 # 1. Setup `conda`
 #    - if `conda` nonempty, and `venv` empty, use `conda` to setup `venv`.
@@ -814,10 +827,37 @@ check_executable() {
 #
 # 3. Print info about which python we're using
 ##############################################################################
-setEnv() {
-    local virtual_env="${VIRTUAL_ENV:-}"
-    local conda_prefix="${CONDA_PREFIX:-}"
-    if [[ -n "${conda_prefix}" && -z "${virtual_env}" ]]; then
+setup_python() {
+    virtual_env="${VIRTUAL_ENV:-}"
+    conda_prefix="${CONDA_PREFIX:-}"
+    if [[ -z "${conda_prefix}" && -z "${virtual_env}" ]]; then
+        echo "No conda_prefix OR virtual_env found in environment..."
+        echo "Setting up conda..."
+        local machine_name=$(get_machine_name)
+        echo "machine name: ${machine_name}"
+        # if [[ $(hostname) == x4* || $(hostname) == aurora* ]]; then
+        if [[ "${machine_name}" == "aurora" ]]; then
+            setup_conda_aurora
+        # elif [[ $(hostname) == x1* || $(hostname) == uan* ]]; then
+        elif [[ "${machine_name}" == "sunspot" ]]; then
+            setup_conda_sunspot
+        # elif [[ $(hostname) == x3*  || $(hostname) == polaris* ]]; then
+        elif [[ "${machine_name}" == "polaris" ]]; then
+            if [[ "${PBS_O_HOST:-}" == sirius* ]]; then
+                setup_conda_sirius
+            else
+                setup_conda_polaris
+            fi
+        elif [[ $(hostname) == login* || $(hostname) == nid* ]]; then
+            echo "Running on Perlmutter !!"
+            module load pytorch
+            source "${SLURM_SUBMIT_DIR}/venvs/perlmutter/pytorch-2.1.0-cu12/bin/activate"
+        else # ------------------------------------- [Unknown] -------------------
+            echo "Unknown hostname $(hostname)"
+            exit 1
+        fi
+        # # ----- [Perlmutter @ NERSC] -------------------------------------
+    elif [[ -n "${conda_prefix}" && -z "${virtual_env}" ]]; then
         echo "No virtual environment found."
         echo "Using conda from: ${conda_prefix}"
         echo "Setting up venv from ${CONDA_PROMPT_MODIFIER:-}"
@@ -827,33 +867,6 @@ setEnv() {
         echo "Using virtual_env from: ${virtual_env}"
     elif [[ -n "${virtual_env}" && -n "${conda_prefix}" ]]; then
         echo "Using virtual_env: ${virtual_env} on top of conda from: ${conda_prefix}"
-    elif [[ -z "${conda_prefix}" && -z "${virtual_env}" ]]; then
-        echo "No conda_prefix or virtual_env found in environment..."
-        echo "Setting up conda..."
-        ######################## setup_conda ############################
-        # ---- [SunSpot @ ALCF]  || [Aurora @ ALCF] ---------------------
-        if [[ $(hostname) == x1* || $(hostname) == x4* ]]; then
-            if [[ $(hostname) == x4* ]]; then
-                setup_conda_aurora
-            elif [[ $(hostname) == x1* ]]; then
-                setup_conda_sunspot
-            fi
-        # ----- [Polaris ( / Sirius ) @ ALCF] ----------------------------
-        elif [[ $(hostname) == x3* ]]; then
-            if [[ "${PBS_O_HOST}" == sirius* ]]; then
-                setup_conda_sirius
-            else
-                setup_conda_polaris
-            fi
-        # ----- [Perlmutter @ NERSC] -------------------------------------
-        elif [[ $(hostname) == login* || $(hostname) == nid* ]]; then
-            echo "Running on Perlmutter !!"
-            module load pytorch
-            source "${SLURM_SUBMIT_DIR}/venvs/perlmutter/pytorch-2.1.0-cu12/bin/activate"
-        else # ------------------------------------- [Unknown] -------------------
-            echo "Unknown hostname $(hostname)"
-            exit 1
-        fi
     else
         echo "Unable to setup python environment. Exiting"
         exit 1
@@ -862,11 +875,86 @@ setEnv() {
         setup_venv_from_conda
     fi
     pystr="Using: $(which python3)"
-    printf "[python] %s" "$(printMagenta ${pystr})"
+    printf "[python] %s" "$(printMagenta "${pystr}")"
     printf "\n"
     export "PYTHON_EXEC=$(which python3)"
 }
 
+#
+# ##############################################################################
+# # `setEnv`:
+# #
+# # 1. Setup `conda`
+# #    - if `conda` nonempty, and `venv` empty, use `conda` to setup `venv`.
+# #    - if `venv` nonempty, and `conda` empty, what do (???)
+# #    - if `venv` nonempty and `conda` nonempty, use these
+# #    - if `conda` empty and `venv` empty:
+# #       - if `hostname == x4*`, we're on Aurora
+# #       - if `hostname == x1*`, we're on Sunspot
+# #       - if `hostname == x3*`, we're on Polaris
+# #       - if `hostname == nid*`, we're on Perlmutter
+# #       - otherwise, you're on you're own
+# #
+# # 2. Activate (creating, if necessary) a `venv` on top of `base` conda
+# #    - use the $CONDA_PREFIX to create a venv in
+# #      `Megatron-DeepSpeed/venvs/${CONDA_PREFIX}`
+# #      - activate and use this
+# #
+# # 3. Print info about which python we're using
+# ##############################################################################
+# setEnv() {
+#     local virtual_env="${VIRTUAL_ENV:-}"
+#     local conda_prefix="${CONDA_PREFIX:-}"
+#     if [[ -n "${conda_prefix}" && -z "${virtual_env}" ]]; then
+#         echo "No virtual environment found."
+#         echo "Using conda from: ${conda_prefix}"
+#         echo "Setting up venv from ${CONDA_PROMPT_MODIFIER:-}"
+#         setup_venv_from_conda
+#     elif [[ -n "${virtual_env}" && -z "${conda_prefix}" ]]; then
+#         echo "No conda found."
+#         echo "Using virtual_env from: ${virtual_env}"
+#     elif [[ -n "${virtual_env}" && -n "${conda_prefix}" ]]; then
+#         echo "Using virtual_env: ${virtual_env} on top of conda from: ${conda_prefix}"
+#     elif [[ -z "${conda_prefix}" && -z "${virtual_env}" ]]; then
+#         echo "No conda_prefix or virtual_env found in environment..."
+#         echo "Setting up conda..."
+#         ######################## setup_conda ############################
+#         # ---- [SunSpot @ ALCF]  || [Aurora @ ALCF] ---------------------
+#         if [[ $(hostname) == x1* || $(hostname) == x4* ]]; then
+#             if [[ $(hostname) == x4* ]]; then
+#                 setup_conda_aurora
+#             elif [[ $(hostname) == x1* ]]; then
+#                 setup_conda_sunspot
+#             fi
+#         # ----- [Polaris ( / Sirius ) @ ALCF] ----------------------------
+#         elif [[ $(hostname) == x3* ]]; then
+#             if [[ "${PBS_O_HOST}" == sirius* ]]; then
+#                 setup_conda_sirius
+#             else
+#                 setup_conda_polaris
+#             fi
+#         # ----- [Perlmutter @ NERSC] -------------------------------------
+#         elif [[ $(hostname) == login* || $(hostname) == nid* ]]; then
+#             echo "Running on Perlmutter !!"
+#             module load pytorch
+#             source "${SLURM_SUBMIT_DIR}/venvs/perlmutter/pytorch-2.1.0-cu12/bin/activate"
+#         else # ------------------------------------- [Unknown] -------------------
+#             echo "Unknown hostname $(hostname)"
+#             exit 1
+#         fi
+#     else
+#         echo "Unable to setup python environment. Exiting"
+#         exit 1
+#     fi
+#     if [[ -z "${virtual_env}" ]]; then
+#         setup_venv_from_conda
+#     fi
+#     pystr="Using: $(which python3)"
+#     printf "[python] %s" "$(printMagenta ${pystr})"
+#     printf "\n"
+#     export "PYTHON_EXEC=$(which python3)"
+# }
+#
 
 ######################################################################
 # `makeHostiles`:
@@ -900,11 +988,13 @@ setup_tokenizer_and_data() {
     if [[ ${tok} == gpt* || ${tok} == GPT* ]]; then
         export TOKENIZER_TYPE="GPT2"
         export TOKENIZER_FLAGS="--tokenizer-type GPT2BPETokenizer"
-        local machine=$(where_am_i)
+        local machine=$(get_machine_name)
         if [[ ${machine} == "polaris" ]]; then
             export DATA_PARENT="${DATA_PARENT:-/eagle/argonne_tpc/foremans/projects/argonne-lcf/Megatron-DeepSpeed/dataset}"
         elif [[ ${machine} == "sunspot" ]]; then
             export DATA_PARENT="${DATA_PARENT:-/gila/Aurora_deployment/foremans/anl_24_q2_release/Megatron-DeepSpeed/dataset}"
+        elif [[ ${machine} == "aurora" ]]; then
+            export DATA_PARENT="${DATA_PARENT:-/gecko/Aurora_deployment/foremans/projects/argonne-lcf/Megatron-DeepSpeed/dataset}"
         else
             export DATA_PARENT="${DATA_PARENT:-${WORKING_DIR}/dataset}"
         fi
@@ -1180,7 +1270,7 @@ printWhite() {
     printf "\e[1;37m%s\e[0m\n" "$@"
 }
 
-main
+helpers_main
 
 #### [DEPRECATED] ###########################################################
 # if [[ -z "${HOSTFILE}" ]]; then

@@ -1,25 +1,12 @@
 # Megatron-DeepSpeed @ ALCF
 
-
-## 🆘 Getting Started
-
 > [!IMPORTANT]
 > [`train_llama_alcf.sh`](https://github.com/argonne-lcf/Megatron-DeepSpeed/blob/main/train_llama_alcf.sh) is the main entry point for launching
 > distributed training on {Polaris, Aurora, Sunspot} @ ALCF.
 
-
-<!-- WIP
->
->     ```bash
->     $ PBS_O_WORKDIR=$(pwd) source ALCF/helpers.sh
->     $ setup_conda_polaris
->     $ setup_venv_from_conda
->     ```
--->
-
 ## 🏃‍♂️ Running
 
-To launch on {`Polaris`, `Sunspot`} @ [ALCF](https://alcf.anl.gov):
+To launch on {`Polaris`, `Aurora`, `Sunspot`} @ [ALCF](https://alcf.anl.gov):
 
 1. <details closed><summary>⏳ Request an interactive job with <code>qsub -I</code>:</summary>
 
@@ -41,21 +28,21 @@ To launch on {`Polaris`, `Sunspot`} @ [ALCF](https://alcf.anl.gov):
 3. <details closed><summary>🐍 Setup Python:</summary>
 
     <br>
-    
+
     > **NOTE**: The following commands should be ran from [`Megatron-DeepSpeed`](https://github.com/argonne-lcf/Megatron-DeepSpeed), following the `cd` command from 2.
 
     1. Load `conda` module and activate base environment:
-  
+
        ```bash
        PBS_O_WORKDIR=$(pwd) source ALCF/helpers.sh && setEnv
        ```
 
         - <details closed><summary><code>[output]</code>:</summary>
-        
+
             <br>
-            
+
             - <details closed><summary><code>[Polaris]</code>:</summary>
-            
+
                 ```bash
                 # [05:47:13 PM][foremans@x3001c0s13b1n0][/eagle/a/f/p/ar/Megatron-DeepSpeed-D/Megatron-DeepSpeed]
                 $ PBS_O_WORKDIR=$(pwd) source ALCF/helpers.sh && setEnv
@@ -63,16 +50,16 @@ To launch on {`Polaris`, `Sunspot`} @ [ALCF](https://alcf.anl.gov):
                 No conda_prefix or virtual_env found in environment...
                 Setting up conda...
                 Running on Polaris !!
-                
+
                 Lmod is automatically replacing "nvhpc/23.9" with "gcc-native/12.3".
-                
-                
+
+
                 Lmod is automatically replacing "PrgEnv-nvhpc/8.5.0" with "PrgEnv-gnu/8.5.0".
-                
-                
+
+
                 Due to MODULEPATH changes, the following have been reloaded:
                   1) cray-mpich/8.1.28
-                
+
                 Found conda at: /soft/applications/conda/2024-04-29/mconda3
                 No VIRTUAL_ENV found in environment!
                     - Trying to setup from /soft/applications/conda/2024-04-29/mconda3
@@ -80,21 +67,21 @@ To launch on {`Polaris`, `Sunspot`} @ [ALCF](https://alcf.anl.gov):
                     - Found existing venv, activating from /eagle/argonne_tpc/foremans/projects/argonne-lcf/Megatron-DeepSpeed-DistributedDataLoading/Megatron-DeepSpeed/venvs/2024-04-29
                 [python] Using: /eagle/argonne_tpc/foremans/projects/argonne-lcf/Megatron-DeepSpeed-DistributedDataLoading/Megatron-DeepSpeed/venvs/2024-04-29/bin/python3
                 ```
-                
+
                </details>
 
            - <details closed><summary><code>[Aurora]</code>:</summary>
-         
+
                 ```bash
                 # [10:04:02 PM][foremans@x4415c0s2b0n0][/gecko/A/fo/p/a/Megatron-DeepSpeed]
-                $ PBS_O_WORKDIR=$(pwd) source ALCF/helpers.sh && setEnv
+                $ PBS_O_WORKDIR=$(pwd) source ALCF/helpers.sh && setup_python
                 Using WORKING_DIR: /gecko/Aurora_deployment/foremans/projects/argonne-lcf/Megatron-DeepSpeed
                 No conda_prefix or virtual_env found in environment...
                 Setting up conda...
-                
+
                 The following have been reloaded with a version change:
                   1) intel_compute_runtime/release/821.36 => intel_compute_runtime/release/803.29     2) oneapi/eng-compiler/2024.04.15.002 => oneapi/release/2024.1
-                
+
                 Found conda at: /opt/aurora/24.086.0/frameworks/aurora_nre_models_frameworks-2024.1
                 No VIRTUAL_ENV found in environment!
                     - Trying to setup from /opt/aurora/24.086.0/frameworks/aurora_nre_models_frameworks-2024.1
@@ -104,9 +91,9 @@ To launch on {`Polaris`, `Sunspot`} @ [ALCF](https://alcf.anl.gov):
                 ```
 
                </details>
-   
+
            - <details closed><summary><code>[Sunspot]</code>:</summary>
-            
+
                 ```bash
                 # [05:37:18 PM][foremans@x1921c0s0b0n0][/gila/A/fo/p/a/Megatron-DeepSpeed]
                 $ PBS_O_WORKDIR=$(pwd) source ALCF/helpers.sh && setEnv
@@ -114,22 +101,22 @@ To launch on {`Polaris`, `Sunspot`} @ [ALCF](https://alcf.anl.gov):
                 No conda_prefix or virtual_env found in environment...
                 Setting up conda...
                 Running on SunSpot !!
-                
+
                 Due to MODULEPATH changes, the following have been reloaded:
                   1) gcc/12.2.0             5) mpich-config/collective-tuning/1024
                   2) gmp/6.2.1-pcxzkau      6) mpich/icc-all-pmix-gpu/20231026
                   3) mpc/1.3.1-dfagrna      7) oneapi/eng-compiler/2024.04.15.002
                   4) mpfr/4.2.0-w7v7yjv
-                
+
                 The following have been reloaded with a version change:
                   1) intel_compute_runtime/release/821.36 => intel_compute_runtime/release/775.20
                   2) spack-pe-gcc/0.7.0-24.086.0 => spack-pe-gcc/0.6.1-23.275.2
                      UMD: agama-ci-devel-803.29 successfully loaded:
                      UMD: graphics-compute-runtime/agama-ci-devel-803.29
-                
+
                 The following have been reloaded with a version change:
                   1) oneapi/eng-compiler/2024.04.15.002 => oneapi/release/2024.04.15.001
-                
+
                 Found conda at: /soft/datascience/aurora_nre_models_frameworks-2024.1_preview_u1
                 No VIRTUAL_ENV found in environment!
                     - Trying to setup from /soft/datascience/aurora_nre_models_frameworks-2024.1_preview_u1
@@ -137,19 +124,19 @@ To launch on {`Polaris`, `Sunspot`} @ [ALCF](https://alcf.anl.gov):
                     - Found existing venv, activating from /gila/Aurora_deployment/foremans/projects/argonne-lcf/Megatron-DeepSpeed/venvs/aurora_nre_models_frameworks-2024.1_preview_u1
                 [python] Using: /lus/gila/projects/Aurora_deployment/foremans/projects/argonne-lcf/Megatron-DeepSpeed/venvs/aurora_nre_models_frameworks-2024.1_preview_u1/bin/python3
                 ```
-                   
+
                </details>
 
     <!--
     3. Create virtual environment _on top of the base `conda`_[^venv]:
-    
+
         ```bash
         export PBS_O_WORKDIR=$(pwd) && source ALCF/helpers.sh && setup_venv_from_conda
         ```
     -->
-        
+
     2. 🍋 Install [`ezpz`](https://github.com/saforem2/ezpz):
-    
+
         ```bash
         mkdir deps &&  git clone https://github.com/saforem2/ezpz deps/ezpz
         python3 -m pip install -e deps/ezpz --require-virtualenv
@@ -165,7 +152,7 @@ To launch on {`Polaris`, `Sunspot`} @ [ALCF](https://alcf.anl.gov):
    3. Setup [`wandb`](https://docs.wandb.ai/quickstart)
 
       > **NOTE**: this can be disabled by setting `export WANDB_DISABLED=1`
-      
+
 </details>
 
 <!--
@@ -178,7 +165,7 @@ Explicitly, it will (if inside a `conda` environment):
     - else:
         - create a _new_ virtual environment in `"./venvs/${conda_tag}"`
             - activate it
-            
+
 Explicitly, at the command line:
 
 ```bash
@@ -191,30 +178,30 @@ will (1.)
 -->
 
 4. <details closed><summary>🚀 Launch:</summary>
-    
+
     In this case, train a ~ 2B Model (with 10 layers),
     for 1000 iterations using the data file list in:
-    
+
     [`ALCF/data-lists/polaris/books.txt`](https://github.com/argonne-lcf/Megatron-DeepSpeed/blob/main/ALCF/data-lists/polaris/books.txt)
-    
+
     with a micro-batch-size of 2 (`MICRO_BATCH=2`), with the `torch.optim.AdamW` optimizer (`OPT=adamw`).
-    
+
     **Note** that _any_ of the options in the [`setParams`](https://github.com/argonne-lcf/Megatron-DeepSpeed/blob/main/ALCF/helpers.sh#L140)
     function from [`ALCF/helpers.sh`](https://github.com/argonne-lcf/Megatron-DeepSpeed/blob/7d203596dbf14e048e756c5ee6705de7dcb22283/ALCF/helpers.sh)
     can be overridden dynamically at runtime using this technique.
-    
+
     ```bash
     PBS_O_WORKDIR=$(pwd) DATA_FILE_LIST=./ALCF/data-lists/polaris/books.txt TRAIN_ITER=1000 NLAYERS=10 MICRO_BATCH=2 OPT=adamw bash train_llama_alcf.sh
     ```
-    
+
     <details closed><summary><code>[output]</code>:</summary>
-    
+
     <br>
 
     The outputs should look _something_ like this, though YMMV (things change quick):
-    
+
     <details closed><summary><code>[Sunspot]</code>:</summary>
-    
+
     ```bash
     # [09:07:32 AM] [foremans@x1921c0s0b0n0] ~/q/llm.devkit/Megatron-DeepSpeed  main !1 ?27 q4-drop 26s ✘ INT
     $ PBS_O_WORKDIR=$(pwd) DATA_FILE_LIST=./ALCF/data-lists/polaris/books.txt bash train_llama_alcf.sh
@@ -223,15 +210,15 @@ will (1.)
          UMD: agama-ci-devel-736.9 successfully loaded:
          UMD: graphics-compute-runtime/agama-ci-devel-736.9 
     Lmod has detected the following error: The following module(s) are unknown: "gcc/12.1.0"
-    
+
     Please check the spelling or version number. Also try "module spider ..."
     It is also possible your cache file is out-of-date; it may help to try:
       $ module --ignore_cache load "gcc/12.1.0"
-    
+
     Also make sure that all modulefiles written in TCL start with the string #%Module
-    
+
     Note: the module "intel_compute_runtime/release/agama-devel-647" cannot be unloaded because it was not loaded.
-    
+
     Running on SunSpot !!
     [python] Using: /home/foremans/miniconda3/envs/q4-drop/bin/python3
     Saving {PATH, LD_LIBRARY_PATH, htt{p,ps}_proxy, CFLAGS, PYTHONUSERBASE} to .deepspeed_env
@@ -325,7 +312,7 @@ will (1.)
     deepspeed info ................... 0.12.3+6ea44d02, 6ea44d02, HEAD
     deepspeed wheel compiled w. ...... torch 2.1 
     shared memory (/dev/shm) size .... 503.18 GB
-    
+
         deepspeed --hostfile /lus/gila/projects/Aurora_deployment/foremans/q4-drop_sunspot/llm.devkit/Megatron-DeepSpeed/hostfile_deepspeed --launcher MPICH /lus/gila/projects/Aurora_deployment/
     foremans/q4-drop_sunspot/llm.devkit/Megatron-DeepSpeed/pretrain_gpt_alcf.py     --bf16     --optimizer adamw     --split 100,0,0     --log-interval 1     --no-bias-gelu-fusion     --lr-decay
     -style cosine     --no-bias-dropout-fusion     --no-masked-softmax-fusion     --tokenizer-type Llama2Tokenizer     --no-gradient-accumulation-fusion     --accumulate-allreduce-grads-in-fp32 
@@ -338,12 +325,12 @@ will (1.)
     key-layer-scaling --use-rotary-position-embeddings --untie-embeddings-and-output-weights --swiglu --normalization rmsnorm --disable-bias-linear      --deepspeed-activation-checkpointing  --z
     ero-stage=2  --deepspeed_config=ds_stage2_mb4_gb96_pp1_bf16.json  --no-pipeline-parallel  --deepspeed       --checkpoint-activations --checkpoint-num-layers 1           |& tee logs/ds_stage2
     _nl32_hs4096_mb4_seq4096_gb96_pp1_tp1_bf16/0404090742_x1921c0s0b0n0/output.log
-        
+
     [!! NOTE] View output at:
     logs/ds_stage2_nl32_hs4096_mb4_seq4096_gb96_pp1_tp1_bf16/0404090742_x1921c0s0b0n0/output.log
-    
+
     # ...
-    
+
     /gila/Aurora_deployment/AuroraGPT/datasets/dolma/data_Llama2Tokenizer/common-crawl/cc_en_middle/cc_en_middle-0051_text_document.bin
         creating memory view of numpy buffer...
      > finished creating indexed dataset in 0.010017 seconds
@@ -364,7 +351,7 @@ will (1.)
     > loading blendable dataset index: /lus/gila/projects/Aurora_deployment/foremans/q4-drop_sunspot/llm.devkit/Megatron-DeepSpeed/.cache/convergence_debug_small/index-cache/3a426af74008c22f9db24db811aad6b7_index.npy
     > loading blendable dataset sample index: /lus/gila/projects/Aurora_deployment/foremans/q4-drop_sunspot/llm.devkit/Megatron-DeepSpeed/.cache/convergence_debug_small/index-cache/3a426af74008c22f9db24db811aad6b7_sample_index.npy
     /home/foremans/miniconda3/envs/q4-drop/lib/python3.9/site-packages/torch/utils/data/dataloader.py:557: UserWarning: This DataLoader will create 2 worker processes in total. Our suggested max number of worker in current system is 1, which is smaller than what this DataLoader is going to create. Please be aware that excessive worker creation might get DataLoader running slow or even freeze, lower the worker number to avoid potential slowness/freeze if necessary.
-    
+
     [after dataloaders are built] datetime: 2024-04-04 09:09:27
     done with setup ...
     (min, max) time across ranks (ms):
@@ -392,17 +379,17 @@ will (1.)
     [2024-04-04 09:10:13,620] [INFO] [logging.py:96:log_dist] [Rank 0] time (ms) | fwd: 4022.73 | bwd: 15738.66 | bwd_inner: 15556.62 | bwd_allreduce: 181.81 | step: 371.02
      iteration        2/  317892 | consumed samples:          192 | consumed tokens:       786432 | elapsed time per iteration (ms): 20298.3 | learning rate: 3.000E-04 | global batch size:    96 | lm loss: 2.537718E+01 | loss scale: 1.0 | actual seqlen:  4096 | number of skipped iterations:   0 | number of nan iterations:   0 | samples per second: 4.729 | tokens per gpu per second(tgs): 807.159 | TFLOPs: 49.17 |
     ```
-    
+
     </details>
-    
+
     <details closed><summary><code>[Polaris]</code>:</summary>
-    
+
     ```bash
     # [09:31:35 AM] [foremans@x3112c0s13b0n0] ~/pol/p/a/Megatron-DeepSpeed  main !4 ?24 cu118-pt221 ✘ INT
     $ PBS_O_WORKDIR=$(pwd) DATA_FILE_LIST=./ALCF/data-lists/polaris/books.txt OPT=adamw bash train_llama_alcf.sh
     source-ing /lus/eagle/projects/datascience/foremans/locations/polaris/projects/argonne-lcf/Megatron-DeepSpeed/ALCF/helpers.sh
     Running on Polaris !!
-    
+
     [python] Using: /eagle/datascience/foremans/miniconda3/envs/cu118-pt221/bin/python3
     Saving {PATH, LD_LIBRARY_PATH, htt{p,ps}_proxy, CFLAGS, PYTHONUSERBASE} to .deepspeed_env
     Found ezpz!
@@ -440,7 +427,7 @@ will (1.)
     ZS: 2, CPU_OPTIMIZER: , MB: 8, GB: 32, PP: 1, DTYPE: bf16!!!Please see logs at logs/ds_stage2_nl32_hs4096_mb8_seq4096_gb32_pp1_tp2_bf16/0404093534_x3112c0s13b0n0
     !! Caught USE_ACTIVATION_CHECKPOINTING=1 !!
     !! Caught USE_ACTIVATION_CHECKPOINTING=1 !!
-    Calling:  setData() with ./convergence_debug_small.txt
+    Calling:  setData() with "./convergence_debug_small.txt"
     --------------------
     Updated environment:
     DATA_FILE_LIST: ./convergence_debug_small.txt
@@ -458,7 +445,7 @@ will (1.)
     - Using DATA_FILE_LIST: ./convergence_debug_small.txt
     ++++++++++++++++++++++++++++++++++++++++++++++++++
     ! Using /eagle/datascience/foremans/miniconda3/envs/cu118-pt221/bin/deepspeed
-    [2024-04-04 09:35:35,959] [INFO] [real_accelerator.py:191:get_accelerator] Setting ds_accelerator to cuda (auto detect)
+    [2024-04-04 09:35:35,959] [INFO] [real_accelerator.py:191:get_accelerator] Setting ds_accelerator to cuda [auto detect]
     --------------------------------------------------
     DeepSpeed C++/CUDA extension op report
     --------------------------------------------------
@@ -504,7 +491,7 @@ will (1.)
     nvcc version ..................... 11.8
     deepspeed wheel compiled w. ...... torch 2.2, cuda 11.8
     shared memory (/dev/shm) size .... 251.61 GB
-    
+
         deepspeed --hostfile /lus/eagle/projects/datascience/foremans/locations/polaris/projects/argonne-lcf/Megatron-DeepSpeed/hostfile_deepspeed --launcher MPICH /lus/eagle/projects/datascienc
     e/foremans/locations/polaris/projects/argonne-lcf/Megatron-DeepSpeed/pretrain_gpt_alcf.py     --bf16     --optimizer adamw     --split 100,0,0     --log-interval 1     --no-bias-gelu-fusion 
         --lr-decay-style cosine     --no-bias-dropout-fusion     --no-masked-softmax-fusion     --tokenizer-type Llama2Tokenizer     --no-gradient-accumulation-fusion     --accumulate-allreduce-
@@ -517,12 +504,12 @@ will (1.)
     er.model     --no-query-key-layer-scaling --use-rotary-position-embeddings --untie-embeddings-and-output-weights --swiglu --normalization rmsnorm --disable-bias-linear --use-flash-attn-v2   
        --deepspeed-activation-checkpointing  --zero-stage=2  --deepspeed_config=ds_stage2_mb8_gb32_pp1_bf16.json  --no-pipeline-parallel  --deepspeed       --checkpoint-activations --checkpoint-
     num-layers 1           |& tee logs/ds_stage2_nl32_hs4096_mb8_seq4096_gb32_pp1_tp2_bf16/0404093534_x3112c0s13b0n0/output.log
-        
+
     [!! NOTE] View output at:
     logs/ds_stage2_nl32_hs4096_mb8_seq4096_gb32_pp1_tp2_bf16/0404093534_x3112c0s13b0n0/output.log
-    
+
     # ...
-    
+
     /eagle/datasets/dolma/data_Llama2Tokenizer/common-crawl/cc_en_middle/cc_en_middle-0051_text_document.bin
         creating memory view of numpy buffer...
      > finished creating indexed dataset in 0.001280 seconds
@@ -568,12 +555,12 @@ will (1.)
     [2024-04-04 09:36:38,623] [INFO] [logging.py:96:log_dist] [Rank 0] time (ms) | fwd_microstep: 1395.17 | bwd_microstep: 6832.48 | bwd_inner_microstep: 6789.73 | bwd_allreduce_microstep: 42.70 | step_microstep: 1867.64
     [2024-04-04 09:36:38,623] [INFO] [logging.py:96:log_dist] [Rank 0] time (ms) | fwd: 1395.15 | bwd: 6832.49 | bwd_inner: 6789.73 | bwd_allreduce: 42.71 | step: 1867.65
      iteration        2/  317892 | consumed samples:           64 | consumed tokens:       262144 | elapsed time per iteration (ms): 10154.3 | learning rate: 3.000E-04 | global batch size:    32 | lm loss: 1.766422E+01 | loss scale: 1.0 | actual seqlen:  4096 | number of skipped iterations:   0 | number of nan iterations:   0 | samples per second: 3.151 | tokens per gpu per second(tgs): 1613.503 | TFLOPs: 98.29 |
-    
+
     # ...
     ```
-    
+
     </details>
-    
+
     </details>
 
 </details>
@@ -583,17 +570,17 @@ will (1.)
 [^example]: |
     In this case, train a ~ 2B Model (with 10 layers),
     for 1000 iterations using the data file list in:
-    
+
     [`ALCF/data-lists/polaris/books.txt`](https://github.com/argonne-lcf/Megatron-DeepSpeed/blob/main/ALCF/data-lists/polaris/books.txt)
-    
+
     with a micro-batch-size of 2, with the `torch.optim.AdamW` optimizer. Note that _any_ of the options in the
-    
+
     [`setParams`](https://github.com/argonne-lcf/Megatron-DeepSpeed/blob/main/ALCF/helpers.sh#L140)
-    
+
     function from
-    
+
     [`ALCF/helpers.sh`](https://github.com/argonne-lcf/Megatron-DeepSpeed/blob/7d203596dbf14e048e756c5ee6705de7dcb22283/ALCF/helpers.sh)
-    
+
     can be overridden dynamically at runtime using this technique.
 -->
 
@@ -616,7 +603,7 @@ export PBS_O_WORKDIR="$(pwd)" && DATA_FILE_LIST=./ALCF/data-lists/polaris/books.
     $ git clone https://github.com/argonne-lcf/Megatron-DeepSpeed
     $ cd Megatron-DeepSpeed
     ```
-     
+
      > [!NOTE]  
      > In the `conda create` command below,
      > you can replace `--name "${DAY}"` with
@@ -631,7 +618,7 @@ export PBS_O_WORKDIR="$(pwd)" && DATA_FILE_LIST=./ALCF/data-lists/polaris/books.
     $ export PYTHONUSERBASE="${HOME}/.local/polaris/conda/${DAY}"
     $ conda create --solver libmamba -c pytorch -c nvidia --name "${DAY}" "python==3.12"
     ```
-    
+
 3. Install dependencies:
 
     ```bash
@@ -641,7 +628,7 @@ export PBS_O_WORKDIR="$(pwd)" && DATA_FILE_LIST=./ALCF/data-lists/polaris/books.
     $ python3 -m pip install --upgrade pip pybind11 toolong appdirs wandb sentencepiece ipython setuptools wheel ninja
     $ python3 -m pip install --upgrade deepspeed wandb
     ```
-    
+
     - [`ezpz`](https://github.com/saforem2/ezpz):
 
         <details closed><summary><code>install</code>:</summary>
@@ -654,7 +641,7 @@ export PBS_O_WORKDIR="$(pwd)" && DATA_FILE_LIST=./ALCF/data-lists/polaris/books.
         </details>
 
      - [**OPTIONAL**] [`NVIDIA/apex`](https://github.com/NVIDIA/apex):
-  
+
         <details closed><summary><code>install</code>:</summary>
 
         ```bash
@@ -664,7 +651,7 @@ export PBS_O_WORKDIR="$(pwd)" && DATA_FILE_LIST=./ALCF/data-lists/polaris/books.
         $ module swap gcc gcc/10.3.0
         $ python3 -m pip install -v --disable-pip-version-check --no-cache-dir --no-build-isolation --config-settings "--build-option=--cpp_ext" --config-settings "--build-option=--cuda_ext" ./
         ```
-        
+
         </details>
 
 </details>
@@ -799,11 +786,19 @@ modules and launch
 -->
 
 
+### 🚀 Submit as a batch job
+
+```bash
+$ cd Megatron-DeepSpeed
+$ qsub -A <your-project> -q debug -l select=2 -l walltime=01:00:00,filesystems=eagle:home train_llama_alcf.sh
+```
+
+
 
 ## 📝 Data Preprocessing 
 
 <details closed><summary>Data Pre-Processing:</summary>
-    
+
 AuroraGPT is trained on the Dolma dataset (initially v0), now in the process of moving to v6. For more details on the dataset, refer to https://huggingface.co/datasets/allenai/dolma. The dolma dataset downloaded is already preprocessing to remove the duplicates (dedup) and filtering the data (mixing). For more details refer to https://github.com/allenai/dolma/tree/main/docs and https://github.com/vksastry/dolma_alcf/blob/main/ALCF/Readme.md. 
 
 The data preprocessing of Dolma dataset before training consists of tokenization of the data using a specific tokenizer (LlamaTokenizer is what we are currently using), Use the below script to tokenize the entire dataset. Example shown for Polaris. 
@@ -822,7 +817,7 @@ cd /eagle/datasets/dolma/utils
 
 - [ ] Ensure / double check that optimizer settings from `ds_config.json` aren't being overwritten by some defaults in `megatron/arguments.py`
     - [ ] specifically, `momentum, beta{1, 2}, etc`
-    
+
 <details closed><summary><b>✅ <code>Completed</code></b></summary>
 
 - Continue runs on Polaris @
@@ -834,12 +829,12 @@ cd /eagle/datasets/dolma/utils
 
 - [x] Then, try re-creating ( / fixing) conda with `cuda==12.1`
     - 😔, failed.
-     
+
 - ~~‼️  Unable to save checkpoints with `torch==2.1` + `cuda==11.8`~~:
     - Fixed in [a57a21f](https://github.com/argonne-lcf/Megatron-DeepSpeed/commit/a57a21f6b2a8abf847f5ef599e1b1edcb5a5e1b5)
 
     <details closed><summary><code>🐛 Bug</code></summary>
-        
+
     - Training progresses OK:
 
         ```bash
@@ -888,4 +883,3 @@ cd /eagle/datasets/dolma/utils
 </details>
 
 </details>
-
