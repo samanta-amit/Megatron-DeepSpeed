@@ -79,7 +79,7 @@ helpers_main() {
 #     13. Setup run command to be executed.
 ##############################################################################
 setup() {
-    printf "%s" "$(printBlue "${AURORA_GPT_HEADER}")"
+    # printf "%s" "$(printBlue "${AURORA_GPT_HEADER}")"
     #  1. Identify machine we're on
     get_machine || exit
     #  2. Load `conda` environment
