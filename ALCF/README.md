@@ -202,6 +202,15 @@ will (1.)
     PBS_O_WORKDIR=$(pwd) DATA_FILE_LIST=./ALCF/data-lists/polaris/books.txt TRAIN_ITER=1000 NLAYERS=10 MICRO_BATCH=2 OPT=adamw bash train_llama_alcf.sh
     ```
 
+    - **Note**: If no additional options specified, i.e.
+
+        ```bash
+        PBS_O_WORKDIR=$(pwd) bash train_llama_alcf.sh
+        ```
+
+      then this will fallback to using the default AuroraGPT-7B architecture
+      with the full Dolma (v1.7) dataset.
+
     <details closed><summary><code>[output]</code>:</summary>
 
     <br>
