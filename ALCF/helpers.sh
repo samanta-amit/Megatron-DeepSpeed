@@ -708,6 +708,9 @@ install_dependencies() {
     depsfile="${WORKING_DIR}/ALCF/requirements/requirements.txt"
     echo "Installing remaining dependencies from ${depsfile}"
     python3 -m pip install -r "${depsfile}" --require-virtualenv
+    if [[ ! -x "$(command -v deepspeed)" ]]; then
+        install_deepspeed_for_xpu || exit
+    fi
 }
 
 ######################################################################
@@ -724,11 +727,15 @@ install_deepspeed_for_xpu() {
     mkdir -p "${outdir}"
     git clone https://github.com/microsoft/DeepSpeed.git "${outdir}"
     cd "${outdir}" || exit
+    echo "!! pwd: $(pwd)"
     git remote add yizhou_ds https://github.com/YizhouZ/DeepSpeed.git
     git fetch yizhou_ds
     git checkout yizhou/kernel_path
     python3 -m pip install --require-virtualenv -r requirements/requirements.txt
+    python3 -m pip install xgboost "numpy<2" --force-reinstall --upgrade --require-virtualenv
     python setup.py develop |& tee build.log
+    cd "${WORKING_DIR}"
+    echo "!! pwd: $(pwd)"
 }
 
 
@@ -914,9 +921,6 @@ setup_python() {
     printf "\n"
     export "PYTHON_EXEC=$(which python3)"
     install_dependencies || exit
-    if [[ ! -x "$(command -v deepspeed)" ]]; then
-        install_deepspeed_for_xpu || exit
-    fi
 }
 
 ######################################################################
