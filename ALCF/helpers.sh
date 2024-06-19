@@ -913,10 +913,10 @@ setup_python() {
     printf "[python] %s" "$(printMagenta "${pystr}")"
     printf "\n"
     export "PYTHON_EXEC=$(which python3)"
+    install_dependencies || exit
     if [[ ! -x "$(command -v deepspeed)" ]]; then
         install_deepspeed_for_xpu || exit
     fi
-    install_dependencies || exit
 }
 
 ######################################################################
