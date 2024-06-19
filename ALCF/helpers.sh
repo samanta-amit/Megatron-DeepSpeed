@@ -705,7 +705,7 @@ make_data() {
 
 
 install_dependencies() {
-    depsfile="${WORKING_DIR}/requirements/requirements.txt"
+    depsfile="${WORKING_DIR}/ALCF/requirements/requirements.txt"
     echo "Installing remaining dependencies from ${depsfile}"
     python3 -m pip install -r "${depsfile}" --require-virtualenv
 }
