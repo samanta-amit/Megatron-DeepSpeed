@@ -14,6 +14,14 @@ To launch on {`Polaris`, `Aurora`, `Sunspot`} @ [ALCF](https://alcf.anl.gov):
     qsub -A <your-project> -q debug -l select=2 -l walltime=01:00:00,filesystems=eagle:home -I
     ```
 
+    - Or, alternatively, you can submit [`train_llama_alcf.sh`](https://github.com/argonne-lcf/Megatron-DeepSpeed/blob/main/train_llama_alcf.sh)
+      directly as a batch script with
+
+        ```bash
+        cd Megatron-DeepSpeed
+        qsub -A <your-project> -q debug -l select=2 -l walltime=01:00:00:filesystems=eagle:home train_llama_alcf.sh
+        ```
+
 </details>
 
 2. <details closed><summary>⬇️ Clone repo + navigate into it:</summary>
