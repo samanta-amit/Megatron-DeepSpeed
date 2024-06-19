@@ -249,7 +249,7 @@ get_machine() {
         echo "Unknown MACHINE. Setting MACHINE to $(hostname) and continuing..."
     fi
     export MACHINE="${machine}"
-    printf "Running on: %s\n" "$(printBlue ${MACHINE})"
+    printf "Running on: %s\n" "$(printBlue "${MACHINE}")"
 }
 
 
@@ -287,32 +287,6 @@ printJobInfo() {
     echo "++++++++++++++++++++++++++++++++++++++++++++++++++"
 }
 
-setupVenv() {
-    VENV_DIR="$1"
-    if [[ -d "${VENV_DIR}" ]]; then
-        echo "Found venv at: ${VENV_DIR}"
-        source "${VENV_DIR}/bin/activate"
-    else
-        echo "Skipping setupVenv() on $(hostname)"
-    fi
-}
-
-loadCondaEnv() {
-    if [[ "${CONDA_EXE}" ]]; then
-        echo "Already inside ${CONDA_EXE}, exiting!"
-    else
-        MODULE_STR="$1"
-        module load "conda/${MODULE_STR}"
-        nargs="$#"
-        if [[ "${nargs}" -ge 2 ]]; then
-            conda activate "$2"
-        else
-            conda activate base
-        fi
-    fi
-}
-
-
 #############################################################################
 # `setupLauncher`: Launch with one of `{mpiexec, deepspeed}`.
 #
@@ -340,7 +314,8 @@ setupLauncher() {
     # if [[ -n "${DIST_LAUNCH}" && ${LAUNCH_CMD:-"MPICH"} != "deepspeed" ]]; then
     else
         if [[ -n "${DIST_LAUNCH}" ]]; then
-            export LAUNCHER="${DIST_LAUNCH} --genvall --cpu-bind depth -d 16 $(which python3) -Wignore ${EXEC}"
+            LAUNCHER="${DIST_LAUNCH} --genvall --cpu-bind depth -d 16 $(which python3) -Wignore ${EXEC}"
+            export LAUNCHER="${LAUNCHER}"
         else
             echo "[setupLauncher][INFO]: Saving environment to: .env-${PBS_JOBID}"
             printenv | tee ".env-${PBS_JOBID}"
@@ -349,7 +324,7 @@ setupLauncher() {
     fi
 
     printf "Launching with: %s\n" "$(printRed "${dist_launcher}")"
-    printf " %s" "$(printMagenta ${LAUNCHER})"
+    printf " %s" "$(printMagenta "${LAUNCHER}")"
 }
 
 setDSlauncher() {
@@ -500,7 +475,7 @@ setParams() {
     export TIMING_LOG_LEVEL="${TIMING_LOG_LEVEL:-1}"    # TIMING VERBOSITY IN LOGS
     export ACT_CKPT_NUM_LAYERS="${ACT_CKPT_NUM_LAYERS:-1}"                  # NUM LAYERS TO CHECKPOINT ACTIVATIONS
     export USE_ACTIVATION_CHECKPOINTING=${USE_ACTIVATION_CHECKPOINTING:-1}  # USE ACTIVATION CHECKPOINTING ?
-    export GLOBAL_BATCH_MAX=$(( $WORLD_SIZE * $MICRO_BATCH * $GRAD_ACC_STEPS / $TP / $PP  / $SP ))  # MAX GLOBAL BATCH SIZE
+    export GLOBAL_BATCH_MAX=$(( WORLD_SIZE * MICRO_BATCH * GRAD_ACC_STEPS / TP / PP  / SP ))  # MAX GLOBAL BATCH SIZE
     export GLOBAL_BATCH="${GLOBAL_BATCH:-${GLOBAL_BATCH_MAX}}"  # WILL USE MAX IF NOT SET IN ENVIRONMENT
     # tm="${WORKING_DIR}/ALCF/tokenizer.model"            # fallback: Megatron-DeepSpeed/ALCF/tokenizer.model
     # export TOKENIZER_MODEL="${TOKENIZER_MODEL:-${tm}}"  # USE TOKENIZER_MODEL from env, else fallback from ^
@@ -573,13 +548,15 @@ make_ds_hostfile() {
 }
 
 ezpz_savejobenv() {
-    local outfile="${WORKING_DIR}/bin/savejobenv" ; mkdir -p $(dirname "${outfile}")
-    curl -Ls https://raw.githubusercontent.com/saforem2/ezpz/main/src/ezpz/bin/savejobenv > "${outfile}" && source "${outfile}"
+    file=$(mktemp)
+    curl -Ls https://raw.githubusercontent.com/saforem2/ezpz/main/src/ezpz/bin/savejobenv > "${file}"
+    source "${file}" || exit
 }
 
 ezpz_getjobenv() {
-    local outfile="${WORKING_DIR}/bin/getjobenv" ; mkdir -p $(dirname "${outfile}")
-    curl -Ls https://raw.githubusercontent.com/saforem2/ezpz/main/src/ezpz/bin/getjobenv > "${outfile}" && source "${outfile}"
+    file=$(mktemp)
+    curl -Ls https://raw.githubusercontent.com/saforem2/ezpz/main/src/ezpz/bin/getjobenv > "${file}"
+    source "${file}" || exit
 }
 
 # +---------------------------------------+
@@ -587,7 +564,11 @@ ezpz_getjobenv() {
 # | 2. Install ezpz (if not installed)  |
 # +---------------------------------------+
 setup_ezpz() {
-    [ -n "${HOSTFILE:-${PBS_NODEFILE}}" ] && ezpz_savejobenv || ezpz_getjobenv
+    if [[ -n "${HOSTFILE:-${PBS_NODEFILE}}" ]]; then
+        ezpz_savejobenv
+    else
+        ezpz_getjobenv
+    fi
     python3 -m ezpz.jobs && source "./.jobenv"
     if [[ ! -d "${WORKING_DIR}/deps/ezpz" ]]; then
         mkdir -p "${WORKING_DIR}/deps"
@@ -611,13 +592,13 @@ setup_ezpz() {
 # `ezpz_test`: Run simple test to make sure all nodes in working order
 #######################################################################
 ezpz_test() {
-    printf "[$(printBlue 'ezpz:test_dist')][INFO] Running ezpz.test_dist...\n"
+    printf "%s" "[$(printBlue 'ezpz:test_dist')][INFO] Running ezpz.test_dist...\n"
     # [ -n "${PBS_O_WORKIR}" ] && ezpz_savejobenv || ezpz_getjobenv
     # python3 -Wignore -m ezpz.jobs && source "${PBS_O_WORKDIR}/.jobenv"
-    printf "[$(printBlue 'ezpz:test_dist')] Running test: ${eztest}\n"
+    printf "%s" "[$(printBlue 'ezpz:test_dist')] Running test: ${eztest}\n"
     eztest="TRAIN_ITERS=50 ${LAUNCH_CMD} python3 -Wignore -m ezpz.test_dist"
     eval "${eztest}"
-    printf "[$(printBlue 'ezpz:test_dist')] Done with test!\n"
+    printf "%s" "[$(printBlue 'ezpz:test_dist')] Done with test!\n"
 }
 
 # +------------------------------------------------------------------------+
@@ -629,8 +610,8 @@ saveDSenv() {
     {
         echo "PATH=${PATH}" ;
         echo "LD_LIBRARY_PATH=${LD_LIBRARY_PATH}" ;
-        echo "http_proxy=${http_proxy}" ;
-        echo "https_proxy=${https_proxy}" ;
+        echo "http_proxy=${http_proxy:-}" ;
+        echo "https_proxy=${https_proxy:-}" ;
         echo "CFLAGS=${CFLAGS}" ;
         echo "PYTHONUSERBASE=$PYTHONUSERBASE" ;
     } > .deepspeed_env
@@ -665,21 +646,20 @@ setOutput() {
     export OUTPUT_LOG="${OUTPUT_DIR}/output.log"
     export CKPT_DIR="checkpoints/${OUTPUT_PREFIX}"
     echo "${OUTPUT_LOG}" >> "logs/latest"
-    printf "\n Please see logs at: %s\n" $(printGreen "${OUTPUT_DIR}")
-    printf "Checkpoints will be saved to: %s\n" $(printYellow "${CKPT_DIR}")
+    printf "\n Please see logs at: %s\n" "$(printGreen "${OUTPUT_DIR}")"
+    printf "Checkpoints will be saved to: %s\n" "$(printYellow "${CKPT_DIR}")"
 }
 
+#############################################
+# Build DeepSpeed config and write to .json
+#############################################
 buildDSconfig() {
-    # ---- Build DeepSpeed Config ---------------------------------
     export CPU_OPTIMIZER="${CPU_OPTIMIZER:-0}"
     export DS_CONFIG="${WORKING_DIR}/ds-configs/ds_stage${ZERO_STAGE}_mb${MICRO_BATCH}_gb${GLOBAL_BATCH}_pp${PP}_${DTYPE}.json"
-    mkdir -p $(dirname "${DS_CONFIG}")
+    mkdir -p "$(dirname "${DS_CONFIG}")"
     echo "DS_CONFIG: ${DS_CONFIG}"
-    printf "ZS: %s, , MB: %s, GB: %s, PP: %s, DTYPE: %s" "${ZERO_STAGE}" "${CPU_OPTIMIZER}" "${MICRO_BATCH}" "${GLOBAL_BATCH}" "${PP}" "${DTYPE}"
-    # working_dir="${PBS_O_WORKDIR:-${SLURM_SUBMIT_DIR:-$(pwd)}}"
+    printf "ZS: %s, MB: %s, GB: %s, PP: %s, DTYPE: %s" "${ZERO_STAGE}" "${MICRO_BATCH}" "${GLOBAL_BATCH}" "${PP}" "${DTYPE}"
     generateDSconfig "${DS_CONFIG}"
-    # bash "${WORKING_DIR}/ALCF/generate_ds_config.sh" "${DS_CONFIG}"
-    # -------------------------------------------------------------
 }
 
 
@@ -714,14 +694,20 @@ sumFiles() {
 setup_conda_sunspot() {
     ###### check if CONDA_PREFIX non-empty ################
     if [[ -z "${CONDA_PREFIX:-}" ]]; then
+        module use /soft/preview-modulefiles/24.086.0
+        module load frameworks/2024.04.15.002.lua
         # module use /soft/preview-modulefiles/24.086.0 ; module load frameworks/2024.04.15.002.lua
-        source "${WORKING_DIR}/ALCF/sunspot-env-2024-q2.sh"
+        # source "${WORKING_DIR}/ALCF/sunspot-env-2024-q2.sh"
     fi
 }
 
 setup_conda_aurora() {
     if [[ -z "${CONDA_PREFIX:-}" ]]; then
         module use -a /soft/modulefiles ; module load frameworks/2024.1
+        export CCL_KVS_MODE=mpi
+        export LD_LIBRARY_PATH=/flare/Aurora_deployment/intel/ccl/_install_release_2021_13/lib:$LD_LIBRARY_PATH
+        export CPATH=/flare/Aurora_deployment/intel/ccl/_install_release_2021_13/include:$CPATH
+        export LIBRARY_PATH=/flare/Aurora_deployment/intel/ccl/_install_release_2021_13/lib:$LIBRARY_PATH
     fi
 }
 
@@ -732,7 +718,7 @@ setup_conda_sirius() {
     if [[ -z "${CONDA_PREFIX-}" && -z "${VIRTUAL_ENV-}" ]]; then
         export MAMBA_ROOT_PREFIX=/lus/tegu/projects/PolarisAT/foremans/micromamba
         shell_name=$(echo "${SHELL}" | tr "\/" "\t" | awk '{print $NF}')
-        eval "$("${MAMBA_ROOT_PREFIX}/bin/micromamba" shell hook --shell ${shell_name})"
+        eval "$("${MAMBA_ROOT_PREFIX}/bin/micromamba" shell hook --shell "${shell_name}")"
         micromamba activate 2024-04-23
     else
         echo "Found existing python at: $(which python3)"
@@ -756,23 +742,17 @@ setup_conda_polaris() {
 
 setup_venv_from_conda() {
     if [[ -z "${CONDA_PREFIX}" ]]; then
-        echo "No ${CONDA_PREFIX} found."  #  Exiting."
+        echo "!! No ${CONDA_PREFIX} found."  #  Exiting."
         # exit 1
     else
         echo "Found conda at: ${CONDA_PREFIX}"
-        CONDA_NAME=$(echo ${CONDA_PREFIX} | tr '\/' '\t' | sed -E 's/mconda3|\/base//g' | awk '{print $NF}')
+        CONDA_NAME=$(echo "${CONDA_PREFIX}" | tr '\/' '\t' | sed -E 's/mconda3|\/base//g' | awk '{print $NF}')
         export CONDA_NAME
-        # if [[ -n "${VIRTUAL_ENV}" ]]; then
-        #     echo "Already inside virtual env at ${VENV_DIR}!"
         if [[ -z "${VIRTUAL_ENV}" ]]; then
             echo "No VIRTUAL_ENV found in environment!"
             echo "    - Trying to setup from ${CONDA_PREFIX}"
             export VENV_DIR="${WORKING_DIR}/venvs/${CONDA_NAME}"
             echo "    - Using VENV_DIR=${VENV_DIR}"
-            # VENV_DIR="venvs/$(echo ${CONDA_PREFIX} | tr '\/' '\t' | sed -E 's/mconda3|\/base//g' | awk '{print $NF}')"
-            # VENV_DIR="${WORKING_DIR}/venvs/$(echo ${CONDA_PREFIX} | tr '\/' '\t' | awk '{print $NF}')"
-            # VENV_DIR="${WORKING_DIR}/venvs/anl_24_q2_release"
-            # if [[ -f "${VENV_DIR}/bin/activate" ]]; then
             if [[ ! -f "${VENV_DIR}/bin/activate" ]]; then
                 printf "\n    - Creating a new virtual env on top of %s in %s" "$(printBlue "${CONDA_NAME}")" "$(printGreen "${VENV_DIR}")"
                 mkdir -p "${VENV_DIR}"
@@ -785,8 +765,6 @@ setup_venv_from_conda() {
                 printf "\n    [!! %s]: Unable to locate %s\n" "$(printRed "ERROR")" "$(printMagenta "${VENV_DIR}/bin/activate")"
             fi
         fi
-        # else
-        #     printf "[!! %s]: Unable to locate %s\n" "$(printRed "ERROR")" "$(printMagenta "${VENV_DIR}/bin/activate")"
     fi
 
 }
@@ -803,7 +781,7 @@ check_executable() {
         export EXEC_STEM="${exec_stem}"
     else
         estr="Unable to locate executable ${fp}"
-        printf "[ALCF.helpers:check_executable] %s" "$(printRed ${estr})"
+        printf "[ALCF.helpers:check_executable] %s" "$(printRed "${estr}")"
     fi
 }
 
@@ -834,7 +812,7 @@ setup_python() {
     if [[ -z "${conda_prefix}" && -z "${virtual_env}" ]]; then
         echo "No conda_prefix OR virtual_env found in environment..."
         echo "Setting up conda..."
-        local machine_name=$(get_machine_name)
+        machine_name=$(get_machine_name)
         echo "machine name: ${machine_name}"
         # if [[ $(hostname) == x4* || $(hostname) == aurora* ]]; then
         if [[ "${machine_name}" == "aurora" ]]; then
@@ -913,7 +891,7 @@ setup_tokenizer_and_data() {
     if [[ ${tok} == gpt* || ${tok} == GPT* ]]; then
         export TOKENIZER_TYPE="GPT2"
         export TOKENIZER_FLAGS="--tokenizer-type GPT2BPETokenizer"
-        local machine=$(get_machine_name)
+        machine=$(get_machine_name)
         if [[ ${machine} == "polaris" ]]; then
             export DATA_PARENT="${DATA_PARENT:-/eagle/argonne_tpc/foremans/projects/argonne-lcf/Megatron-DeepSpeed/dataset}"
         elif [[ ${machine} == "sunspot" ]]; then
@@ -938,8 +916,8 @@ setup_tokenizer_and_data() {
             setData "${dfl}" || exit
         fi
     fi
-    printf "[setData] DATA_FLAGS: %s\n" "$(printGreen ${DATA_FLAGS})"
-    printf "[setData] TOKENIZER_FLAGS: %s\n" "$(printMagenta ${TOKENIZER_FLAGS})"
+    printf "[setData] DATA_FLAGS: %s\n" "$(printGreen "${DATA_FLAGS}")"
+    printf "[setData] TOKENIZER_FLAGS: %s\n" "$(printMagenta "${TOKENIZER_FLAGS}")"
 }
 
 ###############################################
