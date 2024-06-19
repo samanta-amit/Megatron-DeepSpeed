@@ -79,10 +79,12 @@ helpers_main() {
 #     13. Setup run command to be executed.
 ##############################################################################
 setup() {
+    printf "%s" "$(printBlue "${AURORA_GPT_HEADER}")"
     #  1. Identify machine we're on
     get_machine || exit
     #  2. Load `conda` environment
     setup_python || exit
+    install_dependencies || exit
     #  3. Determine WORLD_SIZE, etc. from `PBS_*` vars
     setup_ezpz || exit
     #  4. Set command line arguments to pass to `"${EXEC}"`
@@ -706,10 +708,15 @@ make_data() {
 
 install_dependencies() {
     depsfile="${WORKING_DIR}/ALCF/requirements/requirements.txt"
-    echo "Installing remaining dependencies from ${depsfile}"
-    python3 -m pip install -r "${depsfile}" --require-virtualenv
+    echo "Ensuring all dependencies from ${depsfile} installed..."
+    python3 -m pip install -r "${depsfile}" --require-virtualenv 1> /dev/null
     if [[ ! -x "$(command -v deepspeed)" ]]; then
-        install_deepspeed_for_xpu || exit
+        mn=$(get_machine_name)
+        if [[ "${mn}" == aurora* || "${mn}" == sunspot* ]]; then
+            install_deepspeed_for_xpu || exit
+        fi
+        printf "!! No 'deepspeed' command found on %s" "${mn}"
+        printf "!! No deepsepeed in $(which python3)"
     fi
 }
 
@@ -731,9 +738,9 @@ install_deepspeed_for_xpu() {
     git remote add yizhou_ds https://github.com/YizhouZ/DeepSpeed.git
     git fetch yizhou_ds
     git checkout yizhou/kernel_path
-    python3 -m pip install --require-virtualenv -r requirements/requirements.txt
-    python3 -m pip install xgboost "numpy<2" --force-reinstall --upgrade --require-virtualenv
-    python setup.py develop |& tee build.log
+    python3 -m pip install --require-virtualenv -r requirements/requirements.txt 1> /dev/null
+    python3 -m pip install xgboost "numpy<2" --force-reinstall --upgrade --require-virtualenv 1> /dev/null
+    python setup.py develop 1> /dev/null
     cd "${WORKING_DIR}"
     echo "!! pwd: $(pwd)"
 }
@@ -920,7 +927,6 @@ setup_python() {
     printf "[python] %s" "$(printMagenta "${pystr}")"
     printf "\n"
     export "PYTHON_EXEC=$(which python3)"
-    install_dependencies || exit
 }
 
 ######################################################################
@@ -1242,6 +1248,15 @@ printCyan() {
 printWhite() {
     printf "\e[1;37m%s\e[0m\n" "$@"
 }
+
+export AURORA_GPT_HEADER="""
+ █████╗ ██╗   ██╗██████╗  ██████╗ ██████╗  █████╗        ██████╗ ██████╗ ████████╗
+██╔══██╗██║   ██║██╔══██╗██╔═══██╗██╔══██╗██╔══██╗      ██╔════╝ ██╔══██╗╚══██╔══╝
+███████║██║   ██║██████╔╝██║   ██║██████╔╝███████║█████╗██║  ███╗██████╔╝   ██║   
+██╔══██║██║   ██║██╔══██╗██║   ██║██╔══██╗██╔══██║╚════╝██║   ██║██╔═══╝    ██║   
+██║  ██║╚██████╔╝██║  ██║╚██████╔╝██║  ██║██║  ██║      ╚██████╔╝██║        ██║   
+╚═╝  ╚═╝ ╚═════╝ ╚═╝  ╚═╝ ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝       ╚═════╝ ╚═╝        ╚═╝   
+"""
 
 ###########################
 # call helpers_main()
