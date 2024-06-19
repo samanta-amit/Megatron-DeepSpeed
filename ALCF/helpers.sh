@@ -101,6 +101,7 @@ setup() {
     #     via `DATA_FILE_LIST` and `TOKENIZER_TYPE`
     tok="${TOKENIZER_TYPE:-Llama2}"
     setup_tokenizer_and_data "${tok}" "${dfl}" || exit
+    make_data || exit
     # 10. Print job info
     printJobInfo || exit
     # 11. Print info about loaded modules and runtime environment
@@ -280,10 +281,10 @@ printJobInfo() {
     echo "++++++++++++++++++++++++++++++++++++++++++++++++++"
     echo "- MPICH_DIR=${MPICH_DIR:-${MPI_ROOT}}"
     echo "- Using $(which python3)"
-    echo "- WORLD_SIZE:${WORLD_SIZE}"
-    echo "- NCCL: ${NCCL:-nccl}"
-    echo "- MODEL_TYPE: ${MODEL_TYPE}"
-    echo "- Using DATA_FILE_LIST: ${DATA_FILE_LIST}"
+    echo "- WORLD_SIZE:${WORLD_SIZE-}"
+    echo "- BACKEND: ${BE:-}"
+    echo "- MODEL_TYPE: ${MODEL_TYPE:-}"
+    echo "- Using DATA_FILE_LIST: ${DATA_FILE_LIST:-}"
     echo "++++++++++++++++++++++++++++++++++++++++++++++++++"
 }
 
@@ -327,20 +328,26 @@ setupLauncher() {
     printf " %s" "$(printMagenta "${LAUNCHER}")"
 }
 
-setDSlauncher() {
-    # launcher setting
-    outdir=$1
-    export hfds="$outdir/hostfile_deepspeed"
-    export hfmpi="$outdir/hostfile_mpich"
-    [ -f "$hfds" ] || exit
-    [ -f "$hfmpi" ] || exit
-    export LAUNCHER=${LAUNCHER:-MPICH}
-    if [[ $LAUNCHER == "deepspeed" ]]; then
-        export launcher=""
-    else
-        export launcher="--force_multi --hostfile $hfds --launcher=${LAUNCHER} --launcher_args='-hostfile ${hfmpi}'"
-    fi
-}
+# ##########################################################################
+# # setDSlauncher
+# #
+# # When launching with `deepspeed`, this will
+# # set the appropriate keyword arguments to be passed to `deepspeed`
+# ##########################################################################
+# setDSlauncher() {
+#     # launcher setting
+#     outdir=$1
+#     export hfds="$outdir/hostfile_deepspeed"
+#     export hfmpi="$outdir/hostfile_mpich"
+#     [ -f "$hfds" ] || exit
+#     [ -f "$hfmpi" ] || exit
+#     export LAUNCHER=${LAUNCHER:-MPICH}
+#     if [[ $LAUNCHER == "deepspeed" ]]; then
+#         export launcher=""
+#     else
+#         export launcher="--force_multi --hostfile $hfds --launcher=${LAUNCHER} --launcher_args='-hostfile ${hfmpi}'"
+#     fi
+# }
 
 set_lr_args() {
     LR_ARGS="--lr ${LR} --lr-decay-style cosine"
@@ -663,6 +670,11 @@ buildDSconfig() {
 }
 
 
+###############################################################################
+# sumWeights
+#
+# This will sum the weights (first column) from each line in the passed
+# `file_list`.
 sumWeights() {
     local file_list=$1
     weights=$(cat "${file_list}" | awk '{print $1}' | tr '\n' '\ ,\ ' | sed 's/^/[/g' | sed 's/$/]/g' | tr '\ ' "\,\ ")
@@ -676,6 +688,57 @@ sumFiles() {
         echo "sum($f.weights)=${ws}"
     done
 }
+
+###########################################
+# make_data
+#
+# This will run `make` in `megatron/data`
+# prior to launching, ensuring that
+# `megatron/data/helpers.cpp`
+# is built appropriately.
+###########################################
+make_data() {
+    python3 -m pip install pybind11
+    mdir="${WORKING_DIR}/megatron/data"
+    cd "${mdir}" && make && cd -
+}
+
+
+install_dependencies() {
+    depsfile="${WORKING_DIR}/ALCF/requirements/requirements.txt"
+    echo "Installing remaining dependencies from ${depsfile}"
+    python3 -m pip install -r "${depsfile}" --require-virtualenv
+    if [[ ! -x "$(command -v deepspeed)" ]]; then
+        install_deepspeed_for_xpu || exit
+    fi
+}
+
+######################################################################
+# install_deepspeed_for_xpu: Install microsoft/DeepSpeed on PVC
+#
+# This will:
+# 1. Clone rep
+# 2. Checkout appropriate branch
+# 3. Install into virtual environment
+######################################################################
+install_deepspeed_for_xpu() {
+    echo "Building + Installing DeepSpeed on $(hostname)"
+    outdir="${WORKING_DIR}/deps/DeepSpeed"
+    mkdir -p "${outdir}"
+    git clone https://github.com/microsoft/DeepSpeed.git "${outdir}"
+    cd "${outdir}" || exit
+    echo "!! pwd: $(pwd)"
+    git remote add yizhou_ds https://github.com/YizhouZ/DeepSpeed.git
+    git fetch yizhou_ds
+    git checkout yizhou/kernel_path
+    python3 -m pip install --require-virtualenv -r requirements/requirements.txt
+    python3 -m pip install xgboost "numpy<2" --force-reinstall --upgrade --require-virtualenv
+    python setup.py develop |& tee build.log
+    cd "${WORKING_DIR}"
+    echo "!! pwd: $(pwd)"
+}
+
+
 
 ########################################################
 # Setup / activate conda environment,
@@ -857,6 +920,7 @@ setup_python() {
     printf "[python] %s" "$(printMagenta "${pystr}")"
     printf "\n"
     export "PYTHON_EXEC=$(which python3)"
+    install_dependencies || exit
 }
 
 ######################################################################
@@ -926,26 +990,26 @@ setup_tokenizer_and_data() {
 #     fallback to default values if necessary.
 ###############################################
 setData() {  # ------------------------[dfl: abbrv. for DATA_FILE_LIST]
-    # =====[Set DATA_FILE_LIST_FALLBACK based on current machine]==============
+    ####### [Set DATA_FILE_LIST_FALLBACK based on current machine] #############
     if [[ $(hostname) == x4* ]]; then    # -----------------------------[AURORA]
-        dfl_fallback="${WORKING_DIR}/ALCF/data-lists/aurora/dolma_v1_7_file_list.txt"
+        dfl_fallback="${WORKING_DIR}/ALCF/data-lists/aurora/dolma.txt"
     elif [[ $(hostname) == x1* ]]; then  # ----------------------------[SUNSPOT]
         # shellcheck source=./data-lists/sunspot/books.txt
-        dfl_fallback="${WORKING_DIR}/ALCF/data-lists/sunspot/dolma_v1_7_file_list.txt"
+        dfl_fallback="${WORKING_DIR}/ALCF/data-lists/sunspot/dolma.txt"
     elif [[ $(hostname) == x3* ]]; then  # -------------------[POLARIS / SIRIUS]
         if [[ "${PBS_O_HOST}" == sirius* ]]; then  # -------------------[SIRIUS]
             # shellcheck source=./data-lists/sirius/books.txt
-            dfl_fallback="${WORKING_DIR}/ALCF/data-lists/sirius/dolma_v1_7_file_list.txt"
+            dfl_fallback="${WORKING_DIR}/ALCF/data-lists/sirius/dolma.txt"
         elif [[ "${PBS_O_HOST}" == polaris* ]]; then  # ---------------[POLARIS]
             # shellcheck source=./data-lists/polaris/books.txt
-            dfl_fallback="${WORKING_DIR}/ALCF/data-lists/polaris/dolma_v1_7_file_list.txt"
+            dfl_fallback="${WORKING_DIR}/ALCF/data-lists/polaris/dolma.txt"
         fi
     elif [[ $(hostname) == login* || $(hostname) == nid* ]]; then # [PERLMUTTER]
         dfl_fallback="${SLURM_SUBMIT_DIR}/genslm-subsample.txt"
     else  # -----------------------------------------------------------[UNKNOWN]
         echo "Unknown hostname. Must manually specify DATA_FILE_LIST."
     fi
-    # ==========================================================================
+    ############################################################################
     # set `dfl` to `dfl_fallback` if not passed as an argument,
     # use this data file list to call `setData`
     dfl="${1:-${dfl_fallback}}"
@@ -977,6 +1041,11 @@ setData() {  # ------------------------[dfl: abbrv. for DATA_FILE_LIST]
     # printf "[setData] TOKENIZER_FLAGS: %s\n" "$(printMagenta ${TOKENIZER_FLAGS})"
 }
 
+################################################################################
+# generateDSconfig: Create and save a deepspeed config .json
+#
+# This will contain the appropriate variables as set in the current environment.
+################################################################################
 generateDSconfig() {
     for v in "$GLOBAL_BATCH" "$MICRO_BATCH" "$GRAD_ACC_STEPS" "$ZERO_STAGE" \
              "$PP" "$DTYPE"
@@ -1139,6 +1208,9 @@ $flops_profiler
 EOT
 }
 
+###############################################
+# Helper functions for printing colored text
+###############################################
 printBlack() {
     printf "\e[1;30m%s\e[0m\n" "$@"
 }
@@ -1171,6 +1243,7 @@ printWhite() {
     printf "\e[1;37m%s\e[0m\n" "$@"
 }
 
-################
+###########################
 # call helpers_main()
+###########################
 helpers_main
