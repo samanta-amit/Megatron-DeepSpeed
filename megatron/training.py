@@ -4,7 +4,7 @@
 
 from datetime import datetime
 import math
-import sys
+import sys, os
 import time
 import json
 # The earliest we can measure the start time.
@@ -45,6 +45,8 @@ from megatron.utils import report_memory, throughput_calculator, checkpoint_thro
 from megatron.model.vision.knn_monitor import compute_feature_bank
 from megatron.arguments import core_transformer_config_from_args
 
+from megatron.utils import PerfTrace, Profile
+
 import deepspeed
 from deepspeed.accelerator import get_accelerator
 from deepspeed.compression.compress import init_compression, redundancy_clean
@@ -52,6 +54,8 @@ from deepspeed.runtime.data_pipeline.data_routing.helper import convert_to_rando
 from megatron.model.transformer import ParallelTransformerLayer
 import ezpz as ez
 import logging
+import os
+dlp = Profile("TRAINING")
 
 from deepspeed import comm as dist
 
@@ -121,7 +125,7 @@ def _create_ds_config_dict():
     args.deepspeed_config = None
     return ds_config_dict
 
-
+@dlp.log
 def pretrain(
         train_valid_test_dataset_provider,
         model_provider,
@@ -175,17 +179,26 @@ def pretrain(
     # Adjust the startup time so it reflects the largest value.
     # This will be closer to what scheduler will see (outside of
     # image ... launches.
+    before_allreduce = time.time()
     global _TRAIN_START_TIME
+    log.info(f"time to finish initialize_megatron: {time.time() - _TRAIN_START_TIME} seconds")
     start_time_tensor = get_accelerator().DoubleTensor([_TRAIN_START_TIME])
     tdist.all_reduce(start_time_tensor, op=tdist.ReduceOp.MIN)
     # torch.distributed.all_reduce(start_time_tensor,
     #                              op=torch.distributed.ReduceOp.MIN)
+    log.info(f"allreduce call time: {time.time()-before_allreduce} seconds")
     _TRAIN_START_TIME = start_time_tensor.item()
     log.info('time to initialize megatron (seconds)={:.3f}'.format(
         time.time() - _TRAIN_START_TIME))
     print_datetime('after megatron is initialized')
 
     args = get_args()
+    if os.getenv('DLIO_PROFILER_DATASET_DIR') is not None:
+        extra_trace_path = os.environ['DLIO_PROFILER_DATASET_DIR']
+    else:
+        extra_trace_path=''
+    os.makedirs(args.trace_dir, exist_ok=True)
+    PerfTrace.initialize_log(f"{args.trace_dir}/trace-{ez.get_rank()}-of-{ez.get_world_size()}.pfw",  f"{args.data_cache_path}:{extra_trace_path}:{args.data_path}:{args.save}:{args.load}", process_id=ez.get_rank())
     timers = get_timers()
     assert args is not None
     assert timers is not None
@@ -270,9 +283,9 @@ def pretrain(
         iteration = 0
         if args.do_train and args.train_iters > 0:
             iteration = train(forward_step_func,
-                            model, optimizer, opt_param_scheduler,
-                            train_data_iterator, valid_data_iterator,
-                            process_non_loss_data_func)
+                              model, optimizer, opt_param_scheduler,
+                              train_data_iterator, valid_data_iterator,
+                              process_non_loss_data_func)
 
         print_datetime('after training is done')
         # Clean the model
@@ -302,7 +315,7 @@ def pretrain(
                                    verbose=True, write_to_tensorboard=not args.skip_train, test=True)
     return model
 
-
+@dlp.log
 def update_train_iters(args):
 
     # For iteration-based training, we don't need to do anything
@@ -332,7 +345,7 @@ def update_train_iters(args):
 
     log.info('setting training iterations to {}'.format(args.train_iters))
 
-
+@dlp.log
 def setup_teacher_model(args, model_provider):        
     
     log.info('***>>>>> Student model checkpoint iteration:{}'.format(args.iteration))
@@ -361,7 +374,7 @@ def setup_teacher_model(args, model_provider):
     args.iteration = iteration_stuent
 
     return teacher_model
-
+@dlp.log
 def get_model(model_provider_func, model_type=ModelType.encoder_or_decoder, wrap_with_ddp=True):
     """Build the model."""
     args = get_args()
@@ -475,7 +488,7 @@ def get_model(model_provider_func, model_type=ModelType.encoder_or_decoder, wrap
 
     return model
 
-
+@dlp.log
 def get_optimizer_param_scheduler(optimizer):
     """Build the learning rate scheduler."""
     args = get_args()
@@ -523,7 +536,7 @@ def get_optimizer_param_scheduler(optimizer):
         override_opt_param_scheduler=args.override_opt_param_scheduler)
 
     return opt_param_scheduler
-
+@dlp.log
 def load_model_weights_only(model_provider_func):
     """Setup model and optimizer."""
     args = get_args()
@@ -557,7 +570,7 @@ def load_model_weights_only(model_provider_func):
 
     return model, optimizer, lr_scheduler
 
-
+@dlp.log
 def setup_model_and_optimizer(model_provider_func,
                               model_type,
                               no_wd_decay_cond=None,
@@ -641,15 +654,16 @@ def setup_model_and_optimizer(model_provider_func,
                 # Build the datasets.
                 train_ds, _, _ = build_train_valid_test_datasets_provider(
                     train_val_test_num_samples)
-            model, optimizer, args.deepspeed_dataloader, opt_param_scheduler = deepspeed.initialize(
-                model=model[0],
-                optimizer=optimizer,
-                args=args,
-                lr_scheduler=opt_param_scheduler,
-                training_data=train_ds,
-                mpu=mpu if args.no_pipeline_parallel else None,
-                config=args.deepspeed_config_dict,
-            )
+            with Profile("deepspeed.initialize"):
+                model, optimizer, args.deepspeed_dataloader, opt_param_scheduler = deepspeed.initialize(
+                    model=model[0],
+                    optimizer=optimizer,
+                    args=args,
+                    lr_scheduler=opt_param_scheduler,
+                    training_data=train_ds,
+                    mpu=mpu if args.no_pipeline_parallel else None,
+                    config=args.deepspeed_config_dict,
+                )
             model.set_data_post_process_func(data_post_process)
         else:
             model, optimizer, _, opt_param_scheduler = deepspeed.initialize(
@@ -702,7 +716,7 @@ def setup_model_and_optimizer(model_provider_func,
     return model, optimizer, opt_param_scheduler
 
 
-
+@dlp.log
 def train_step(forward_step_func, data_iterator,
                model, optimizer, opt_param_scheduler, config):
     """Single training step."""
@@ -832,7 +846,7 @@ def train_step(forward_step_func, data_iterator,
             return loss_reduced, skipped_iter, grad_norm, num_zeros_in_grad
     return {}, skipped_iter, grad_norm, num_zeros_in_grad
 
-
+@dlp.log
 def training_log(loss_dict, total_loss_dict, learning_rate, iteration,
                  loss_scale, report_memory_flag, skipped_iter,
                  grad_norm, params_norm, num_zeros_in_grad,
@@ -1262,7 +1276,7 @@ def training_log(loss_dict, total_loss_dict, learning_rate, iteration,
 
     return report_memory_flag
 
-
+@dlp.log
 def save_checkpoint_and_time(iteration, model, optimizer, opt_param_scheduler):
     timers = get_timers()
     # Extra barrier is added to make sure
@@ -1274,7 +1288,7 @@ def save_checkpoint_and_time(iteration, model, optimizer, opt_param_scheduler):
     checkpoint_throughput_calculator(model, timers('save-checkpoint').elapsed(reset=False))
     timers.log(['save-checkpoint'])
 
-
+@dlp.log
 def train(forward_step_func, model, optimizer, opt_param_scheduler,
           train_data_iterator, valid_data_iterator,
           process_non_loss_data_func):
@@ -1331,13 +1345,33 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
                     update_rotary_pos_emb(curriculum_seqlen)
             args.curriculum_seqlen = curriculum_seqlen
         args.curr_iteration = iteration
-        loss_dict, skipped_iter, grad_norm, num_zeros_in_grad = \
-            train_step(forward_step_func,
-                       train_data_iterator,
-                       model,
-                       optimizer,
-                       opt_param_scheduler,
-                       config)
+        if os.getenv("TORCH_PROFILER_ENABLE")=='2':
+            from torch.profiler import profile, record_function, ProfilerActivity
+            try:
+                activities = [ProfilerActivity.CPU, ProfilerActivity.CUDA, ProfilerActivity.XPU]
+            except:
+                log.warning("TORCH PROFILER WARNING: XPU is not supported")
+                activities = [ProfilerActivity.CPU, ProfilerActivity.CUDA]
+            with profile(activities=activities) as prof:
+                loss_dict, skipped_iter, grad_norm, num_zeros_in_grad = \
+                    train_step(forward_step_func,
+                               train_data_iterator,
+                               model,
+                               optimizer,
+                               opt_param_scheduler,
+                               config)
+            prof.export_chrome_trace(
+                f"{args.trace_dir}/torch-trace-{RANK}-of-{WORLD_SIZE}-step{iteration}.json"
+            )
+        else:
+            loss_dict, skipped_iter, grad_norm, num_zeros_in_grad = \
+                train_step(forward_step_func,
+                           train_data_iterator,
+                           model,
+                           optimizer,
+                           opt_param_scheduler,
+                           config)
+        
         iteration += 1
         args.iteration = iteration
         new_samples = mpu.get_data_parallel_world_size() * \
@@ -1439,7 +1473,7 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
 
     return iteration
 
-
+@dlp.log
 def evaluate(forward_step_func,
              data_iterator,
              model,
@@ -1544,6 +1578,7 @@ def evaluate(forward_step_func,
 
     return total_loss_dict, collected_non_loss_data
 
+@dlp.log
 def evaluate_and_print_results(prefix, forward_step_func,
                                data_iterator, model,
                                iteration, process_non_loss_data_func, config,
@@ -1597,7 +1632,7 @@ def cyclic_iter(iter):
         for x in iter:
             yield x
 
-
+@dlp.log
 def build_train_valid_test_datasets(build_train_valid_test_datasets_provider):
     """Build pretraining datasets."""
 
@@ -1622,7 +1657,7 @@ def build_train_valid_test_datasets(build_train_valid_test_datasets_provider):
     # Build the datasets.
     return build_train_valid_test_datasets_provider(train_val_test_num_samples)
 
-
+@dlp.log
 def build_train_valid_test_data_loaders(
         build_train_valid_test_datasets_provider):
     """Build pretraining data loaders."""
@@ -1683,7 +1718,7 @@ def build_train_valid_test_data_loaders(
 
     return train_dataloader, valid_dataloader, test_dataloader
 
-
+@dlp.log
 def build_train_valid_test_data_iterators(
         build_train_valid_test_datasets_provider):
     """Build pretraining data iterators."""

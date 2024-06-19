@@ -1,9 +1,13 @@
 # Copyright (c) 2023, NVIDIA CORPORATION.  All rights reserved.
 
 """Pretrain GPT"""
-
-from pathlib import Path
+import time
 from mpi4py import MPI
+comm = MPI.COMM_WORLD
+comm.Barrier()
+python_start_time = time.time()
+from pathlib import Path
+
 import os
 from rich import print
 import torch
@@ -21,6 +25,8 @@ from megatron.training import pretrain
 from megatron.utils import get_ltor_masks_and_position_ids
 from megatron.utils import average_losses_across_data_parallel_group, update_rotary_pos_emb
 from megatron.arguments import core_transformer_config_from_args
+from megatron.utils import Profile, PerfTrace
+
 # from megatron.utils import (
 #     # report_memory,
 #     # throughput_calculator,
@@ -39,11 +45,12 @@ import wandb
 from torch import nn
 import torch.nn.functional as F
 import ezpz as ez
-
-
+import_time = time.time() - python_start_time
+start_setup_time = time.time()
 # ---- [SETUP COMMS] ------------------------
 # if str(os.environ.get('LAUNCH_CMD', 'mpich')).lower() == 'mpich':
 RANK = ez.setup_torch(backend="deepspeed", timeout=7200)
+setup_time = time.time() - start_setup_time
 # else:
 #     RANK = ez.get_rank()
 WORLD_SIZE = ez.get_world_size()
@@ -55,6 +62,9 @@ if torch.cuda.is_available():
 # --- [TURN OFF LOGGER ON ALL RANK != 0] ----
 log = logging.getLogger(__name__)
 log.setLevel("INFO") if RANK == 0 else log.setLevel("CRITICAL")
+log.info(f"Import python modules in {import_time} seconds")
+log.info(f"ez.setup_torch time: {setup_time} seconds")
+
 # ---- [SETUP WANDB FROM RANK 0] --------------
 WANDB_MODE = os.environ.get('WANDB_MODE', None)
 DISABLE_WANDB = (
@@ -102,7 +112,11 @@ def model_provider(pre_process=True, post_process=True):
         dpg = mpu.get_data_parallel_group()
     else:
         dpg = None
-    with deepspeed.zero.Init(
+
+    deepspeed_zero_init = deepspeed.zero.Init
+    if args.use_mics:
+        deepspeed_zero_init = deepspeed.zero.MiCS_Init
+    with deepspeed_zero_init(
             data_parallel_group=dpg,
             remote_device=(
                 None if args.remote_device == 'none' else args.remote_device
@@ -492,19 +506,38 @@ def forward_step(data_iterator, model):
 
 def train_valid_test_datasets_provider(train_val_test_num_samples):
     """Build train, valid, and test datasets."""
+    t0 = time.perf_counter()
     args = get_args()
-
-    log.info(
-        '> building train, validation, and test datasets for GPT ...'
-    )
+    assert args is not None
+    log.info('> building train, validation, and test datasets for GPT ...')
     files = []
     if args.data_file_list is not None:
         log.info(f"Reading datasets from {args.data_file_list}")
+        # [!NOTE]:
+        # - We expect each line of args.data_file_list to be of the form:
+        #       `weight /path/tp/data_text_document corpus`
+        #   where:
+        #     - `weight` is the relative weight of that document
+        #        across all documents (i.e. lines in `args.data_file_list`)
+        #     - `/path/to/data_text_document` is the path to the text document
+        #     - `corpus` is the corpus (~ source, can be made up) where that
+        #        document came from (i.e. `books`, `arxiv`, etc.)
         with open(args.data_file_list, 'r') as flist:
             for f in flist.readlines():
-                w, fname = f.split()
-                files.append(float(w))
-                files.append(fname)
+                if len(f.strip()) != 0:
+                    try:
+                        w, fname, c = f.split()
+                    except:
+                        raise Exception("Please provide the file list as 'weight, filename, corpus'")
+                    if fname.find(".bin") != -1:
+                        fname = fname.split(".bin")[0]
+                    files.extend(
+                        [
+                            float(w),  # weight
+                            fname,     # filename
+                            c          # corpus
+                        ]
+                    )
     elif len(args.data_path) == 1 and os.path.isdir(args.data_path[0]):
         path = args.data_path[0] + "/"
         for f in os.listdir(path):
@@ -521,15 +554,14 @@ def train_valid_test_datasets_provider(train_val_test_num_samples):
         train_valid_test_num_samples=train_val_test_num_samples,
         seq_length=args.seq_length,
         seed=args.seed,
-        skip_warmup=True,
-        # skip_warmup=(not args.mmap_warmup),
+        skip_warmup=(not args.mmap_warmup),
         train_data_prefix=args.train_data_path,
         valid_data_prefix=args.valid_data_path,
         test_data_prefix=args.test_data_path,
         data_cache_path=args.data_cache_path,
     )
-    log.info("> finished creating GPT datasets ...")
-
+    dt = time.perf_counter_ns() - t0
+    log.info(f"> finished creating GPT datasets. Took: {dt:.5f}s")
     return train_ds, valid_ds, test_ds
 
 
@@ -570,9 +602,14 @@ def git_ds_info():
 
 
 def main():
-    if os.getenv('TORCH_PROFILER_ENABLED') == '1':
+    if os.getenv('TORCH_PROFILER_ENABLE') == '1':
         from torch.profiler import profile, record_function, ProfilerActivity
-        with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA]) as prof:
+        try:
+            activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA, ProfilerActivity.XPU]
+        except:
+            log.warning("TORCH PROFILER WARNING: XPU is not supported")            
+            activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA]
+        with profile(activities=activities) as prof:
             model = pretrain(
                 train_valid_test_datasets_provider,
                 model_provider,
@@ -582,13 +619,8 @@ def main():
                 data_post_process=data_post_process
             )
         args = get_args()
-        assert args is not None
-        trace_output = Path(f"{args.tensorboard_dir}").joinpath(
-            f"torch-trace-{RANK}-of-{WORLD_SIZE}.json"
-        )
-        prof.export_chrome_trace(trace_output.as_posix())
-        log.info(
-            f'Saved trace output to: {trace_output.as_posix()}'
+        prof.export_chrome_trace(
+            f"{args.trace_dir}/torch-trace-{RANK}-of-{WORLD_SIZE}.json"
         )
     else:
         model = pretrain(

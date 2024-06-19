@@ -874,6 +874,8 @@ def _add_training_args(parser):
                        'training if SIGTERM is received')
     group.add_argument('--tensorboard-dir', type=str, default=None,
                        help='Write TensorBoard logs to this directory.')
+    group.add_argument('--trace-dir', type=str, default="./trace/",
+                       help='Write trace logs to this directory.')
     group.add_argument('--no-masked-softmax-fusion',
                        action='store_false',
                        help='Disable fusion of query_key_value scaling, '
@@ -1502,6 +1504,8 @@ def _add_zero_args(parser):
                       help='Remote device for ZeRO-3 initialized parameters.')
     group.add_argument('--use-pin-memory', action='store_true',
                      help='Use pinned CPU memory for ZeRO-3 initialized model parameters.')
+    group.add_argument('--use-mics', action='store_true',
+                       help='Use MiCS')
     return parser
 
 def _add_memoryopt_args(parser):
