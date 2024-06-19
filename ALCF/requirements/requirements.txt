@@ -1,0 +1,8 @@
+transformers
+bitsandbytes
+sentencepiece
+einops
+xgboost
+fixedint
+pybind11
+six
