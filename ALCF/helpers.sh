@@ -390,6 +390,21 @@ get_batch_size_on_polaris() {
 }
 
 
+#################################################
+# Fix for distributed key value store on Aurora
+#################################################
+use_kvs_fix_on_aurora() {
+    export CCL_KVS_MODE=mpi
+    export LD_LIBRARY_PATH=/flare/Aurora_deployment/intel/ccl/_install_release_2021_13/lib:$LD_LIBRARY_PATH
+    export CPATH=/flare/Aurora_deployment/intel/ccl/_install_release_2021_13/include:$CPATH
+    export LIBRARY_PATH=/flare/Aurora_deployment/intel/ccl/_install_release_2021_13/lib:$LIBRARY_PATH
+    #########################################################
+    # if not set, CCL will complain... ?
+    export NUMEXPR_MAX_THREADS="${NUMEXPR_MAX_THREADS:-16}"
+    #########################################################
+}
+
+
 ##############################################################################
 # `setParams`: Set / configure run options by parsing environment.
 #
@@ -400,6 +415,7 @@ get_batch_size_on_polaris() {
 #         ```
 ##############################################################################
 setParams() {
+    FLASH_ARG=""
     LLAMA_ARGS="--attention-dropout 0 --hidden-dropout 0"
     # +----[Parallelism Settings] -------------------------------------------+
     # +------[Aurora]--------||-------[SunSpot]-------------+
@@ -410,15 +426,19 @@ setParams() {
         export DTYPE=${DTYPE:-bf16}      # DTYPE: bf16
         export GRAD_ACC_STEPS=${GRAD_ACC_STEPS:-8}     # GRADIENT_ACC_STEPS
         MICRO_BATCH=${MICRO_BATCH:-4}    # MICRO_BATCH = 4
-        ##############################################################
+        ######################################################################
+        # !XXX: USE KEY VALUE STORE FIX ON AURORA [2024-06-20]
+        use_kvs_fix_on_aurora
+        ######################################################################
         # NOTE: if NO_FLASH_ATTN is NON-empty; then NO FLASH ATTN !!
+        export NO_FLASH_ATTN=1 # disabled on [2024-06-20] waiting on fix...
         if [[ -n "${NO_FLASH_ATTN-}" ]]; then
             echo "Not using flash-attn!!"
         else
             # LLAMA_ARGS="${LLAMA_ARGS} --use-flash-attn-builder"
             FLASH_ARG="--use-flash-attn-builder"
         fi
-        ##############################################################
+        ######################################################################
     # +--------[Polaris]-----------------------------------+
     elif [[ $(hostname) == x3* ]]; then
         # export LAUNCH_CMD="${LAUNCH_CMD:-deepspeed}"
@@ -457,6 +477,7 @@ setParams() {
     export TP="${TP}"
     export PP="${PP:-1}"
     export SP="${SP:-1}"
+    export FLASH_ARG="${FLASH_ARG}"
     export DTYPE="${DTYPE:-bf16}"
     export OPT="${OPT:-adamw}"
     export HOSTFILE="${HOSTFILE:-${PBS_NODEFILE}}"
@@ -748,19 +769,12 @@ install_deepspeed_for_xpu() {
 
 
 ########################################################
-# Setup / activate conda environment,
-# NOTE:
-#
-# Jerome's `frameworks_2024_5_v2` seems broken ??
-# - seems to be missing `python3 -c 'from mpi4py import MPI'` ???
-# - consequently, we leave the setup below commented out (for the time
-#   being):
-#   if [[ -z "${CONDA_PREFIX-}" ]]; then
-#       module use -a /home/jmitche1/anl_release/2024/q2 ; module load frameworks_2024_5_v2
-#   else
-#       echo "Caught CONDA_PREFIX=${CONDA_PREFIX}"
-#   fi
+# Setup / activate conda environment(s)
 ########################################################
+
+###########################
+# Setup conda on Sunspot
+###########################
 setup_conda_sunspot() {
     ###### check if CONDA_PREFIX non-empty ################
     if [[ -z "${CONDA_PREFIX:-}" ]]; then
@@ -771,13 +785,12 @@ setup_conda_sunspot() {
     fi
 }
 
+###########################
+# Setup conda on Aurora
+###########################
 setup_conda_aurora() {
     if [[ -z "${CONDA_PREFIX:-}" ]]; then
         module use -a /soft/modulefiles ; module load frameworks/2024.1
-        export CCL_KVS_MODE=mpi
-        export LD_LIBRARY_PATH=/flare/Aurora_deployment/intel/ccl/_install_release_2021_13/lib:$LD_LIBRARY_PATH
-        export CPATH=/flare/Aurora_deployment/intel/ccl/_install_release_2021_13/include:$CPATH
-        export LIBRARY_PATH=/flare/Aurora_deployment/intel/ccl/_install_release_2021_13/lib:$LIBRARY_PATH
     fi
 }
 
@@ -810,6 +823,13 @@ setup_conda_polaris() {
     fi
 }
 
+########################
+# setup_venv_from_conda
+#
+# Build (if necessary) a virtual environment
+# on top of the active conda and
+# activate it.
+# ######################
 setup_venv_from_conda() {
     if [[ -z "${CONDA_PREFIX}" ]]; then
         echo "!! No ${CONDA_PREFIX} found."  #  Exiting."
