@@ -42,7 +42,7 @@ To launch on {`Polaris`, `Aurora`, `Sunspot`} @ [ALCF](https://alcf.anl.gov):
     1. Load `conda` module and activate base environment:
 
        ```bash
-       PBS_O_WORKDIR=$(pwd) source ALCF/helpers.sh && setEnv
+       export PBS_O_WORKDIR=$(pwd) && source ALCF/helpers.sh && setup_python
        ```
 
         - <details closed><summary><code>[output]</code>:</summary>
@@ -53,7 +53,7 @@ To launch on {`Polaris`, `Aurora`, `Sunspot`} @ [ALCF](https://alcf.anl.gov):
 
                 ```bash
                 # [05:47:13 PM][foremans@x3001c0s13b1n0][/eagle/a/f/p/ar/Megatron-DeepSpeed-D/Megatron-DeepSpeed]
-                $ PBS_O_WORKDIR=$(pwd) source ALCF/helpers.sh && setEnv
+                $ PBS_O_WORKDIR=$(pwd) source ALCF/helpers.sh && setup_python
                 Using WORKING_DIR: /eagle/argonne_tpc/foremans/projects/argonne-lcf/Megatron-DeepSpeed-DistributedDataLoading/Megatron-DeepSpeed
                 No conda_prefix or virtual_env found in environment...
                 Setting up conda...
@@ -104,7 +104,7 @@ To launch on {`Polaris`, `Aurora`, `Sunspot`} @ [ALCF](https://alcf.anl.gov):
 
                 ```bash
                 # [05:37:18 PM][foremans@x1921c0s0b0n0][/gila/A/fo/p/a/Megatron-DeepSpeed]
-                $ PBS_O_WORKDIR=$(pwd) source ALCF/helpers.sh && setEnv
+                $ PBS_O_WORKDIR=$(pwd) source ALCF/helpers.sh && setup_python
                 Using WORKING_DIR: /gila/Aurora_deployment/foremans/projects/argonne-lcf/Megatron-DeepSpeed
                 No conda_prefix or virtual_env found in environment...
                 Setting up conda...
@@ -199,6 +199,8 @@ will (1.)
     can be overridden dynamically at runtime using this technique.
 
     ```bash
+    # for systems other than Polaris, replace "polaris/books.txt" below with:
+    # "{aurora,sunspot}/books.txt", 
     PBS_O_WORKDIR=$(pwd) DATA_FILE_LIST=./ALCF/data-lists/polaris/books.txt TRAIN_ITER=1000 NLAYERS=10 MICRO_BATCH=2 OPT=adamw bash train_llama_alcf.sh
     ```
 
@@ -217,10 +219,276 @@ will (1.)
 
     The outputs should look _something_ like this, though YMMV (things change quick):
 
+    <details closed><summary><code>[Aurora]</code>:</summary>
+
+    ```bash
+    #[🌌][10:45:59 AM][foremans@x4711c1s2b0n0][…/Megatron-DeepSpeed][🌱 main][$!?]
+    $ export PBS_O_WORKDIR=$(pwd) && source ALCF/helpers.sh && setup_python
+
+    #[🌌][10:46:57 AM][foremans@x4711c1s2b0n0][…/Megatron-DeepSpeed][🌱 main][$!?][aurora_nre_models_frameworks-2024.1]
+    (aurora_nre_models_frameworks-2024.1) $ PBS_O_WORKDIR=$(pwd) DATA_FILE_LIST=./ALCF/data-lists/aurora/books.txt bash train_llama_alcf.sh > train-log-$(tstamp).log 2>&1 &
+
+    Using WORKING_DIR: /gecko/Aurora_deployment/foremans/projects/argonne-lcf/Megatron-DeepSpeed
+    Running on: aurora
+    Using virtual_env: /gecko/Aurora_deployment/foremans/projects/argonne-lcf/Megatron-DeepSpeed/venvs/aurora_nre_models_frameworks-2024.1 on top of conda from: /opt/aurora/24.086.0/frameworks/aurora_nre_models_frameworks-2024.1
+    [python] Using: /gecko/Aurora_deployment/foremans/projects/argonne-lcf/Megatron-DeepSpeed/venvs/aurora_nre_models_frameworks-2024.1/bin/python3
+    Ensuring all dependencies from /gecko/Aurora_deployment/foremans/projects/argonne-lcf/Megatron-DeepSpeed/ALCF/requirements/requirements.txt installed...
+
+    [notice] A new release of pip is available: 24.0 -> 24.1
+    [notice] To update, run: pip install --upgrade pip
+    ┌─────────────────────────────────────────────────────────────────────┐
+    │ [savejobenv]:
+    │     • Writing PBS vars to: /home/foremans/.pbsenv
+    └─────────────────────────────────────────────────────────────────────┘
+    ┌─────────────────────────────────────────────────────────────────────┐
+    │ [HOSTS]:
+    │     • [host:0] - x4711c1s2b0n0.hostmgmt2711.cm.aurora.alcf.anl.gov
+    │     • [host:1] - x4711c1s3b0n0.hostmgmt2711.cm.aurora.alcf.anl.gov
+    └─────────────────────────────────────────────────────────────────────┘
+    ┌─────────────────────────────────────────────────────────────────────┐
+    │ [DIST INFO]:
+    │     • HOSTFILE=/var/spool/pbs/aux/684084.aurora-pbs-0001.hostmgmt.cm.aurora.alcf.anl.gov
+    │     • NHOSTS=2
+    │     • NGPU_PER_HOST=12
+    │     • NGPUS=24
+    └─────────────────────────────────────────────────────────────────────┘
+    ┌─────────────────────────────────────────────────────────────────────┐
+    │ [LAUNCH]:
+    │     • To launch across all available GPUs, use:
+    │       'launch' ( = mpiexec --verbose --envall -n 24 -ppn 12 --hostfile /var/spool/pbs/aux/684084.aurora-pbs-0001.hostmgmt.cm.aurora.alcf.anl.gov )
+    └─────────────────────────────────────────────────────────────────────┘
+    2024-06-21 10:47:09,771 - numexpr.utils - INFO - Note: detected 208 virtual cores but NumExpr set to maximum of 64, check "NUMEXPR_MAX_THREADS" environment variable.
+    2024-06-21 10:47:09,772 - numexpr.utils - INFO - Note: NumExpr detected 208 cores but "NUMEXPR_MAX_THREADS" not set, so enforcing safe limit of 8.
+    2024-06-21 10:47:09,772 - numexpr.utils - INFO - NumExpr defaulting to 8 threads.
+    /gecko/Aurora_deployment/foremans/projects/argonne-lcf/Megatron-DeepSpeed/venvs/aurora_nre_models_frameworks-2024.1/lib/python3.9/site-packages/pandas/core/computation/expressions.py:21: UserWarning: Pandas requires version '2.8.4' or n>
+      from pandas.core.computation.check import NUMEXPR_INSTALLED
+    /opt/aurora/24.086.0/frameworks/aurora_nre_models_frameworks-2024.1/lib/python3.9/runpy.py:127: RuntimeWarning: 'ezpz.jobs' found in sys.modules after import of package 'ezpz', but prior to execution of 'ezpz.jobs'; this may result in u>
+      warn(RuntimeWarning(msg))
+    [2024-06-21 10:47:10][INFO][jobs:366] - Caught PBS_JOBID='684084.aurora-pbs-0001.hostmgmt.cm.aurora.alcf.anl.gov', pbsnf=PosixPath('/var/spool/pbs/aux/684084.aurora-pbs-0001.hostmgmt.cm.aurora.alcf.anl.gov') from env. Saving jobenv!
+    [2024-06-21 10:47:10][WARNING][jobs:117] - /home/foremans/PBS-jobs/684084  already in /home/foremans/PBS-jobs.log,  not appending !!
+    [2024-06-21 10:47:10][INFO][jobs:192] - Saving job env to /home/foremans/PBS-jobs/684084/jobenv.sh
+    [2024-06-21 10:47:10][INFO][jobs:220] - Saving job env to /home/foremans/PBS-jobs/684084/jobenv.json
+    [2024-06-21 10:47:10][INFO][jobs:233] - Saving job env to /home/foremans/PBS-jobs/684084/jobenv.yaml
+    [2024-06-21 10:47:10][INFO][jobs:137] - Saving job env to .jobenv file in  /home/foremans/PBS-jobs/684084/.jobenv
+    [2024-06-21 10:47:10][INFO][jobs:137] - Saving job env to .jobenv file in  /lus/gecko/projects/Aurora_deployment/foremans/projects/argonne-lcf/Megatron-DeepSpeed/.jobenv
+    [2024-06-21 10:47:10][WARNING][jobs:154] - To use launch alias, be sure to:  source /lus/gecko/projects/Aurora_deployment/foremans/projects/argonne-lcf/Megatron-DeepSpeed/.jobenv
+    [2024-06-21 10:47:10][INFO][jobs:277] - Writing PBS env vars to  /home/foremans/PBS-jobs/684084 / jobenv{.sh, .yaml, .json}
+    [2024-06-21 10:47:10][WARNING][jobs:281] - Run: source ./.jobenv in your current shell to set job variables
+    [2024-06-21 10:47:10][INFO][jobs:374] -
+    [DIST_INFO]:
+      • DEVICE=xpu
+      • DEVICE_ID=xpu:0
+      • DISTRIBUTED_BACKEND=ccl
+      • GPUS_PER_NODE=12
+      • HOSTS=['x4711c1s2b0n0', 'x4711c1s3b0n0']
+      • HOSTFILE=/var/spool/pbs/aux/684084.aurora-pbs-0001.hostmgmt.cm.aurora.alcf.anl.gov
+      • HOSTNAME=x4711c1s2b0n0.hostmgmt2711.cm.aurora.alcf.anl.gov
+      • LOCAL_RANK=0
+      • MACHINE=Aurora
+      • NUM_NODES=2
+      • NGPUS=24
+      • NODE_ID=0
+      • RANK=0
+      • SCHEDULER=PBS
+      • WORLD_SIZE_TOTAL=24
+      • WORLD_SIZE_IN_USE=1
+    [2024-06-21 10:47:10][CRITICAL][jobs:245] - To launch across ALL GPUs in your job, use:
+    LAUNCH_CMD=mpiexec --verbose --envall -n 24 -ppn 12 --hostfile /var/spool/pbs/aux/684084.aurora-pbs-0001.hostmgmt.cm.aurora.alcf.anl.gov
+    creating alias launch=mpiexec --verbose --envall -n 24 -ppn 12 --hostfile /var/spool/pbs/aux/684084.aurora-pbs-0001.hostmgmt.cm.aurora.alcf.anl.gov
+    Found ezpz!
+
+    [notice] A new release of pip is available: 24.0 -> 24.1
+    [notice] To update, run: pip install --upgrade pip
+    Done with ezpz.
+    Not using flash-attn!!
+    LR_ARGS: --lr 0.0003 --lr-decay-style cosine --lr-warmup-fraction 0.05
+    DS_CONFIG: /gecko/Aurora_deployment/foremans/projects/argonne-lcf/Megatron-DeepSpeed/ds-configs/ds_stage1_mb4_gb768_pp1_bf16.json
+    ZS: 1, MB: 4, GB: 768, PP: 1, DTYPE: bf16
+     Please see logs at: logs/ws24_ds_stage1_nl32_hs4096_mb4_seq4096_gb768_sp1_pp1_tp1_bf16_optadamw_lr0.0003_lwf0.05/20240621-104713_24_x4711c1s2b0n0.hostmgmt2711.cm.aurora.alcf.anl.gov
+    Checkpoints will be saved to: checkpoints/ws24_ds_stage1_nl32_hs4096_mb4_seq4096_gb768_sp1_pp1_tp1_bf16_optadamw_lr0.0003_lwf0.05
+    !! Caught USE_ACTIVATION_CHECKPOINTING=1 !!
+    !! Caught USE_ACTIVATION_CHECKPOINTING=1 !!
+    Setting up tokenizer with Llama2
+    Using data_file_list: ./ALCF/data-lists/aurora/books.txt
+    Using tokenizer: Llama2. Setting up data with ./ALCF/data-lists/aurora/books.txt
+    Calling:  setData() with ./ALCF/data-lists/aurora/books.txt
+    --------------------
+    Updated environment:
+    DATA_FILE_LIST: ./ALCF/data-lists/aurora/books.txt
+    NUM_DOCS: 3
+     WEIGHT_SUM: 0.0072042092147565125
+    DFL_STEM: books
+    DATA_CACHE_PATH: .cache/books/index-cache
+    DATA_FLAGS:  --data-file-list ./ALCF/data-lists/aurora/books.txt
+    --------------------
+    [setData] DATA_FLAGS:  --data-file-list ./ALCF/data-lists/aurora/books.txt
+    [setData] TOKENIZER_FLAGS: --tokenizer-type Llama2Tokenizer --tokenizer-model /gecko/Aurora_deployment/foremans/projects/argonne-lcf/Megatron-DeepSpeed/ALCF/tokenizer.model
+    Requirement already satisfied: pybind11 in ./venvs/aurora_nre_models_frameworks-2024.1/lib/python3.9/site-packages (2.12.0)
+
+    [notice] A new release of pip is available: 24.0 -> 24.1
+    [notice] To update, run: pip install --upgrade pip
+    make: Nothing to be done for 'default'.
+    /gecko/Aurora_deployment/foremans/projects/argonne-lcf/Megatron-DeepSpeed
+    ++++++++++++++++++++++++++++++++++++++++++++++++++
+    - MPICH_DIR=/opt/aurora/24.086.0/CNDA/mpich/20231026/mpich-ofi-all-icc-default-pmix-gpu-drop20231026
+    - Using /gecko/Aurora_deployment/foremans/projects/argonne-lcf/Megatron-DeepSpeed/venvs/aurora_nre_models_frameworks-2024.1/bin/python3
+    - WORLD_SIZE:24
+    - BACKEND: ccl
+    - MODEL_TYPE: llama-seq4096-pp1-tp1-32layers-32heads-4096hidden
+    - Using DATA_FILE_LIST: ./ALCF/data-lists/aurora/books.txt
+    ++++++++++++++++++++++++++++++++++++++++++++++++++
+
+    Currently Loaded Modules:
+      1) mpich/icc-all-pmix-gpu/20231026       3) libfabric/1.15.2.0   5) cray-libpals/1.3.3            7) gmp/6.2.1-pcxzkau    9) mpc/1.3.1-dfagrna  11) intel_compute_runtime/release/803.29  13) frameworks/2024.1
+      2) mpich-config/collective-tuning/1024   4) cray-pals/1.3.3      6) spack-pe-gcc/0.7.0-24.086.0   8) mpfr/4.2.0-w7v7yjv  10) gcc/12.2.0         12) oneapi/release/2024.1
+
+
+
+    Saving environment to checkpoints/ws24_ds_stage1_nl32_hs4096_mb4_seq4096_gb768_sp1_pp1_tp1_bf16_optadamw_lr0.0003_lwf0.05/.env
+    Not currently running. Continuing!
+    Launching with: MPICH
+     mpiexec --verbose --envall -n 24 -ppn 12 --hostfile /var/spool/pbs/aux/684084.aurora-pbs-0001.hostmgmt.cm.aurora.alcf.anl.gov --genvall --cpu-bind depth -d 16 /gecko/Aurora_deployment/foremans/projects/argonne-lcf/Megatron-DeepSpeed/venvs/aurora_nre_models_frameworks-2024.1/bin/python3 -Wignore /lus/gecko/projects/Aurora_deployment/foremans/projects/argonne-lcf/Megatron-DeepSpeed/pretrain_gpt_alcf.py
+    Using data_cache_path: checkpoints/ws24_ds_stage1_nl32_hs4096_mb4_seq4096_gb768_sp1_pp1_tp1_bf16_optadamw_lr0.0003_lwf0.05/.cache/books/index-cache
+
+            mpiexec --verbose --envall -n 24 -ppn 12 --hostfile /var/spool/pbs/aux/684084.aurora-pbs-0001.hostmgmt.cm.aurora.alcf.anl.gov --genvall --cpu-bind depth -d 16 /gecko/Aurora_deployment/foremans/projects/argonne-lcf/Megatron-DeepSpeed/venvs/aurora_nre_models_frameworks-2024.1/bin/python3 -Wignore /lus/gecko/projects/Aurora_deployment/foremans/projects/argonne-lcf/Megatron-DeepSpeed/pretrain_gpt_alcf.py         --bf16                 --split 100,0,0         --log-interval 1         --no-bias-gelu-fusion         --no-bias-dropout-fusion         --no-masked-softmax-fusion         --no-gradient-accumulation-fusion        >
+
+    [!! NOTE] View output at:
+     logs/ws24_ds_stage1_nl32_hs4096_mb4_seq4096_gb768_sp1_pp1_tp1_bf16_optadamw_lr0.0003_lwf0.05/20240621-104713_24_x4711c1s2b0n0.hostmgmt2711.cm.aurora.alcf.anl.gov/output.log
+    Connected to tcp://x4711c1s2b0n0.hostmgmt2711.cm.aurora.alcf.anl.gov:7919
+    Launching application eafe3e80-ad2e-4cee-a3e4-d63af2a77c66
+    [2024-06-21 10:47:31,610] [INFO] [comm.py:161:init_deepspeed_backend] Initialize ccl backend
+    [2024-06-21 10:47:31,610] [INFO] [comm.py:637:init_distributed] cdb=None
+    [2024-06-21 10:47:31,610] [INFO] [comm.py:652:init_distributed] Not using the DeepSpeed or dist launchers, attempting to detect MPI environment...
+    [2024-06-21 10:47:31,611] [INFO] [comm.py:702:mpi_discovery] Discovered MPI settings of world_rank=15, local_rank=3, world_size=24, master_addr=10.115.79.12, master_port=29500
+    [2024-06-21 10:47:31,611] [INFO] [comm.py:702:mpi_discovery] Discovered MPI settings of world_rank=23, local_rank=11, world_size=24, master_addr=10.115.79.12, master_port=29500
+    [2024-06-21 10:47:31,611] [INFO] [comm.py:702:mpi_discovery] Discovered MPI settings of world_rank=12, local_rank=0, world_size=24, master_addr=10.115.79.12, master_port=29500
+    [2024-06-21 10:47:31,611] [INFO] [comm.py:702:mpi_discovery] Discovered MPI settings of world_rank=13, local_rank=1, world_size=24, master_addr=10.115.79.12, master_port=29500
+    [2024-06-21 10:47:31,611] [INFO] [comm.py:702:mpi_discovery] Discovered MPI settings of world_rank=3, local_rank=3, world_size=24, master_addr=10.115.79.12, master_port=29500
+    [2024-06-21 10:47:31,611] [INFO] [comm.py:702:mpi_discovery] Discovered MPI settings of world_rank=14, local_rank=2, world_size=24, master_addr=10.115.79.12, master_port=29500
+    [2024-06-21 10:47:31,611] [INFO] [comm.py:702:mpi_discovery] Discovered MPI settings of world_rank=16, local_rank=4, world_size=24, master_addr=10.115.79.12, master_port=29500
+    [2024-06-21 10:47:31,611] [INFO] [comm.py:702:mpi_discovery] Discovered MPI settings of world_rank=17, local_rank=5, world_size=24, master_addr=10.115.79.12, master_port=29500
+    [2024-06-21 10:47:31,611] [INFO] [comm.py:702:mpi_discovery] Discovered MPI settings of world_rank=18, local_rank=6, world_size=24, master_addr=10.115.79.12, master_port=29500
+    [2024-06-21 10:47:31,611] [INFO] [comm.py:702:mpi_discovery] Discovered MPI settings of world_rank=19, local_rank=7, world_size=24, master_addr=10.115.79.12, master_port=29500
+    [2024-06-21 10:47:31,611] [INFO] [comm.py:702:mpi_discovery] Discovered MPI settings of world_rank=20, local_rank=8, world_size=24, master_addr=10.115.79.12, master_port=29500
+    [2024-06-21 10:47:31,611] [INFO] [comm.py:702:mpi_discovery] Discovered MPI settings of world_rank=21, local_rank=9, world_size=24, master_addr=10.115.79.12, master_port=29500
+    [2024-06-21 10:47:31,611] [INFO] [comm.py:702:mpi_discovery] Discovered MPI settings of world_rank=22, local_rank=10, world_size=24, master_addr=10.115.79.12, master_port=29500
+    [2024-06-21 10:47:31,611] [INFO] [comm.py:702:mpi_discovery] Discovered MPI settings of world_rank=6, local_rank=6, world_size=24, master_addr=10.115.79.12, master_port=29500
+    [2024-06-21 10:47:31,611] [INFO] [comm.py:702:mpi_discovery] Discovered MPI settings of world_rank=8, local_rank=8, world_size=24, master_addr=10.115.79.12, master_port=29500
+    [2024-06-21 10:47:31,611] [INFO] [comm.py:702:mpi_discovery] Discovered MPI settings of world_rank=10, local_rank=10, world_size=24, master_addr=10.115.79.12, master_port=29500
+    [2024-06-21 10:47:31,611] [INFO] [comm.py:702:mpi_discovery] Discovered MPI settings of world_rank=0, local_rank=0, world_size=24, master_addr=10.115.79.12, master_port=29500
+    [2024-06-21 10:47:31,611] [INFO] [comm.py:668:init_distributed] Initializing TorchBackend in DeepSpeed with backend ccl
+    [2024-06-21 10:47:31,611] [INFO] [comm.py:702:mpi_discovery] Discovered MPI settings of world_rank=1, local_rank=1, world_size=24, master_addr=10.115.79.12, master_port=29500
+    [2024-06-21 10:47:31,611] [INFO] [comm.py:702:mpi_discovery] Discovered MPI settings of world_rank=2, local_rank=2, world_size=24, master_addr=10.115.79.12, master_port=29500
+    [2024-06-21 10:47:31,611] [INFO] [comm.py:702:mpi_discovery] Discovered MPI settings of world_rank=4, local_rank=4, world_size=24, master_addr=10.115.79.12, master_port=29500
+    [2024-06-21 10:47:31,611] [INFO] [comm.py:702:mpi_discovery] Discovered MPI settings of world_rank=5, local_rank=5, world_size=24, master_addr=10.115.79.12, master_port=29500
+    [2024-06-21 10:47:31,611] [INFO] [comm.py:702:mpi_discovery] Discovered MPI settings of world_rank=7, local_rank=7, world_size=24, master_addr=10.115.79.12, master_port=29500
+    [2024-06-21 10:47:31,611] [INFO] [comm.py:702:mpi_discovery] Discovered MPI settings of world_rank=9, local_rank=9, world_size=24, master_addr=10.115.79.12, master_port=29500
+    [2024-06-21 10:47:31,611] [INFO] [comm.py:702:mpi_discovery] Discovered MPI settings of world_rank=11, local_rank=11, world_size=24, master_addr=10.115.79.12, master_port=29500
+    [2024-06-21 10:47:32][INFO][dist:291] - [device='xpu'][rank=2/23][local_rank=2/11][node=0/1]
+    [2024-06-21 10:47:32][INFO][dist:291] - [device='xpu'][rank=6/23][local_rank=6/11][node=0/1]
+    [2024-06-21 10:47:32][INFO][dist:291] - [device='xpu'][rank=8/23][local_rank=8/11][node=0/1]
+    [2024-06-21 10:47:32][INFO][dist:291] - [device='xpu'][rank=1/23][local_rank=1/11][node=1/1]
+    [2024-06-21 10:47:32][INFO][dist:291] - [device='xpu'][rank=15/23][local_rank=3/11][node=1/1]
+    [2024-06-21 10:47:32][INFO][dist:291] - [device='xpu'][rank=17/23][local_rank=5/11][node=1/1]
+    [2024-06-21 10:47:32][INFO][dist:291] - [device='xpu'][rank=3/23][local_rank=3/11][node=1/1]
+    [2024-06-21 10:47:32][INFO][dist:291] - [device='xpu'][rank=13/23][local_rank=1/11][node=1/1]
+    [2024-06-21 10:47:32][INFO][dist:291] - [device='xpu'][rank=14/23][local_rank=2/11][node=0/1]
+    [2024-06-21 10:47:32][INFO][dist:291] - [device='xpu'][rank=4/23][local_rank=4/11][node=0/1]
+    [2024-06-21 10:47:32][INFO][dist:291] - [device='xpu'][rank=18/23][local_rank=6/11][node=0/1]
+    [2024-06-21 10:47:32][INFO][dist:291] - [device='xpu'][rank=20/23][local_rank=8/11][node=0/1]
+    [2024-06-21 10:47:32][INFO][dist:291] - [device='xpu'][rank=5/23][local_rank=5/11][node=1/1]
+    [2024-06-21 10:47:32][INFO][dist:291] - [device='xpu'][rank=21/23][local_rank=9/11][node=1/1]
+    [2024-06-21 10:47:32][INFO][dist:291] - [device='xpu'][rank=7/23][local_rank=7/11][node=1/1]
+    [2024-06-21 10:47:32][INFO][dist:291] - [device='xpu'][rank=23/23][local_rank=11/11][node=1/1]
+    [2024-06-21 10:47:32][INFO][dist:291] - [device='xpu'][rank=9/23][local_rank=9/11][node=1/1]
+    [2024-06-21 10:47:32][INFO][dist:291] - [device='xpu'][rank=12/23][local_rank=0/11][node=0/1]
+    [2024-06-21 10:47:32][INFO][dist:291] - [device='xpu'][rank=16/23][local_rank=4/11][node=0/1]
+    [2024-06-21 10:47:32][INFO][dist:291] - [device='xpu'][rank=10/23][local_rank=10/11][node=0/1]
+    [2024-06-21 10:47:32][INFO][dist:291] - [device='xpu'][rank=11/23][local_rank=11/11][node=1/1]
+    [2024-06-21 10:47:32][INFO][dist:291] - [device='xpu'][rank=19/23][local_rank=7/11][node=1/1]
+    [2024-06-21 10:47:32][INFO][dist:291] - [device='xpu'][rank=22/23][local_rank=10/11][node=0/1]
+    2024-06-21 10:47:32][INFO][dist:240] - DistInfo={
+        "DEVICE": "xpu",
+        "DEVICE_ID": "xpu:0",
+        "DISTRIBUTED_BACKEND": "ccl",
+        "GPUS_PER_NODE": 12,
+        "HOSTFILE": "/var/spool/pbs/aux/684084.aurora-pbs-0001.hostmgmt.cm.aurora.alcf.anl.gov",
+        "HOSTNAME": "x4711c1s2b0n0.hostmgmt2711.cm.aurora.alcf.anl.gov",
+        "HOSTS": "['x4711c1s2b0n0', 'x4711c1s3b0n0']",
+        "LOCAL_RANK": 0,
+        "MACHINE": "Aurora",
+        "NGPUS": 24,
+        "NODE_ID": 0,
+        "NUM_NODES": 2,
+        "RANK": 0,
+        "SCHEDULER": "PBS",
+        "WORLD_SIZE_IN_USE": 24,
+        "WORLD_SIZE_TOTAL": 24
+    }
+
+    # [...clipped...]
+
+    [2024-06-21 10:48:48][INFO][utils:307] - > elapsed time for building blendable dataset indices: 1.19 (sec)
+    [2024-06-21 10:48:48][INFO][utils:307] -  > saving index map files
+    [2024-06-21 10:48:51][INFO][utils:307] -  > finished saving index map files in 3.0829622745513916 seconds
+    [2024-06-21 10:48:51][INFO][utils:307] - > loading blendable dataset index: checkpoints/ws24_ds_stage1_nl32_hs4096_mb4_seq4096_gb768_sp1_pp1_tp1_bf16_optadamw_lr0.0003_lwf0.05/.cache/books/index-cache/49e9529a32d0a98f1e40f4a82872b11c_index.npy
+    [2024-06-21 10:48:52][INFO][utils:307] - > loading blendable dataset sample index: checkpoints/ws24_ds_stage1_nl32_hs4096_mb4_seq4096_gb768_sp1_pp1_tp1_bf16_optadamw_lr0.0003_lwf0.05/.cache/books/index-cache/49e9529a32d0a98f1e40f4a82872b11c_sample_index.npy
+    [2024-06-21 10:48:52][INFO][utils:307] - > finished loading in 0.30188989639282227 seconds
+    [2024-06-21 10:48:52][INFO][utils:307] -  >> building dataset for /gecko/Aurora_deployment/AuroraGPT/datasets/dolma/data_v1.7_Llama2Tokenizer/books-0002_text_document
+    [2024-06-21 10:48:52][INFO][utils:307] -  > building dataset index ...
+    [2024-06-21 10:48:52][INFO][utils:307] -     reading sizes...
+    [2024-06-21 10:48:52][INFO][utils:307] -     reading pointers...
+    [2024-06-21 10:48:52][INFO][utils:307] -     reading document index...
+    [2024-06-21 10:48:52][INFO][utils:307] -     creating numpy buffer of mmap...
+    [2024-06-21 10:48:52][INFO][utils:307] - /gecko/Aurora_deployment/AuroraGPT/datasets/dolma/data_v1.7_Llama2Tokenizer/books-0002_text_document.bin
+    [2024-06-21 10:48:52][INFO][utils:307] -     creating memory view of numpy buffer...
+    [2024-06-21 10:48:52][INFO][utils:307] -  > finished creating indexed dataset in 0.003112 seconds
+    [2024-06-21 10:48:52][INFO][utils:307] -     number of documents: 7386
+    [2024-06-21 10:48:52][INFO][utils:307] -  > dataset split:
+    [2024-06-21 10:48:52][INFO][utils:307] -     train:
+    [2024-06-21 10:48:52][INFO][utils:307] -      document indices in [0, 7386) total of 7386 documents
+    [2024-06-21 10:48:52][INFO][utils:307] -     validation:
+    [2024-06-21 10:48:52][INFO][utils:307] -      document indices in [7386, 7386) total of 0 documents
+    [2024-06-21 10:48:52][INFO][utils:307] -     test:
+    [2024-06-21 10:48:52][INFO][utils:307] -      document indices in [7386, 7386) total of 0 documents
+    [2024-06-21 10:48:52][INFO][utils:307] -  > loading doc-idx mapping from checkpoints/ws24_ds_stage1_nl32_hs4096_mb4_seq4096_gb768_sp1_pp1_tp1_bf16_optadamw_lr0.0003_lwf0.05/.cache/books/index-cache/1fa7757ef8907da21e1e1326705e7f3f_doc_idx.npy
+    [2024-06-21 10:48:52][INFO][utils:307] -  > loading sample-idx mapping from checkpoints/ws24_ds_stage1_nl32_hs4096_mb4_seq4096_gb768_sp1_pp1_tp1_bf16_optadamw_lr0.0003_lwf0.05/.cache/books/index-cache/1fa7757ef8907da21e1e1326705e7f3f_sample_idx.npy
+    [2024-06-21 10:48:52][INFO][utils:307] -  > loading shuffle-idx mapping from checkpoints/ws24_ds_stage1_nl32_hs4096_mb4_seq4096_gb768_sp1_pp1_tp1_bf16_optadamw_lr0.0003_lwf0.05/.cache/books/index-cache/1fa7757ef8907da21e1e1326705e7f3f_shuffle_idx.npy
+    [2024-06-21 10:48:52][INFO][utils:307] -     loaded indexed file in 0.008 seconds
+    [2024-06-21 10:48:52][INFO][utils:307] -     total number of samples: 34196233
+    [2024-06-21 10:48:52][INFO][utils:307] -     total number of epochs: 175
+    [2024-06-21 10:48:52][INFO][utils:307] - > size of blendable dataset: 245361763 samples
+    [2024-06-21 10:48:52][INFO][utils:307] -  >>> Finished building BlendableDataset in 4.613574266433716 seconds
+    [2024-06-21 10:48:52][INFO][pretrain_gpt_alcf:579] - > finished creating GPT datasets. Took: 45730179865763.24219s
+    [2024-06-21 10:48:53][INFO][training:88] - [after dataloaders are built] datetime=2024-06-21 10:48:53
+    [2024-06-21 10:48:53][INFO][training:307] - done with setup ...
+    [2024-06-21 10:48:53][INFO][training:313] - training ...
+    (min, max) time across ranks (ms):
+        model-and-optimizer-setup ......................: (63763.34, 63857.25)
+        train/valid/test-data-iterators-setup ..........: (12936.53, 13432.64)
+    [2024-06-21 10:48:53][INFO][training:88] - [before the start of training step] datetime=2024-06-21 10:48:53
+    [2024-06-21 10:48:53,396] [INFO] [checkpointing.py:541:forward] Activation Checkpointing Information
+    [2024-06-21 10:48:53,396] [INFO] [checkpointing.py:542:forward] ----Partition Activations False, CPU CHECKPOINTING False
+    [2024-06-21 10:48:53,396] [INFO] [checkpointing.py:543:forward] ----contiguous Memory Checkpointing False with 32 total layers
+    [2024-06-21 10:48:53,396] [INFO] [checkpointing.py:545:forward] ----Synchronization False
+    [2024-06-21 10:48:53,396] [INFO] [checkpointing.py:546:forward] ----Profiling time in checkpointing False
+    [2024-06-21 10:50:42,167] [INFO] [logging.py:96:log_dist] [Rank 0] time (ms) | optimizer_allgather: 1867.64 | optimizer_gradients: 19.65 | optimizer_step: 46.07
+    [2024-06-21 10:50:42,167] [INFO] [logging.py:96:log_dist] [Rank 0] step=1, skipped=0, lr=[1.887433467970254e-08, 1.887433467970254e-08], mom=[(0.9, 0.999), (0.9, 0.999)]
+    [2024-06-21 10:50:42,167] [INFO] [logging.py:96:log_dist] [Rank 0] time (ms) | fwd_microstep: 25341.72 | bwd_microstep: 77707.38 | bwd_inner_microstep: 75751.84 | bwd_allreduce_microstep: 1955.54 | step_microstep: 2218.38
+    [2024-06-21 10:50:42,168] [INFO] [logging.py:96:log_dist] [Rank 0] time (ms) | fwd: 25341.72 | bwd: 77707.38 | bwd_inner: 75751.84 | bwd_allreduce: 1955.54 | step: 2218.38
+    [2024-06-21 10:50:42][INFO][training:1609] -  iteration=       1/  317892 | consumed_samples=         768 | consumed_tokens=     3145728 | elapsed_time_per_iteration_ms=108893.2 | learning_rate=1.88743e-08 | global_batch_size=  768 | lm loss=11.133188 | loss_scale=1.0 | actual_seqlen= 4096 | number_of_skipped_iterations=  0 | number_of_nan_iterations=  0 | samples_per_second=7.053 | tokens_per_gpu_per_second_tgs=1203.674 | [LM]-TFLOPs=49.66 | [DS]-TFLOPs=73.32 |
+    [2024-06-21 10:50:42][INFO][utils:190] - [Rank 0] (after 1 iterations) memory (MB) | allocated: 18243.64111328125 | max allocated: 50664.2548828125 | reserved: 54556.0 | max reserved: 54556.0
+    (min, max) time across ranks (ms):
+        forward-backward ...............................: (106622.81, 106624.28)
+        optimizer ......................................: (2221.02, 2234.98)
+    ```
+
+    </details>
+
     <details closed><summary><code>[Sunspot]</code>:</summary>
 
     ```bash
-    # [09:07:32 AM] [foremans@x1921c0s0b0n0] ~/q/llm.devkit/Megatron-DeepSpeed  main !1 ?27 q4-drop 26s ✘ INT
+    # [09:07:32 AM][foremans@x1921c0s0b0n0][~/q/llm.devkit/Megatron-DeepSpeed][🌱 main][$!?]
     $ PBS_O_WORKDIR=$(pwd) DATA_FILE_LIST=./ALCF/data-lists/polaris/books.txt bash train_llama_alcf.sh
     source-ing /lus/gila/projects/Aurora_deployment/foremans/q4-drop_sunspot/llm.devkit/Megatron-DeepSpeed/ALCF/helpers.sh
     Sourcing /home/foremans/q4-drop_sunspot/llm.devkit/setenv.sh...
@@ -402,7 +670,7 @@ will (1.)
     <details closed><summary><code>[Polaris]</code>:</summary>
 
     ```bash
-    # [09:31:35 AM] [foremans@x3112c0s13b0n0] ~/pol/p/a/Megatron-DeepSpeed  main !4 ?24 cu118-pt221 ✘ INT
+    # [09:31:35 AM][foremans@x3112c0s13b0n0][~/pol/p/a/Megatron-DeepSpeed][🌱 main][$!?]
     $ PBS_O_WORKDIR=$(pwd) DATA_FILE_LIST=./ALCF/data-lists/polaris/books.txt OPT=adamw bash train_llama_alcf.sh
     source-ing /lus/eagle/projects/datascience/foremans/locations/polaris/projects/argonne-lcf/Megatron-DeepSpeed/ALCF/helpers.sh
     Running on Polaris !!
