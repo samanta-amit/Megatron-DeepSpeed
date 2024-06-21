@@ -269,13 +269,12 @@ will (1.)
     [2024-06-21 10:47:10][INFO][jobs:192] - Saving job env to /home/foremans/PBS-jobs/684084/jobenv.sh
     [2024-06-21 10:47:10][INFO][jobs:220] - Saving job env to /home/foremans/PBS-jobs/684084/jobenv.json
     [2024-06-21 10:47:10][INFO][jobs:233] - Saving job env to /home/foremans/PBS-jobs/684084/jobenv.yaml
-    [2024-06-21 10:47:10][INFO][jobs:137] - Saving job env to `.jobenv` file in  /home/foremans/PBS-jobs/684084/.jobenv
-    [2024-06-21 10:47:10][INFO][jobs:137] - Saving job env to `.jobenv` file in  /lus/gecko/projects/Aurora_deployment/foremans/projects/argonne-lcf/Megatron-DeepSpeed/.jobenv
-    [2024-06-21 10:47:10][WARNING][jobs:154] - To use `launch` alias, be sure to:  `source /lus/gecko/projects/Aurora_deployment/foremans/projects/argonne-lcf/Megatron-DeepSpeed/.jobenv
+    [2024-06-21 10:47:10][INFO][jobs:137] - Saving job env to .jobenv file in  /home/foremans/PBS-jobs/684084/.jobenv
+    [2024-06-21 10:47:10][INFO][jobs:137] - Saving job env to .jobenv file in  /lus/gecko/projects/Aurora_deployment/foremans/projects/argonne-lcf/Megatron-DeepSpeed/.jobenv
+    [2024-06-21 10:47:10][WARNING][jobs:154] - To use launch alias, be sure to:  source /lus/gecko/projects/Aurora_deployment/foremans/projects/argonne-lcf/Megatron-DeepSpeed/.jobenv
     [2024-06-21 10:47:10][INFO][jobs:277] - Writing PBS env vars to  /home/foremans/PBS-jobs/684084 / jobenv{.sh, .yaml, .json}
-    [2024-06-21 10:47:10][WARNING][jobs:281] - Run: `source ./.jobenv` in your current shell to set job variables
+    [2024-06-21 10:47:10][WARNING][jobs:281] - Run: source ./.jobenv in your current shell to set job variables
     [2024-06-21 10:47:10][INFO][jobs:374] -
-
     [DIST_INFO]:
       • DEVICE=xpu
       • DEVICE_ID=xpu:0
