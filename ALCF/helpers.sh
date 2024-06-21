@@ -394,11 +394,14 @@ get_batch_size_on_polaris() {
 # Fix for distributed key value store on Aurora
 #################################################
 use_kvs_fix_on_aurora() {
-    export NUMEXPR_MAX_THREADS=64
     export CCL_KVS_MODE=mpi
     export LD_LIBRARY_PATH=/flare/Aurora_deployment/intel/ccl/_install_release_2021_13/lib:$LD_LIBRARY_PATH
     export CPATH=/flare/Aurora_deployment/intel/ccl/_install_release_2021_13/include:$CPATH
     export LIBRARY_PATH=/flare/Aurora_deployment/intel/ccl/_install_release_2021_13/lib:$LIBRARY_PATH
+    #########################################################
+    # if not set, CCL will complain... ?
+    export NUMEXPR_MAX_THREADS="${NUMEXPR_MAX_THREADS:-16}"
+    #########################################################
 }
 
 
@@ -421,20 +424,21 @@ setParams() {
         export CCL=${CCL:-ccl}           # CCL
         export BE="${CCL}"               # COMMUNICATION BACKEND = CCL
         export DTYPE=${DTYPE:-bf16}      # DTYPE: bf16
-        export GRAD_ACC_STEPS=${GRAD_ACC_STEPS:-4}     # GRADIENT_ACC_STEPS
+        export GRAD_ACC_STEPS=${GRAD_ACC_STEPS:-8}     # GRADIENT_ACC_STEPS
         MICRO_BATCH=${MICRO_BATCH:-4}    # MICRO_BATCH = 4
+        ######################################################################
         # !XXX: USE KEY VALUE STORE FIX ON AURORA [2024-06-20]
         use_kvs_fix_on_aurora
-        export NO_FLASH_ATTN=1 # FLASH ATTN DISABLED [2024-06-20] (until resolved...)
-        ##############################################################
+        ######################################################################
         # NOTE: if NO_FLASH_ATTN is NON-empty; then NO FLASH ATTN !!
+        export NO_FLASH_ATTN=1 # disabled on [2024-06-20] waiting on fix...
         if [[ -n "${NO_FLASH_ATTN-}" ]]; then
             echo "Not using flash-attn!!"
         else
             # LLAMA_ARGS="${LLAMA_ARGS} --use-flash-attn-builder"
             FLASH_ARG="--use-flash-attn-builder"
         fi
-        ##############################################################
+        ######################################################################
     # +--------[Polaris]-----------------------------------+
     elif [[ $(hostname) == x3* ]]; then
         # export LAUNCH_CMD="${LAUNCH_CMD:-deepspeed}"
