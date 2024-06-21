@@ -91,7 +91,16 @@ def model_provider(pre_process=True, post_process=True):
     log.info('building GPT model ...')
     see_memory_usage("Before Building Model", force=True)
     args = get_args()
+    assert args is not None
     config = core_transformer_config_from_args(args)
+    # from ezpz.profile import get_context_manager
+    # cm = get_context_manager(rank=RANK, outdir=args.save)
+    # profiler = None
+    # if os.environ.get("PYINSTRUMENT_PROFILER", None) is not None:
+    #     from ezpz.profile import PyInstrumentProfiler
+    #     cm = PyInstrumentProfiler(rank=RANK, outdir=args.save)
+    # else:
+    #     from contextlib
     # if wandb.run is not None and RANK == 0:
     #     print(f"Updating WandB run: [{wandb.run.name}]({wandb.run.url})")
     #     try:
@@ -112,7 +121,6 @@ def model_provider(pre_process=True, post_process=True):
         dpg = mpu.get_data_parallel_group()
     else:
         dpg = None
-
     deepspeed_zero_init = deepspeed.zero.Init
     if args.use_mics:
         deepspeed_zero_init = deepspeed.zero.MiCS_Init
@@ -196,14 +204,14 @@ def model_provider(pre_process=True, post_process=True):
                 log.error(
                     'Unable to `wandb.run.config.update({"args": vars(args)})`'
                 )
-        try:
-            wandb.run.watch(
-                model,
-                log='all',
-                log_graph=True,
-            )
-        except Exception:
-            pass
+        # try:
+        #     wandb.run.watch(
+        #         model,
+        #         log='all',
+        #         log_graph=True,
+        #     )
+        # except Exception:
+        #     pass
     return model
 
 
@@ -430,14 +438,14 @@ def forward_step(data_iterator, model):
     """Forward step."""
     args = get_args()
     timers = get_timers()
-
+    assert args is not None
+    assert timers is not None
     # Get the batch.
     timers('batch-generator', log_level=2).start()
     tokens, labels, loss_mask, attention_mask, position_ids = get_batch(
         data_iterator
     )
     timers('batch-generator').stop()
-
     if args.data_efficiency_curriculum_learning:
         args.curriculum_seqlen = tokens.size()[1]
         if (
@@ -452,7 +460,7 @@ def forward_step(data_iterator, model):
             args.data_efficiency_curriculum_learning_numel = (
                     torch.numel(tokens)
             )
-
+    stu_output = None
     if args.mos or args.kd:
         # The forward func can return either the loss or the logits,
         # depending on whether passing in the labels or not.
@@ -509,6 +517,9 @@ def train_valid_test_datasets_provider(train_val_test_num_samples):
     t0 = time.perf_counter()
     args = get_args()
     assert args is not None
+    # from ezpz.profile import get_context_manager
+    # cm = get_context_manager(rank=RANK, outdir=args.save)
+    # with cm:
     log.info('> building train, validation, and test datasets for GPT ...')
     files = []
     if args.data_file_list is not None:
@@ -527,8 +538,12 @@ def train_valid_test_datasets_provider(train_val_test_num_samples):
                 if len(f.strip()) != 0:
                     try:
                         w, fname, c = f.split()
-                    except:
-                        raise Exception("Please provide the file list as 'weight, filename, corpus'")
+                    except Exception as exc:
+                        log.exception(exc)
+                        raise Exception(
+                            "Please provide the file list as "
+                            "'weight, filename, corpus'"
+                        )
                     if fname.find(".bin") != -1:
                         fname = fname.split(".bin")[0]
                     files.extend(
@@ -603,10 +618,12 @@ def git_ds_info():
 
 def main():
     if os.getenv('TORCH_PROFILER_ENABLE') == '1':
-        from torch.profiler import profile, record_function, ProfilerActivity
+        #  record_function
+        from torch.profiler import profile, ProfilerActivity
         try:
             activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA, ProfilerActivity.XPU]
-        except:
+        except Exception as exc:
+            log.exception(exc)
             log.warning("TORCH PROFILER WARNING: XPU is not supported")            
             activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA]
         with profile(activities=activities) as prof:
@@ -619,6 +636,7 @@ def main():
                 data_post_process=data_post_process
             )
         args = get_args()
+        assert args is not None
         prof.export_chrome_trace(
             f"{args.trace_dir}/torch-trace-{RANK}-of-{WORLD_SIZE}.json"
         )
