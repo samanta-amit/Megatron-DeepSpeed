@@ -52,7 +52,7 @@ $ rg --hidden "deepspeed\.initialize" **/**/*.log | grep took
 |    3072    |  1674.444  |
 |    3072    |  1618.100  |
 
-- `WORLD_SIZE=96`:
+- <details closed><summary><code>WORLD_SIZE=96</code>:</summary>
 
   ```bash title="deepspeed_init_times.sh"
   ws96_ds_stage1_nl32_hs4096_mb4_seq4096_gb3072_sp1_pp1_tp1_bf16_optadamw_lr0.0003_lwf0.05/20240623-125717_96_x4420c5s5b0n0.hostmgmt2420.cm.aurora.alcf.anl.gov/output.log:
@@ -63,7 +63,9 @@ $ rg --hidden "deepspeed\.initialize" **/**/*.log | grep took
       [2024-06-23 12:59:19][INFO][training:795] - 'deepspeed.initialize' took: 61.07362s
   ```
 
-- `WORLD_SIZE = 192`:
+  </details>
+
+- <details closed><summary><code>WORLD_SIZE = 192</code>:</summary>
 
   ```bash
   ws192_ds_stage1_nl32_hs4096_mb4_seq4096_gb6144_sp1_pp1_tp1_bf16_optadamw_lr0.0003_lwf0.05/20240623-154948_192_x4716c2s6b0n0.hostmgmt2716.cm.aurora.alcf.anl.gov/output.log:
@@ -86,7 +88,9 @@ $ rg --hidden "deepspeed\.initialize" **/**/*.log | grep took
       [2024-06-23 16:38:52][INFO][training:800] - 'deepspeed.initialize' took: 107.10853s
   ```
 
-- `WORLD_SIZE = 384`:
+  </details>
+
+- <details closed><summary><code>WORLD_SIZE = 384</code>:</summary>
 
   ```bash
   ws384_ds_stage1_nl32_hs4096_mb4_seq4096_gb12288_sp1_pp1_tp1_bf16_optadamw_lr0.0003_lwf0.05/20240623-164607_384_x4402c6s7b0n0.hostmgmt2402.cm.aurora.alcf.anl.gov/output.log:
@@ -103,7 +107,9 @@ $ rg --hidden "deepspeed\.initialize" **/**/*.log | grep took
       [2024-06-23 22:37:53][INFO][training:800] - 'deepspeed.initialize' took: 200.23095s
   ```
 
-- `WORLD_SIZE=768`:
+  </details>
+
+- <details closed><summary><code>WORLD_SIZE=768</code>:</summary>
 
   ```bash
   ws768_ds_stage1_nl32_hs4096_mb4_seq4096_gb24576_sp1_pp1_tp1_bf16_optadamw_lr0.0003_lwf0.05/20240623-180052_768_x4704c4s1b0n0.hostmgmt2704.cm.aurora.alcf.anl.gov/output.log:
@@ -174,7 +180,9 @@ $ rg --hidden "deepspeed\.initialize" **/**/*.log | grep took
       [2024-06-23 13:34:32][INFO][training:795] - 'deepspeed.initialize' took: 413.55765s
   ```
 
-- `WORLD_SIZE = 1536`:
+  </details>
+
+- <details closed><summary><code>WORLD_SIZE = 1536</code>:</summary>
 
   ```bash
   ws1536_ds_stage1_nl32_hs4096_mb4_seq4096_gb49152_sp1_pp1_tp1_bf16_optadamw_lr0.0003_lwf0.05/20240623-162028_1536_x4706c2s3b0n0.hostmgmt2706.cm.aurora.alcf.anl.gov/output.log:
@@ -215,7 +223,9 @@ $ rg --hidden "deepspeed\.initialize" **/**/*.log | grep took
       [2024-06-23 14:34:20][INFO][training:795] - 'deepspeed.initialize' took: 809.36787s
   ```
 
-- `WORLD_SIZE = 3072`:
+  </details>
+
+- <details closed><summary><code>WORLD_SIZE = 3072</code>:</summary>
 
   ```bash
   ws3072_ds_stage1_nl32_hs4096_mb4_seq4096_gb98304_sp1_pp1_tp1_bf16_optadamw_lr0.0003_lwf0.05/20240623-144534_3072_x4309c6s2b0n0.hostmgmt2309.cm.aurora.alcf.anl.gov/output.log:
@@ -249,3 +259,5 @@ $ rg --hidden "deepspeed\.initialize" **/**/*.log | grep took
   ws3072_ds_stage1_nl32_hs4096_mb4_seq4096_gb98304_sp1_pp1_tp1_bf16_optadamw_lr0.0003_lwf0.05/20240623-140113_3072_x4119c5s3b0n0.hostmgmt2119.cm.aurora.alcf.anl.gov/output.log:
       [2024-06-23 14:30:23][INFO][training:795] - 'deepspeed.initialize' took: 1618.10035s
   ```
+
+  </details>
