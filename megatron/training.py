@@ -654,7 +654,7 @@ def setup_model_and_optimizer(model_provider_func,
                 # Build the datasets.
                 train_ds, _, _ = build_train_valid_test_datasets_provider(
                     train_val_test_num_samples)
-            with Profile("deepspeed.initialize"):
+            with Profile("deepspeed.initialize") as dlp_deepspeed:
                 model, optimizer, args.deepspeed_dataloader, opt_param_scheduler = deepspeed.initialize(
                     model=model[0],
                     optimizer=optimizer,
@@ -666,14 +666,15 @@ def setup_model_and_optimizer(model_provider_func,
                 )
             model.set_data_post_process_func(data_post_process)
         else:
-            model, optimizer, _, opt_param_scheduler = deepspeed.initialize(
-                model=model[0],
-                optimizer=optimizer,
-                args=args,
-                lr_scheduler=opt_param_scheduler,
-                mpu=mpu if args.no_pipeline_parallel else None,
-                config=args.deepspeed_config_dict,
-            )
+            with Profile("deepspeed.initialize") as dlp_deepspeed:            
+                model, optimizer, _, opt_param_scheduler = deepspeed.initialize(
+                    model=model[0],
+                    optimizer=optimizer,
+                    args=args,
+                    lr_scheduler=opt_param_scheduler,
+                    mpu=mpu if args.no_pipeline_parallel else None,
+                    config=args.deepspeed_config_dict,
+                )
         if isinstance(model, deepspeed.PipelineEngine):
             # hack to get batch_fn from pretrain_gpt.py
             model.set_batch_fn(model.module._megatron_batch_fn)
@@ -1349,10 +1350,13 @@ def train(forward_step_func, model, optimizer, opt_param_scheduler,
             from torch.profiler import profile, record_function, ProfilerActivity
             try:
                 activities = [ProfilerActivity.CPU, ProfilerActivity.CUDA, ProfilerActivity.XPU]
+                kwargs = {"activities": activities}
+
             except:
                 log.warning("TORCH PROFILER WARNING: XPU is not supported")
                 activities = [ProfilerActivity.CPU, ProfilerActivity.CUDA]
-            with profile(activities=activities) as prof:
+                kwargs = {"activities": activities}
+            with profile(**kwargs) as prof:
                 loss_dict, skipped_iter, grad_norm, num_zeros_in_grad = \
                     train_step(forward_step_func,
                                train_data_iterator,
