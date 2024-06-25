@@ -18,13 +18,14 @@
 # > ```
 ##############################################################################
 
-##############################################################################
-# `helpers_main`:
+##################
+# helpers_main
 #
-# This will get called automatically when
+# This will get called automatically when running:
 #
 # ```bash
-# $ source ALCF/helpers.sh
+# $ cd Megatron-DeepSpeed
+# $ PBS_O_WORKDIR=$(pwd) source ALCF/helpers.sh
 # ```
 #
 # - This will set `"${WORKING_DIR}"`, according to:
@@ -35,7 +36,7 @@
 #   this is crucial since many of the functions below use paths 
 #   which are defined relative to this "${WORKING_DIR}"
 #   (e.g. virtual environment, location of executables, etc.)
-##############################################################################
+##################
 helpers_main() {
     # for debug mode, run with `DEBUG=1`
     if [[ -n "${DEBUG:-}" ]]; then
@@ -55,68 +56,71 @@ helpers_main() {
 }
 
 ##############################################################################
-# `setup`: All-in-one helper function.
+# setup
+#
+# All-in-one helper function.
 #
 # - Explicitly, this will:
 #      1. Identify the machine we're on
 #      2. Setup `python`
 #         1. Load `conda`
 #         2. Setup `venv` on top of `conda`
-#      3. Clone + Install [`saforem2/ezpz`](https://github.com/saforem2/ezpz)
+#      3. Ensure all dependencies are installed
+#      4. Clone + Install [`saforem2/ezpz`](https://github.com/saforem2/ezpz)
 #         1. Additionally, call `source deps/ezpz/src/ezpz/bin/savejobenv`,
 #            which will automatically build a `alias launch=mpiexec ...`
 #            according to the specifics of our active job.
-#      4. Set runtime options
-#      5. Build `deepspeed_config.json`
-#      6. Build {logs, checkpoints, etc} dirs, named according to specifics of
+#      5. Set runtime options
+#      6. Build `deepspeed_config.json`
+#      7. Build {logs, checkpoints, etc} dirs, named according to specifics of
 #         current run
-#      7. Specify additional `deepspeed` arguments
-#      8. Ensure executable exists at expected path
-#      9. Setup data + tokenizer via `TOKENIZER_TYPE`
-#     10. Print job info
-#     11. Save `.env` to `CKPT_DIR` for safe keeping
-#     12. Check that we're not already running, and if so, exit.
-#     13. Setup run command to be executed.
+#      8. Specify additional `deepspeed` arguments
+#      9. Ensure executable exists at expected path
+#     10. Setup data + tokenizer via `TOKENIZER_TYPE`
+#     11. Print job info
+#     12. Save `.env` to `CKPT_DIR` for safe keeping
+#     13. Check that we're not already running, and if so, exit.
+#     14. Setup run command to be executed.
 ##############################################################################
 setup() {
-    # printf "%s" "$(printBlue "${AURORA_GPT_HEADER}")"
     #  1. Identify machine we're on
     get_machine || exit
-    #  2. Load `conda` environment
+    #  2. Load `conda` environment, setup virtual env
     setup_python || exit
+    #  3. Ensure necessary dependencies all installed
     install_dependencies || exit
-    #  3. Determine WORLD_SIZE, etc. from `PBS_*` vars
+    #  4. Determine WORLD_SIZE, etc. from `PBS_*` vars
     setup_ezpz || exit
-    #  4. Set command line arguments to pass to `"${EXEC}"`
+    #  5. Set command line arguments to pass to `"${EXEC}"`
     setParams || exit
-    #  5. Create `deepspeed_config.json` from runtime params from ^
+    #  6. Create `deepspeed_config.json` from runtime params from ^
     buildDSconfig || exit
-    #  6. Specify output directory for {logs, checkpoints, etc.}
+    #  7. Specify output directory for {logs, checkpoints, etc.}
     setOutput || exit
-    #  7. Specify additional `deepspeed` arguments (dependent on _newly created_ variables)
+    #  8. Specify additional `deepspeed` arguments (dependent on _newly created_ variables)
     setArgs || exit
-    #  8. Ensure executable exists in expected path
+    #  9. Ensure executable exists in expected path
     export EXEC="${EXEC:-${HERE}/pretrain_gpt_alcf.py}"
     check_executable "${EXEC}"
     dfl="${DATA_FILE_LIST:-}"
-    #  9. Setup data + tokenizer
-    #     via `DATA_FILE_LIST` and `TOKENIZER_TYPE`
+    # 10. Setup data + tokenizer via `DATA_FILE_LIST` and `TOKENIZER_TYPE`
     tok="${TOKENIZER_TYPE:-Llama2}"
     setup_tokenizer_and_data "${tok}" "${dfl}" || exit
     make_data || exit
-    # 10. Print job info
+    # 11. Print job info
     printJobInfo || exit
-    # 11. Print info about loaded modules and runtime environment
+    # 12. Save `.env` to `CKPT_DIR` for safe keeping
     save_dotenv "${CKPT_DIR}" || exit
-    # 12. Check that were not already running, if so, exit.
+    # 13. Check that were not already running, if so, exit.
     check_and_kill_if_running || exit
-    # 13. Setup run command to be executed
+    # 14. Setup run command to be executed
     setup_run_cmd || exit
-    # make_ds_hostfile || exit
 }
 
 #####################################################
-# `setup_run_cmd`: Build run command to be executed.
+# setup_run_cmd
+#
+# Build run command to be executed.
 #####################################################
 setup_run_cmd() {
     #### Make it easy to track experiments by date ###################
@@ -216,6 +220,9 @@ save_dotenv() {
     fi
 }
 
+######################################################################
+# get_machine_name: Return current machine name, as lowercase string
+######################################################################
 get_machine_name() {
     if [[ $(hostname) == x4* || $(hostname) == aurora* ]]; then
         machine="aurora"
@@ -291,7 +298,7 @@ printJobInfo() {
 }
 
 #############################################################################
-# `setupLauncher`: Launch with one of `{mpiexec, deepspeed}`.
+# setupLauncher: Launch with one of `{mpiexec, deepspeed}`.
 #
 # Explicitly, look for `LAUNCH_CMD` in environment and launch accordingly.
 # Will use `mpiexec` by default.
@@ -304,20 +311,21 @@ printJobInfo() {
 # will launch with `deepspeed` instead of `mpiexec`.
 #############################################################################
 setupLauncher() {
-    # outdir=$1
     if [[ "$#" == 1 ]]; then
         local dist_launcher="$1"
     else
         local dist_launcher="${LAUNCH_WITH:-${LAUNCH_CMD:-"MPICH"}}"
     fi
     if [[ "${dist_launcher}" == "deepspeed" ]]; then
+        # Save {PATH, LD_LIBRARY_PATH, ...} to .deepspeed_env
+        saveDSenv || exit
         # Assert `./hostfile_deepspeed` exists
-        export hfds="${WORKING_DIR}/hostfile_deepspeed" && [ -f "${hfds}" ] || exit
+        export hfds="${WORKING_DIR}/hostfile_deepspeed"
+        make_ds_hostfile || exit
         export LAUNCHER="deepspeed --hostfile $hfds --launcher MPICH ${EXEC}"
-    # if [[ -n "${DIST_LAUNCH}" && ${LAUNCH_CMD:-"MPICH"} != "deepspeed" ]]; then
     else
         if [[ -n "${DIST_LAUNCH}" ]]; then
-            LAUNCHER="${DIST_LAUNCH} --genvall --cpu-bind depth -d 16 $(which python3) -Wignore ${EXEC}"
+            LAUNCHER="${DIST_LAUNCH} --genvall $(which python3) -Wignore ${EXEC}"
             export LAUNCHER="${LAUNCHER}"
         else
             echo "[setupLauncher][INFO]: Saving environment to: .env-${PBS_JOBID}"
@@ -330,26 +338,6 @@ setupLauncher() {
     printf " %s" "$(printMagenta "${LAUNCHER}")"
 }
 
-# ##########################################################################
-# # setDSlauncher
-# #
-# # When launching with `deepspeed`, this will
-# # set the appropriate keyword arguments to be passed to `deepspeed`
-# ##########################################################################
-# setDSlauncher() {
-#     # launcher setting
-#     outdir=$1
-#     export hfds="$outdir/hostfile_deepspeed"
-#     export hfmpi="$outdir/hostfile_mpich"
-#     [ -f "$hfds" ] || exit
-#     [ -f "$hfmpi" ] || exit
-#     export LAUNCHER=${LAUNCHER:-MPICH}
-#     if [[ $LAUNCHER == "deepspeed" ]]; then
-#         export launcher=""
-#     else
-#         export launcher="--force_multi --hostfile $hfds --launcher=${LAUNCHER} --launcher_args='-hostfile ${hfmpi}'"
-#     fi
-# }
 
 set_lr_args() {
     LR_ARGS="--lr ${LR} --lr-decay-style cosine"
@@ -390,21 +378,6 @@ get_batch_size_on_polaris() {
 }
 
 
-#################################################
-# Fix for distributed key value store on Aurora
-#################################################
-use_kvs_fix_on_aurora() {
-    export CCL_KVS_MODE=mpi
-    export LD_LIBRARY_PATH=/flare/Aurora_deployment/intel/ccl/_install_release_2021_13/lib:$LD_LIBRARY_PATH
-    export CPATH=/flare/Aurora_deployment/intel/ccl/_install_release_2021_13/include:$CPATH
-    export LIBRARY_PATH=/flare/Aurora_deployment/intel/ccl/_install_release_2021_13/lib:$LIBRARY_PATH
-    #########################################################
-    # if not set, CCL will complain... ?
-    export NUMEXPR_MAX_THREADS="${NUMEXPR_MAX_THREADS:-16}"
-    #########################################################
-}
-
-
 ##############################################################################
 # `setParams`: Set / configure run options by parsing environment.
 #
@@ -421,6 +394,7 @@ setParams() {
     # +------[Aurora]--------||-------[SunSpot]-------------+
     if [[ $(hostname) == x4* || $(hostname) == x1* ]]; then
         TP=${TP:-1}                      # TP = 1
+        export SAVE_INTERVAL="${SAVE_INTERVAL:-20}"
         export CCL=${CCL:-ccl}           # CCL
         export BE="${CCL}"               # COMMUNICATION BACKEND = CCL
         export DTYPE=${DTYPE:-bf16}      # DTYPE: bf16
@@ -428,14 +402,20 @@ setParams() {
         MICRO_BATCH=${MICRO_BATCH:-4}    # MICRO_BATCH = 4
         ######################################################################
         # !XXX: USE KEY VALUE STORE FIX ON AURORA [2024-06-20]
-        use_kvs_fix_on_aurora
+        # use_kvs_fix_on_aurora  # <-- why are these different from those in update_ccl_env_vars_aurora ??
+        update_ccl_env_vars_aurora
         ######################################################################
-        # NOTE: if NO_FLASH_ATTN is NON-empty; then NO FLASH ATTN !!
-        export NO_FLASH_ATTN=1 # disabled on [2024-06-20] waiting on fix...
-        if [[ -n "${NO_FLASH_ATTN-}" ]]; then
-            echo "Not using flash-attn!!"
+        if [[ -z "${USE_FLASH_ATTN:-}" ]]; then
+            # NOTE: if NO_FLASH_ATTN is NON-empty; then NO FLASH ATTN !!
+            export NO_FLASH_ATTN=1 # disabled on [2024-06-20] waiting on fix...
+            if [[ -n "${NO_FLASH_ATTN-}" ]]; then
+                echo "Not using flash-attn!!"
+            else
+                # LLAMA_ARGS="${LLAMA_ARGS} --use-flash-attn-builder"
+                FLASH_ARG="--use-flash-attn-builder"
+            fi
         else
-            # LLAMA_ARGS="${LLAMA_ARGS} --use-flash-attn-builder"
+            echo "Using flash-attn !!"
             FLASH_ARG="--use-flash-attn-builder"
         fi
         ######################################################################
@@ -447,14 +427,13 @@ setParams() {
         export BE="${NCCL}"                             # BE = NCCL
         # export DTYPE=${DTYPE:-bf16}                   # DTYPE: BF16 ??
         export DTYPE=${DTYPE:-fp16}                     # DTYPE: FP16
-        export GRAD_ACC_STEPS=${GRAD_ACC_STEPS:-8}     # GRADIENT_ACC_STEPS
+        export GRAD_ACC_STEPS=${GRAD_ACC_STEPS:-8}      # GRADIENT_ACC_STEPS
         # NOTE: MICRO_BATCH is exported below
         # MICRO_BATCH=${MICRO_BATCH:-2}    # MICRO_BATCH = 8
         export MICRO_BATCH="${MICRO_BATCH:-$(get_batch_size_on_polaris)}"
         if [[ -n "${NO_FLASH_ATTN-}" ]]; then
             echo "Not using flash-attn!!"
         else
-            # LLAMA_ARGS="${LLAMA_ARGS} --use-flash-attn-v2"
             FLASH_ARG="--use-flash-attn-v2"
         fi
         echo "Setting up AWS NCCL OFI Plugin on Polaris..."
@@ -469,7 +448,6 @@ setParams() {
         if [[ -n "${NO_FLASH_ATTN-}" ]]; then
             echo "Not using flash-attn!!"
         else
-            # LLAMA_ARGS="${LLAMA_ARGS} --use-flash-attn-v2"
             FLASH_ARG="--use-flash-attn-v2"
         fi
     fi
@@ -501,7 +479,7 @@ setParams() {
     export EVAL_ITERS="${EVAL_ITERS:-10}"               # NUMBER OF EVAL ITERS TO RUN
     export TRAIN_ITER=${TRAIN_ITER:-317892}             # NUMBER OF TRAIN ITERS
     export EVAL_INTERVAL="${EVAL_INTERVAL:-50000}"      # HOW FREQUENTLY TO RUN EVAL
-    export SAVE_INTERVAL=${SAVE_INTERVAL:-200}          # HOW FREQUENTLY TO SAVE CKPTS
+    export SAVE_INTERVAL=${SAVE_INTERVAL:-50}           # HOW FREQUENTLY TO SAVE CKPTS
     export TIMING_LOG_LEVEL="${TIMING_LOG_LEVEL:-1}"    # TIMING VERBOSITY IN LOGS
     export ACT_CKPT_NUM_LAYERS="${ACT_CKPT_NUM_LAYERS:-1}"                  # NUM LAYERS TO CHECKPOINT ACTIVATIONS
     export USE_ACTIVATION_CHECKPOINTING=${USE_ACTIVATION_CHECKPOINTING:-1}  # USE ACTIVATION CHECKPOINTING ?
@@ -509,7 +487,7 @@ setParams() {
     export GLOBAL_BATCH="${GLOBAL_BATCH:-${GLOBAL_BATCH_MAX}}"  # WILL USE MAX IF NOT SET IN ENVIRONMENT
     # tm="${WORKING_DIR}/ALCF/tokenizer.model"            # fallback: Megatron-DeepSpeed/ALCF/tokenizer.model
     # export TOKENIZER_MODEL="${TOKENIZER_MODEL:-${tm}}"  # USE TOKENIZER_MODEL from env, else fallback from ^
-    export MODEL_TYPE="llama-seq${SEQ}-pp${PP}-tp${TP}-${NLAYERS}layers-${HEADS}heads-${HIDDEN}hidden"  # STRING FOR IDENTIFYING MODEL
+    export MODEL_TYPE="llama-gb${GLOBAL_BATCH}-seq${SEQ}-pp${PP}-tp${TP}-${NLAYERS}layers-${HEADS}heads-${HIDDEN}hidden"  # STRING FOR IDENTIFYING MODEL
     # +----[ADDITIONAL LLAMA SPECIFIC ARGUMENTS]------------------------------
     if [[ "${SP}" == 1 ]]; then
         export LLAMA_ARGS="${LLAMA_ARGS} --no-query-key-layer-scaling --use-rotary-position-embeddings --untie-embeddings-and-output-weights --swiglu --normalization rmsnorm --disable-bias-linear"
@@ -517,11 +495,13 @@ setParams() {
         export LLAMA_ARGS=""
         echo "NOT USING ROTARY EMBEDDINGS! LLAMA_ARGS=${LLAMA_ARGS}"
     fi
+    # -----[Learning Rate Settings]--------------------------------------------
     export LR=${LR:-0.0003}                             # LEARNING_RATE
     export LR_WARMUP_FRAC=${LR_WARMUP_FRAC:-0.05}       # LEARNING RATE WARMUP
     # export LR_DECAY_ITERS=${LR_DECAY_ITERS:-320000}     # LR DECAY ITERS
     export LR_DECAY_ITERS=${LR_DECAY_ITERS:-}     # LR DECAY ITERS
     set_lr_args
+    # -----[Learning Rate Settings]--------------------------------------------
     if [[ "${TIMING_LOG_LEVEL}" -ge 1 ]]; then
         TIMING_STR="\
             --timing-log-level ${TIMING_LOG_LEVEL} \
@@ -534,6 +514,12 @@ setParams() {
 }
 
 
+##############################################
+# setArgs
+#
+# Specify additional (DeepSpeed specific)
+# arguments to pass to pretrain_gpt_alcf.py
+##############################################
 setArgs() {
     # ---- Set DeepSpeed arguments --------------------------------
     ds_args=" "
@@ -543,6 +529,9 @@ setArgs() {
     fi
     ds_args=" --deepspeed_config=$DS_CONFIG ${ds_args}"
     ds_args=" --zero-stage=$ZERO_STAGE ${ds_args}"
+    if [[ "${ZERO_STAGE}" == 3 ]]; then
+        ds_args="--use-mics ${ds_args}"
+    fi
     if [[ "$USE_ACTIVATION_CHECKPOINTING" == 1 ]]; then
         echo "!! Caught USE_ACTIVATION_CHECKPOINTING=${USE_ACTIVATION_CHECKPOINTING} !!"
         ds_args=" --deepspeed-activation-checkpointing ${ds_args}"
@@ -577,49 +566,75 @@ make_ds_hostfile() {
     sed -e "s/$/ slots=${GPUS_PER_NODE}/" -i "${hostfile_deepspeed}"
 }
 
+####################
+# ezpz_savejobenv
+#
+# Parse relevant environment variables to determine:
+# - num_hosts (by counting the number of lines in ${HOSTFILE:-${PBS_NODEFILE}})
+# - num_gpus_per_host (magically[^1])
+# - num_gpus = (num_hosts * num_gpus_per_host)
+#
+# [^1]: See: [`ezpz/bin/savejobenv`](https://github.com/saforem2/ezpz/blob/main/src/ezpz/bin/savejobenv)
+####################
 ezpz_savejobenv() {
+    # source "${WORKING_DIR}/deps/ezpz/src/ezpz/bin/savejobenv" "$@"
     file=$(mktemp)
     curl -Ls https://raw.githubusercontent.com/saforem2/ezpz/main/src/ezpz/bin/savejobenv > "${file}"
     source "${file}" || exit
 }
 
 ezpz_getjobenv() {
+    # source "${WORKING_DIR}/deps/ezpz/src/ezpz/bin/getjobenv" "$@"
     file=$(mktemp)
     curl -Ls https://raw.githubusercontent.com/saforem2/ezpz/main/src/ezpz/bin/getjobenv > "${file}"
     source "${file}" || exit
 }
 
-# +---------------------------------------+
-# | 1. Git clone ezpz (if not found)    |
-# | 2. Install ezpz (if not installed)  |
-# +---------------------------------------+
+###########################################
+# setup_ezpz
+#
+# 1. {save,get}jobenv
+# 2. python3 -m ezpz.jobs && source "./.jobenv"
+# 2. Install ezpz (if not installed)
+###########################################
 setup_ezpz() {
     if [[ -n "${HOSTFILE:-${PBS_NODEFILE}}" ]]; then
         ezpz_savejobenv
     else
         ezpz_getjobenv
     fi
-    python3 -m ezpz.jobs && source "./.jobenv"
-    if [[ ! -d "${WORKING_DIR}/deps/ezpz" ]]; then
+    ezdir="${WORKING_DIR}/deps/ezpz"
+    if [[ ! -d "${ezdir}" ]]; then
         mkdir -p "${WORKING_DIR}/deps"
         git clone https://github.com/saforem2/ezpz "${WORKING_DIR}/deps/ezpz"
-    else
-        echo "Found ezpz!"
     fi
     ezloc=$(python3 -m pip list | grep ezpz | awk '{print $NF}')
-    if [[ -n "${ezloc}" ]]; then
-        # ezpz_savejobenv
-        # python3 -m ezpz.jobs && source "./.jobenv"
-        make_ds_hostfile || exit
+    if [[ -z "${ezloc:-}" ]]; then
+        printf "[setup_ezpz] Installing ezpz from %s\n" "${ezdir}"
+        python3 -m pip install -e "${ezdir}" --require-virtualenv
     else
-        echo "No ezpz detected. Attempting to install with $(which python3)"
-        python3 -m pip install -e "${WORKING_DIR}/deps/ezpz" --require-virtualenv
+        printf "[setup_ezpz] Found ezpz @ %s\n" "${ezloc}"
     fi
-    echo "Done with ezpz."
+    python3 -m ezpz.jobs && source "./.jobenv"
+    # ezloc=$(python3 -m pip list | grep ezpz | awk '{print $NF}')
+    # if [[ -n "${ezloc}" ]]; then
+    #     # ezpz_savejobenv
+    #     # python3 -m ezpz.jobs && source "./.jobenv"
+    #     make_ds_hostfile || exit
+    # else
+    #     echo "No ezpz detected. Attempting to install with $(which python3)"
+    #     python3 -m pip install -e "${WORKING_DIR}/deps/ezpz" --require-virtualenv
+    # fi
+    # if [[ ! -d "${WORKING_DIR}/deps/ezpz" ]]; then
+    #     mkdir -p "${WORKING_DIR}/deps"
+    #     git clone https://github.com/saforem2/ezpz "${WORKING_DIR}/deps/ezpz"
+    # else
+    #     echo "Found ezpz!"
+    # fi
 }
 
 #######################################################################
-# `ezpz_test`: Run simple test to make sure all nodes in working order
+# ezpz_test: Run simple test to make sure all nodes in working order
 #######################################################################
 ezpz_test() {
     printf "%s" "[$(printBlue 'ezpz:test_dist')][INFO] Running ezpz.test_dist...\n"
@@ -631,10 +646,12 @@ ezpz_test() {
     printf "%s" "[$(printBlue 'ezpz:test_dist')] Done with test!\n"
 }
 
-# +------------------------------------------------------------------------+
-# | Save important environment variables to .deepspeed_env, which will be  |
-# | forwarded to ALL ranks with DeepSpeed                                  |
-# +------------------------------------------------------------------------+
+############################################################################
+# saveDSenv
+#
+# Save important environment variables to .deepspeed_env, which will be
+# forwarded to ALL ranks with DeepSpeed 
+############################################################################
 saveDSenv() {
     echo "Saving {PATH, LD_LIBRARY_PATH, htt{p,ps}_proxy, CFLAGS, PYTHONUSERBASE} to .deepspeed_env"
     {
@@ -698,6 +715,7 @@ buildDSconfig() {
 #
 # This will sum the weights (first column) from each line in the passed
 # `file_list`.
+###############################################################################
 sumWeights() {
     local file_list=$1
     weights=$(cat "${file_list}" | awk '{print $1}' | tr '\n' '\ ,\ ' | sed 's/^/[/g' | sed 's/$/]/g' | tr '\ ' "\,\ ")
@@ -767,7 +785,6 @@ install_deepspeed_for_xpu() {
 }
 
 
-
 ########################################################
 # Setup / activate conda environment(s)
 ########################################################
@@ -783,6 +800,39 @@ setup_conda_sunspot() {
         # module use /soft/preview-modulefiles/24.086.0 ; module load frameworks/2024.04.15.002.lua
         # source "${WORKING_DIR}/ALCF/sunspot-env-2024-q2.sh"
     fi
+}
+
+
+#################################################
+# Fix for distributed key value store on Aurora
+#################################################
+use_kvs_fix_on_aurora() {
+    export CCL_KVS_MODE=mpi
+    export CCL_CONFIGURATION_PATH=""
+    export LD_LIBRARY_PATH=/flare/Aurora_deployment/intel/ccl/_install_release_2021_13/lib:$LD_LIBRARY_PATH
+    export CPATH=/flare/Aurora_deployment/intel/ccl/_install_release_2021_13/include:$CPATH
+    export LIBRARY_PATH=/flare/Aurora_deployment/intel/ccl/_install_release_2021_13/lib:$LIBRARY_PATH
+    #########################################################
+    # if not set, CCL will complain... ?
+    export NUMEXPR_MAX_THREADS="${NUMEXPR_MAX_THREADS:-16}"
+    #########################################################
+}
+
+update_ccl_env_vars_aurora() {
+    export CCL_KVS_MODE=mpi
+    # export CCL_CONFIGURATION_PATH=""
+    # unset CCL_CONFIGURATION_PATH
+    # export CCL_CONFIGURATION=cpu_gpu_dpcpp
+    # export CCL_ROOT="/flare/Aurora_deployment/intel/ccl/_install_release_2021_13"
+    export LD_LIBRARY_PATH=/flare/Aurora_deployment/intel/ccl/_install_release_2021_13/lib:$LD_LIBRARY_PATH
+    export CPATH=/flare/Aurora_deployment/intel/ccl/_install_release_2021_13/include:$CPATH
+    export LIBRARY_PATH=/flare/Aurora_deployment/intel/ccl/_install_release_2021_13/lib:$LIBRARY_PATH
+    # export CCL_ALLREDUCE_SCALEOUT=direct
+    printenv | grep -E -v "^__" | grep -E "CCL|LD|CPATH|LIBRARY_PATH"
+    #########################################################
+    # if not set, CCL will complain... ?
+    export NUMEXPR_MAX_THREADS="${NUMEXPR_MAX_THREADS:-16}"
+    #########################################################
 }
 
 ###########################
@@ -844,7 +894,7 @@ setup_venv_from_conda() {
             export VENV_DIR="${WORKING_DIR}/venvs/${CONDA_NAME}"
             echo "    - Using VENV_DIR=${VENV_DIR}"
             if [[ ! -f "${VENV_DIR}/bin/activate" ]]; then
-                printf "\n    - Creating a new virtual env on top of %s in %s" "$(printBlue "${CONDA_NAME}")" "$(printGreen "${VENV_DIR}")"
+                printf "\n    - Creating a new virtual env on top of %s in %s\n" "$(printBlue "${CONDA_NAME}")" "$(printGreen "${VENV_DIR}")"
                 mkdir -p "${VENV_DIR}"
                 python3 -m venv "${VENV_DIR}" --system-site-packages
                 source "${VENV_DIR}/bin/activate" || exit
@@ -1073,8 +1123,7 @@ setData() {  # ------------------------[dfl: abbrv. for DATA_FILE_LIST]
 # This will contain the appropriate variables as set in the current environment.
 ################################################################################
 generateDSconfig() {
-    for v in "$GLOBAL_BATCH" "$MICRO_BATCH" "$GRAD_ACC_STEPS" "$ZERO_STAGE" \
-             "$PP" "$DTYPE"
+    for v in "$GLOBAL_BATCH" "$MICRO_BATCH" "$GRAD_ACC_STEPS" "$ZERO_STAGE" "$PP" "$DTYPE"
     do
       if [ -z "$v" ]; then
         echo "Please export required envs before execute $0"
@@ -1272,10 +1321,10 @@ printWhite() {
 export AURORA_GPT_HEADER="""
  █████╗ ██╗   ██╗██████╗  ██████╗ ██████╗  █████╗        ██████╗ ██████╗ ████████╗
 ██╔══██╗██║   ██║██╔══██╗██╔═══██╗██╔══██╗██╔══██╗      ██╔════╝ ██╔══██╗╚══██╔══╝
-███████║██║   ██║██████╔╝██║   ██║██████╔╝███████║█████╗██║  ███╗██████╔╝   ██║   
-██╔══██║██║   ██║██╔══██╗██║   ██║██╔══██╗██╔══██║╚════╝██║   ██║██╔═══╝    ██║   
-██║  ██║╚██████╔╝██║  ██║╚██████╔╝██║  ██║██║  ██║      ╚██████╔╝██║        ██║   
-╚═╝  ╚═╝ ╚═════╝ ╚═╝  ╚═╝ ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝       ╚═════╝ ╚═╝        ╚═╝   
+███████║██║   ██║██████╔╝██║   ██║██████╔╝███████║█████╗██║  ███╗██████╔╝   ██║
+██╔══██║██║   ██║██╔══██╗██║   ██║██╔══██╗██╔══██║╚════╝██║   ██║██╔═══╝    ██║
+██║  ██║╚██████╔╝██║  ██║╚██████╔╝██║  ██║██║  ██║      ╚██████╔╝██║        ██║
+╚═╝  ╚═╝ ╚═════╝ ╚═╝  ╚═╝ ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝       ╚═════╝ ╚═╝        ╚═╝
 """
 
 ###########################
