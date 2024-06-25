@@ -3,7 +3,6 @@
 
 from datetime import datetime
 import math
-from pathlib import Path
 import sys
 import os
 import time
@@ -69,11 +68,13 @@ dlp = Profile("TRAINING")
 
 RANK: int = ez.get_rank()
 WORLD_SIZE: int = ez.get_world_size()
-DEVICE_TYPE: str = ez.get_torch_device()
+# DEVICE_TYPE: str = ez.get_torch_device()
+DEVICE_TYPE: str = ez.dist.get_torch_device_type()
 DEVICE: torch.device = torch.device(DEVICE_TYPE)
 
 log: logging.Logger = logging.getLogger(__name__)
-log.setLevel("INFO") if RANK == 0 else log.setLevel("CRITICAL")
+LOG_LEVEL: str = str(os.environ.get("LOG_LEVEL", "INFO")).upper()
+log.setLevel(LOG_LEVEL) if RANK == 0 else log.setLevel("CRITICAL")
 
 try:
     import wandb
@@ -151,7 +152,7 @@ def pretrain(
         args_defaults={},
         data_post_process=None,
         external_args={},
-) -> torch.nn.Module:
+) -> list[torch.nn.Module]:
     """Main training program.
 
     This function will run the followings in the order provided:
@@ -203,7 +204,7 @@ def pretrain(
         f"time to finish initialize_megatron: {time.time() - _TRAIN_START_TIME} seconds"
     )
     # start_time_tensor = DEVICE.DoubleTensor([_TRAIN_START_TIME])
-    start_time_tensor = torch.tensor([_TRAIN_START_TIME], device=DEVICE)
+    start_time_tensor = torch.tensor([_TRAIN_START_TIME], dtype=torch.double, device=DEVICE_TYPE)
     tdist.all_reduce(start_time_tensor, op=tdist.ReduceOp.MIN)
     log.info(f"allreduce call time: {time.time()-before_allreduce} seconds")
     _TRAIN_START_TIME = start_time_tensor.item()
@@ -228,87 +229,84 @@ def pretrain(
     timers = get_timers()
     assert args is not None
     assert timers is not None
-    from ezpz.profile import get_context_manager
-    cm = get_context_manager(rank=RANK, outdir=args.save)
-    with cm:
-        if args.deepspeed:
-            args.deepspeed_config_dict = _create_ds_config_dict()
-            if (
-                "curriculum_learning" in args.deepspeed_config_dict
-                and "enabled" in args.deepspeed_config_dict["curriculum_learning"]
-            ):
-                args.curriculum_learning_legacy = args.deepspeed_config_dict[
-                    "curriculum_learning"
-                ]["enabled"]
-            if args.curriculum_learning_legacy and not args.no_pipeline_parallel:
-                from deepspeed.runtime.data_pipeline.curriculum_scheduler import (
-                    CurriculumScheduler,
-                )
-
-                args.curriculum_scheduler = CurriculumScheduler(
-                    args.deepspeed_config_dict["curriculum_learning"]
-                )
-            if "compression_training" in args.deepspeed_config_dict:
-                args.compression_training = True
-
-        # Model, optimizer, and learning rate.
-        timers("model-and-optimizer-setup", log_level=0).start(barrier=True)
-        model, optimizer, opt_param_scheduler = setup_model_and_optimizer(
-            model_provider,
-            model_type,
-            teacher=False,
-            data_post_process=data_post_process,
-            build_train_valid_test_datasets_provider=train_valid_test_dataset_provider,
+    if args.deepspeed:
+        args.deepspeed_config_dict = _create_ds_config_dict()
+        if (
+            "curriculum_learning" in args.deepspeed_config_dict
+            and "enabled" in args.deepspeed_config_dict["curriculum_learning"]
+        ):
+            args.curriculum_learning_legacy = args.deepspeed_config_dict[
+                "curriculum_learning"
+            ]["enabled"]
+        if args.curriculum_learning_legacy and not args.no_pipeline_parallel:
+            from deepspeed.runtime.data_pipeline.curriculum_scheduler import (
+                CurriculumScheduler,
             )
-        timers("model-and-optimizer-setup").stop()
-        print_datetime("after model, optimizer, and learning rate " "scheduler are built")
-        # Data stuff.
-        timers("train/valid/test-data-iterators-setup", log_level=0).start(barrier=True)
-        if args.virtual_pipeline_model_parallel_size is not None:
-            all_data_iterators = [
-                build_train_valid_test_data_iterators(train_valid_test_dataset_provider)
-                for _ in range(len(model))
-            ]
-            train_data_iterator = [
-                data_iterators[0] for data_iterators in all_data_iterators
-            ]
-            valid_data_iterator = [
-                data_iterators[1] for data_iterators in all_data_iterators
-            ]
-            test_data_iterator = [
-                data_iterators[2] for data_iterators in all_data_iterators
-            ]
-        else:
-            train_data_iterator, valid_data_iterator, test_data_iterator = (
-                build_train_valid_test_data_iterators(train_valid_test_dataset_provider)
+
+            args.curriculum_scheduler = CurriculumScheduler(
+                args.deepspeed_config_dict["curriculum_learning"]
             )
-        if args.data_efficiency_curriculum_learning:
-            if args.deepspeed_dataloader is not None:
-                # We use args to pass the deepspeed_dataloader because adding
-                # output to setup_model_and_optimizer will break the API for other
-                # cases. We clear args.deepspeed_dataloader after updating
-                # train_data_iterator because args will be saved in checkpoint and
-                # attempting to save the whole deepspeed_dataloader will lead to
-                # "AttributeError: Can't pickle local object...".
-                train_data_iterator = iter(args.deepspeed_dataloader)
-                args.deepspeed_dataloader = None
-            else:
-                train_data_iterator = None
-        timers("train/valid/test-data-iterators-setup").stop()
-        print_datetime("after dataloaders are built")
-        # args.teacher_model is used as global variable to pass the teacher model
-        # for knowledge distillation. Users do not need to set it in the command
-        # line to use kd, but users do need to provide teacher model configurations
-        # like args.num_layers_teacher as described in setup_teacher_model()
-        args.teacher_model = None
-        if args.mos or args.kd:  # Set up teacher model
-            args.teacher_model = setup_teacher_model(args, model_provider)
-        # Print setup timing.
-        log.info("done with setup ...")
-        timers.log(
-            ["model-and-optimizer-setup", "train/valid/test-data-iterators-setup"],
-            barrier=True,
+        if "compression_training" in args.deepspeed_config_dict:
+            args.compression_training = True
+
+    # Model, optimizer, and learning rate.
+    timers("model-and-optimizer-setup", log_level=0).start(barrier=True)
+    model, optimizer, opt_param_scheduler = setup_model_and_optimizer(
+        model_provider,
+        model_type,
+        teacher=False,
+        data_post_process=data_post_process,
+        build_train_valid_test_datasets_provider=train_valid_test_dataset_provider,
+    )
+    timers("model-and-optimizer-setup").stop()
+    print_datetime("after model, optimizer, and learning rate " "scheduler are built")
+    # Data stuff.
+    timers("train/valid/test-data-iterators-setup", log_level=0).start(barrier=True)
+    if args.virtual_pipeline_model_parallel_size is not None:
+        all_data_iterators = [
+            build_train_valid_test_data_iterators(train_valid_test_dataset_provider)
+            for _ in range(len(model))
+        ]
+        train_data_iterator = [
+            data_iterators[0] for data_iterators in all_data_iterators
+        ]
+        valid_data_iterator = [
+            data_iterators[1] for data_iterators in all_data_iterators
+        ]
+        test_data_iterator = [
+            data_iterators[2] for data_iterators in all_data_iterators
+        ]
+    else:
+        train_data_iterator, valid_data_iterator, test_data_iterator = (
+            build_train_valid_test_data_iterators(train_valid_test_dataset_provider)
         )
+    if args.data_efficiency_curriculum_learning:
+        if args.deepspeed_dataloader is not None:
+            # We use args to pass the deepspeed_dataloader because adding
+            # output to setup_model_and_optimizer will break the API for other
+            # cases. We clear args.deepspeed_dataloader after updating
+            # train_data_iterator because args will be saved in checkpoint and
+            # attempting to save the whole deepspeed_dataloader will lead to
+            # "AttributeError: Can't pickle local object...".
+            train_data_iterator = iter(args.deepspeed_dataloader)
+            args.deepspeed_dataloader = None
+        else:
+            train_data_iterator = None
+    timers("train/valid/test-data-iterators-setup").stop()
+    print_datetime("after dataloaders are built")
+    # args.teacher_model is used as global variable to pass the teacher model
+    # for knowledge distillation. Users do not need to set it in the command
+    # line to use kd, but users do need to provide teacher model configurations
+    # like args.num_layers_teacher as described in setup_teacher_model()
+    args.teacher_model = None
+    if args.mos or args.kd:  # Set up teacher model
+        args.teacher_model = setup_teacher_model(args, model_provider)
+    # Print setup timing.
+    log.info("done with setup ...")
+    timers.log(
+        ["model-and-optimizer-setup", "train/valid/test-data-iterators-setup"],
+        barrier=True,
+    )
     if not args.skip_train:
         log.info("training ...")
         if args.dataloader_type == "cyclic" and args.retro_add_retriever:
@@ -425,6 +423,7 @@ def setup_teacher_model(args, model_provider):
 
 
 @dlp.log
+@ez.dist.timeitlogit(rank=RANK)
 def get_model(
     model_provider_func, model_type=ModelType.encoder_or_decoder, wrap_with_ddp=True
 ):
@@ -528,7 +527,7 @@ def get_model(
 
     # GPU allocation.
     for model_module in model:
-        model_module.to(get_accelerator().current_device_name())
+        model_module.to(DEVICE_TYPE)
 
     # Fp16 conversion.
     if args.fp16 or args.bf16:
@@ -571,10 +570,11 @@ def get_model(
 
 
 @dlp.log
+@ez.dist.timeitlogit(rank=RANK)
 def get_optimizer_param_scheduler(optimizer):
     """Build the learning rate scheduler."""
     args = get_args()
-
+    assert args is not None
     # Iteration-based training.
     if args.train_iters:
         if args.lr_decay_iters is None:
@@ -624,13 +624,11 @@ def get_optimizer_param_scheduler(optimizer):
 def load_model_weights_only(model_provider_func):
     """Setup model and optimizer."""
     args = get_args()
+    assert args is not None
     log.info("***>>>>> Args:{}".format(args))
-
     model = get_model(model_provider_func)
-
     optimizer = None
     lr_scheduler = None
-
     if args.deepspeed:
         # When loading just the model weights, ZeRO can be disabled.
         if "zero_optimization" in args.deepspeed_config_dict:
@@ -640,24 +638,26 @@ def load_model_weights_only(model_provider_func):
             model=model[0], config=args.deepspeed_config_dict
         )
 
-        assert not isinstance(
-            model, deepspeed.PipelineEngine
-        ), "Weight loading only mode is not supported in pipeline parallelism yet."
-
+        assert not isinstance(model, deepspeed.PipelineEngine), (
+            "Weight loading only mode is not supported in "
+            "pipeline parallelism yet."
+        )
         model = [model]
-
     print_datetime("before load checkpoint")
     if args.load is not None:
         iteration = load_checkpoint(
-            model, optimizer, lr_scheduler, strict=True, load_only_weights=True
+            model,
+            optimizer,
+            lr_scheduler,
+            strict=True,
+            load_only_weights=True
         )
-
     print_datetime("after load checkpoint weights")
-
     return model, optimizer, lr_scheduler
 
 
 @dlp.log
+@ez.dist.timeitlogit(rank=RANK)
 def setup_model_and_optimizer(
         model_provider_func,
         model_type,
@@ -710,47 +710,31 @@ def setup_model_and_optimizer(
             )
         # opt_param_scheduler is the old lr_scheduler plus weight decay scheduling
         opt_param_scheduler = get_optimizer_param_scheduler(optimizer)
-    # HAS_PYINSTRUMENT = False
-    # scalene_profiler = None
-    # pyinstrument_profiler = None
-    # scalene_start = time.perf_counter_ns()
-    # pyinstrument_start = time.perf_counter_ns()
-    # if RANK == 0:
-    #     # if (scprof := os.environ.get("SCALENE_PROFILER", None)) is not None:
-    #     if HAS_SCALENE and os.environ.get("SCALENE_PROFILER", None) is not None:
-    #         try:
-    #             from scalene import scalene_profiler
-    #             HAS_SCALENE = True
-    #             log.warning("Starting scalene profiler")
-    #             scalene_profiler.start()
-    #         except Exception as exc:
-    #             log.exception('Unable to start scalene profiler')
-    #     # if (pyiprof := os.environ.get("PYINSTRUMENT_PROFILER", None)) is not None:
-    #     if os.environ.get("PYINSTRUMENT_PROFILER", None) is not None:
-    #         try:
-    #             import pyinstrument
-    #             pyinstrument_profiler  = pyinstrument.Profiler()
-    #             pyinstrument_profiler.start()
-    #             HAS_PYINSTRUMENT = True
-    #         except Exception as exc:
-    #             log.exception(f'Unable to start pyinstrument profiler.')
     if args.deepspeed:
         log.info("DeepSpeed is enabled.")
-        pp = mpu.get_pipeline_model_parallel_world_size()
+        # pp = mpu.get_pipeline_model_parallel_world_size()
         if (
                 args.data_efficiency_curriculum_learning
                 and build_train_valid_test_datasets_provider is not None
         ):
+            log.info(
+                "Caught 'args.data_efficiency_curriculum_learning' "
+                "and 'build_train_valid_test_datasets_provider is not None'"
+            )
             train_ds = None
             # Only need to build dataset on tp rank 0 since Megatron has the
             # broadcast_data() function that broadcast data from tp rank 0.
             if mpu.get_tensor_model_parallel_rank() == 0:
+                log.info(
+                    f"Caught 'mpu.get_tensor_model_parallel_rank() == 0'"
+                )
                 # Number of train/valid/test samples.
                 if args.train_samples:
                     train_samples = args.train_samples
                     update_train_iters(args)
                 else:
                     train_samples = args.train_iters * args.global_batch_size
+                log.info(f'{train_samples=}')
                 # eval_iters and test_iters here are not actually used, only for
                 # satisfying the input of build_train_valid_test_datasets_provider.
                 # We only need to build the training data here. And we follow
@@ -765,55 +749,49 @@ def setup_model_and_optimizer(
                     eval_iters * args.global_batch_size,
                     test_iters * args.global_batch_size,
                 ]
+                log.info(f"{train_val_test_num_samples=}")
                 # Build the datasets.
                 train_ds, _, _ = build_train_valid_test_datasets_provider(
                     train_val_test_num_samples
                 )
-            with Profile("deepspeed.initialize"):
-                model, optimizer, args.deepspeed_dataloader, opt_param_scheduler = (
-                    deepspeed.initialize(
-                        model=model[0],
-                        optimizer=optimizer,
-                        args=args,
-                        lr_scheduler=opt_param_scheduler,
-                        training_data=train_ds,
-                        mpu=mpu if args.no_pipeline_parallel else None,
-                        config=args.deepspeed_config_dict,
-                    )
+            # with Profile("deepspeed.initialize"):
+            model, optimizer, args.deepspeed_dataloader, opt_param_scheduler = (
+                deepspeed.initialize(
+                    model=model[0],
+                    optimizer=optimizer,
+                    args=args,
+                    lr_scheduler=opt_param_scheduler,
+                    training_data=train_ds,
+                    mpu=mpu if args.no_pipeline_parallel else None,
+                    config=args.deepspeed_config_dict,
                 )
+            )
             model.set_data_post_process_func(data_post_process)
         else:
-            model, optimizer, _, opt_param_scheduler = deepspeed.initialize(
-                model=model[0],
-                optimizer=optimizer,
-                args=args,
-                lr_scheduler=opt_param_scheduler,
-                mpu=mpu if args.no_pipeline_parallel else None,
-                config=args.deepspeed_config_dict,
+            log.info(
+                "Did NOT catch: ('args.data_efficiency_curriculum_learning' "
+                "and 'build_train_valid_test_datasets_provider is not None')"
             )
-        # if RANK == 0:
-        #     # if HAS_SCALENE and scalene_profiler is not None:
-        #     #     dtscalene = time.perf_counter_ns() - scalene_start
-        #     #     log.info(f"Finished with scalene profile. Took: {dtscalene:.5s}s")
-        #     #     scalene_profiler.stop()
-        #     if HAS_PYINSTRUMENT and pyinstrument_profiler is not None:
-        #         dtpyinstrument = time.perf_counter_ns() - pyinstrument_start
-        #         pyinstrument_profiler.stop()
-        #         pyinstrument_profiler.print(color=True)
-        #         sp = getattr(args, 'save', None)
-        #         fp = Path(os.getcwd()) if sp is None else Path(sp)
-        #         fpath = Path(fp).joinpath(
-        #             f'pyinstrument-profile-{ez.get_timestamp()}.html'
-        #         )
-        #         log.info(
-        #             'Saving pyinstrument profile output to: '
-        #             f'{fpath.as_posix()}'
-        #         )
-        #         pyinstrument_profiler.write_html(fpath)
-        #         log.info(' '.join([
-        #             f'Finished with pyinstrument profiler.',
-        #             f'Took: {dtpyinstrument:.5f}s',
-        #         ]))
+            tds0 = time.time()
+            if os.environ.get("PYINSTRUMENT_PROFILER", None):
+                profiler = ez.profile.get_context_manager(
+                    rank=RANK, outdir=args.save
+                )
+            else:
+                from contextlib import nullcontext
+                profiler = nullcontext()
+            log.info(f"Calling 'deepspeed.initialize'...")
+            log.info(f"Wrapped with: {profiler=}")
+            with profiler:
+                model, optimizer, _, opt_param_scheduler = deepspeed.initialize(
+                    model=model[0],
+                    optimizer=optimizer,
+                    args=args,
+                    lr_scheduler=opt_param_scheduler,
+                    mpu=mpu if args.no_pipeline_parallel else None,
+                    config=args.deepspeed_config_dict,
+                )
+            log.info(f"'deepspeed.initialize' took: {time.time() - tds0:.5f}s")
         if isinstance(model, deepspeed.PipelineEngine):
             # hack to get batch_fn from pretrain_gpt.py
             model.set_batch_fn(model.module._megatron_batch_fn)
@@ -827,7 +805,6 @@ def setup_model_and_optimizer(
             )
             assert model.grid.get_data_parallel_rank() == mpu.get_data_parallel_rank()
         model = [model]
-
     # Compression has its own checkpoint loading path (e.g, loading both teacher
     # and student models). So if compression is enabled, we skip the following
     # checkpoint loading.
@@ -844,11 +821,9 @@ def setup_model_and_optimizer(
             args.iteration = 0
     else:
         model[0].global_steps = student_global_steps
-
     # We only support local DDP with multiple micro-batches.
     if len(model) > 1 or mpu.get_pipeline_model_parallel_world_size() > 1:
         assert args.DDP_impl == "local"
-
     # get model without FP16 and/or TorchDDP wrappers
     if (
         args.iteration == 0
@@ -859,11 +834,9 @@ def setup_model_and_optimizer(
         unwrapped_model[0].init_state_dict_from_bert()
         if args.fp16:
             optimizer.reload_model_params()
-
     # random-LTD requires converting transformer layers
     if args.random_ltd:
         model[0] = convert_to_random_ltd(model[0], ParallelTransformerLayer)
-
     return model, optimizer, opt_param_scheduler
 
 
@@ -875,6 +848,7 @@ def train_step(
     args = get_args()
     timers = get_timers()
 
+    assert args is not None and timers is not None
     if args.deepspeed and args.ds_pipeline_enabled:
         skipped_iter = 0
         num_zeros_in_grad = 0
@@ -1022,6 +996,7 @@ def training_log(
     args = get_args()
     timers = get_timers()
     writer = get_tensorboard_writer()
+    assert args is not None and timers is not None and writer is not None
     wandb_metrics = {}
     # Advanced, skipped, and Nan iterations.
     advanced_iters_key = "advanced iterations"
@@ -1438,7 +1413,6 @@ def training_log(
                     opt_stats_2[3],
                     args.consumed_train_tokens,
                 )
-
                 writer.add_scalar(
                     "optimizer/variance_l2", opt_stats[0] ** 0.5, iteration
                 )
@@ -1600,8 +1574,8 @@ def training_log(
         log_string += " tokens_per_gpu_per_second_tgs={:.3f} |".format(
             tokens_per_gpu_per_second
         )
-        log_string += " [LM]-TFLOPs={:.2f} |".format(tflops_lm_per_gpu)
-        log_string += " [DS]-TFLOPs={:.2f} |".format(tflops)
+        log_string += " [LM]TFLOPs={:.2f} |".format(tflops_lm_per_gpu)
+        log_string += " [DS]TFLOPs={:.2f} |".format(tflops)
         total_loss_dict[advanced_iters_key] = 0
         total_loss_dict[skipped_iters_key] = 0
         total_loss_dict[nan_iters_key] = 0
@@ -1624,8 +1598,10 @@ def training_log(
 
 
 @dlp.log
+@ez.dist.timeitlogit(rank=RANK)
 def save_checkpoint_and_time(iteration, model, optimizer, opt_param_scheduler):
     timers = get_timers()
+    assert timers is not None
     # Extra barrier is added to make sure
     # all ranks report the max time.
     # assert timers is not None
@@ -1864,7 +1840,7 @@ def evaluate(
 ):
     """Evaluation."""
     args = get_args()
-
+    assert args is not None
     if args.vision_pretraining and args.vision_pretraining_type == "dino":
         compute_feature_bank(model)
 
@@ -2051,6 +2027,7 @@ def cyclic_iter(iter):
 
 
 @dlp.log
+@ez.dist.timeitlogit(rank=RANK)
 def build_train_valid_test_datasets(build_train_valid_test_datasets_provider):
     """Build pretraining datasets."""
 
@@ -2078,15 +2055,13 @@ def build_train_valid_test_datasets(build_train_valid_test_datasets_provider):
 
 
 @dlp.log
+@ez.dist.timeitlogit(rank=RANK)
 def build_train_valid_test_data_loaders(build_train_valid_test_datasets_provider):
     """Build pretraining data loaders."""
-
     args = get_args()
-
+    assert args is not None
     (train_dataloader, valid_dataloader, test_dataloader) = (None, None, None)
-
     log.info("> building train, validation, and test datasets ...")
-
     # Backward compatibility, assume fixed batch size.
     if args.iteration > 0 and args.consumed_train_samples == 0:
         assert (
@@ -2100,7 +2075,6 @@ def build_train_valid_test_data_loaders(build_train_valid_test_datasets_provider
                 * args.eval_iters
                 * args.global_batch_size
             )
-
     # Data loader only on rank 0 of each model parallel group.
     ds_sequence_parallel = (
         mpu.get_sequence_parallel_world_size() > 1 or args.force_ds_sequence_parallel
@@ -2115,7 +2089,6 @@ def build_train_valid_test_data_loaders(build_train_valid_test_datasets_provider
         train_ds, valid_ds, test_ds = build_train_valid_test_datasets(
             build_train_valid_test_datasets_provider
         )
-
         # Build dataloders.
         train_dataloader = build_pretraining_data_loader(
             train_ds, args.consumed_train_samples
@@ -2124,7 +2097,6 @@ def build_train_valid_test_data_loaders(build_train_valid_test_datasets_provider
             valid_ds, args.consumed_valid_samples
         )
         test_dataloader = build_pretraining_data_loader(test_ds, 0)
-
         # Flags to know if we need to do training/validation/testing.
         do_train = train_dataloader is not None and args.train_iters > 0
         do_valid = valid_dataloader is not None and args.eval_iters > 0
@@ -2135,7 +2107,6 @@ def build_train_valid_test_data_loaders(build_train_valid_test_datasets_provider
         )
     else:
         flags = get_accelerator().LongTensor([0, 0, 0])
-
     # Broadcast num tokens.
     if ds_sequence_parallel:
         torch.distributed.broadcast(
@@ -2152,11 +2123,11 @@ def build_train_valid_test_data_loaders(build_train_valid_test_datasets_provider
     args.do_train = flags[0].item()
     args.do_valid = flags[1].item()
     args.do_test = flags[2].item()
-
     return train_dataloader, valid_dataloader, test_dataloader
 
 
 @dlp.log
+@ez.dist.timeitlogit(rank=RANK)
 def build_train_valid_test_data_iterators(build_train_valid_test_datasets_provider):
     """Build pretraining data iterators."""
 
