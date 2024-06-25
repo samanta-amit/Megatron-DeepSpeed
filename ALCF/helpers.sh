@@ -18,13 +18,14 @@
 # > ```
 ##############################################################################
 
-##############################################################################
-# `helpers_main`:
+##################
+# helpers_main
 #
-# This will get called automatically when
+# This will get called automatically when running:
 #
 # ```bash
-# $ source ALCF/helpers.sh
+# $ cd Megatron-DeepSpeed
+# $ PBS_O_WORKDIR=$(pwd) source ALCF/helpers.sh
 # ```
 #
 # - This will set `"${WORKING_DIR}"`, according to:
@@ -35,7 +36,7 @@
 #   this is crucial since many of the functions below use paths 
 #   which are defined relative to this "${WORKING_DIR}"
 #   (e.g. virtual environment, location of executables, etc.)
-##############################################################################
+##################
 helpers_main() {
     # for debug mode, run with `DEBUG=1`
     if [[ -n "${DEBUG:-}" ]]; then
@@ -55,28 +56,31 @@ helpers_main() {
 }
 
 ##############################################################################
-# `setup`: All-in-one helper function.
+# setup
+#
+# All-in-one helper function.
 #
 # - Explicitly, this will:
 #      1. Identify the machine we're on
 #      2. Setup `python`
 #         1. Load `conda`
 #         2. Setup `venv` on top of `conda`
-#      3. Clone + Install [`saforem2/ezpz`](https://github.com/saforem2/ezpz)
+#      3. Ensure all dependencies are installed
+#      4. Clone + Install [`saforem2/ezpz`](https://github.com/saforem2/ezpz)
 #         1. Additionally, call `source deps/ezpz/src/ezpz/bin/savejobenv`,
 #            which will automatically build a `alias launch=mpiexec ...`
 #            according to the specifics of our active job.
-#      4. Set runtime options
-#      5. Build `deepspeed_config.json`
-#      6. Build {logs, checkpoints, etc} dirs, named according to specifics of
+#      5. Set runtime options
+#      6. Build `deepspeed_config.json`
+#      7. Build {logs, checkpoints, etc} dirs, named according to specifics of
 #         current run
-#      7. Specify additional `deepspeed` arguments
-#      8. Ensure executable exists at expected path
-#      9. Setup data + tokenizer via `TOKENIZER_TYPE`
-#     10. Print job info
-#     11. Save `.env` to `CKPT_DIR` for safe keeping
-#     12. Check that we're not already running, and if so, exit.
-#     13. Setup run command to be executed.
+#      8. Specify additional `deepspeed` arguments
+#      9. Ensure executable exists at expected path
+#     10. Setup data + tokenizer via `TOKENIZER_TYPE`
+#     11. Print job info
+#     12. Save `.env` to `CKPT_DIR` for safe keeping
+#     13. Check that we're not already running, and if so, exit.
+#     14. Setup run command to be executed.
 ##############################################################################
 setup() {
     #  1. Identify machine we're on
@@ -105,7 +109,7 @@ setup() {
     make_data || exit
     # 11. Print job info
     printJobInfo || exit
-    # 12. Print info about loaded modules and runtime environment
+    # 12. Save `.env` to `CKPT_DIR` for safe keeping
     save_dotenv "${CKPT_DIR}" || exit
     # 13. Check that were not already running, if so, exit.
     check_and_kill_if_running || exit
@@ -114,7 +118,9 @@ setup() {
 }
 
 #####################################################
-# `setup_run_cmd`: Build run command to be executed.
+# setup_run_cmd
+#
+# Build run command to be executed.
 #####################################################
 setup_run_cmd() {
     #### Make it easy to track experiments by date ###################
@@ -292,7 +298,7 @@ printJobInfo() {
 }
 
 #############################################################################
-# `setupLauncher`: Launch with one of `{mpiexec, deepspeed}`.
+# setupLauncher: Launch with one of `{mpiexec, deepspeed}`.
 #
 # Explicitly, look for `LAUNCH_CMD` in environment and launch accordingly.
 # Will use `mpiexec` by default.
@@ -332,26 +338,6 @@ setupLauncher() {
     printf " %s" "$(printMagenta "${LAUNCHER}")"
 }
 
-# ##########################################################################
-# # setDSlauncher
-# #
-# # When launching with `deepspeed`, this will
-# # set the appropriate keyword arguments to be passed to `deepspeed`
-# ##########################################################################
-# setDSlauncher() {
-#     # launcher setting
-#     outdir=$1
-#     export hfds="$outdir/hostfile_deepspeed"
-#     export hfmpi="$outdir/hostfile_mpich"
-#     [ -f "$hfds" ] || exit
-#     [ -f "$hfmpi" ] || exit
-#     export LAUNCHER=${LAUNCHER:-MPICH}
-#     if [[ $LAUNCHER == "deepspeed" ]]; then
-#         export launcher=""
-#     else
-#         export launcher="--force_multi --hostfile $hfds --launcher=${LAUNCHER} --launcher_args='-hostfile ${hfmpi}'"
-#     fi
-# }
 
 set_lr_args() {
     LR_ARGS="--lr ${LR} --lr-decay-style cosine"
@@ -392,7 +378,6 @@ get_batch_size_on_polaris() {
 }
 
 
-
 ##############################################################################
 # `setParams`: Set / configure run options by parsing environment.
 #
@@ -417,11 +402,11 @@ setParams() {
         MICRO_BATCH=${MICRO_BATCH:-4}    # MICRO_BATCH = 4
         ######################################################################
         # !XXX: USE KEY VALUE STORE FIX ON AURORA [2024-06-20]
-        # use_kvs_fix_on_aurora
-        # update_ccl_env_vars_aurora
+        # use_kvs_fix_on_aurora  # <-- why are these different from those in update_ccl_env_vars_aurora ??
+        update_ccl_env_vars_aurora
         ######################################################################
-        # NOTE: if NO_FLASH_ATTN is NON-empty; then NO FLASH ATTN !!
         if [[ -z "${USE_FLASH_ATTN:-}" ]]; then
+            # NOTE: if NO_FLASH_ATTN is NON-empty; then NO FLASH ATTN !!
             export NO_FLASH_ATTN=1 # disabled on [2024-06-20] waiting on fix...
             if [[ -n "${NO_FLASH_ATTN-}" ]]; then
                 echo "Not using flash-attn!!"
@@ -645,7 +630,7 @@ setup_ezpz() {
 }
 
 #######################################################################
-# `ezpz_test`: Run simple test to make sure all nodes in working order
+# ezpz_test: Run simple test to make sure all nodes in working order
 #######################################################################
 ezpz_test() {
     printf "%s" "[$(printBlue 'ezpz:test_dist')][INFO] Running ezpz.test_dist...\n"
@@ -657,10 +642,12 @@ ezpz_test() {
     printf "%s" "[$(printBlue 'ezpz:test_dist')] Done with test!\n"
 }
 
-# +------------------------------------------------------------------------+
-# | Save important environment variables to .deepspeed_env, which will be  |
-# | forwarded to ALL ranks with DeepSpeed                                  |
-# +------------------------------------------------------------------------+
+############################################################################
+# saveDSenv
+#
+# Save important environment variables to .deepspeed_env, which will be
+# forwarded to ALL ranks with DeepSpeed 
+############################################################################
 saveDSenv() {
     echo "Saving {PATH, LD_LIBRARY_PATH, htt{p,ps}_proxy, CFLAGS, PYTHONUSERBASE} to .deepspeed_env"
     {
@@ -794,7 +781,6 @@ install_deepspeed_for_xpu() {
 }
 
 
-
 ########################################################
 # Setup / activate conda environment(s)
 ########################################################
@@ -830,10 +816,10 @@ use_kvs_fix_on_aurora() {
 
 update_ccl_env_vars_aurora() {
     export CCL_KVS_MODE=mpi
-    export CCL_CONFIGURATION_PATH=""
+    # export CCL_CONFIGURATION_PATH=""
     # unset CCL_CONFIGURATION_PATH
-    export CCL_CONFIGURATION=cpu_gpu_dpcpp
-    export CCL_ROOT="/flare/Aurora_deployment/intel/ccl/_install_release_2021_13"
+    # export CCL_CONFIGURATION=cpu_gpu_dpcpp
+    # export CCL_ROOT="/flare/Aurora_deployment/intel/ccl/_install_release_2021_13"
     export LD_LIBRARY_PATH=/flare/Aurora_deployment/intel/ccl/_install_release_2021_13/lib:$LD_LIBRARY_PATH
     export CPATH=/flare/Aurora_deployment/intel/ccl/_install_release_2021_13/include:$CPATH
     export LIBRARY_PATH=/flare/Aurora_deployment/intel/ccl/_install_release_2021_13/lib:$LIBRARY_PATH
