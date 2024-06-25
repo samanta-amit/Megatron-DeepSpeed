@@ -996,7 +996,7 @@ def training_log(
     args = get_args()
     timers = get_timers()
     writer = get_tensorboard_writer()
-    assert args is not None and timers is not None and writer is not None
+    assert args is not None and timers is not None
     wandb_metrics = {}
     # Advanced, skipped, and Nan iterations.
     advanced_iters_key = "advanced iterations"
