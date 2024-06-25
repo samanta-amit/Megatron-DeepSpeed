@@ -754,18 +754,18 @@ def setup_model_and_optimizer(
                 train_ds, _, _ = build_train_valid_test_datasets_provider(
                     train_val_test_num_samples
                 )
-            # with Profile("deepspeed.initialize"):
-            model, optimizer, args.deepspeed_dataloader, opt_param_scheduler = (
-                deepspeed.initialize(
-                    model=model[0],
-                    optimizer=optimizer,
-                    args=args,
-                    lr_scheduler=opt_param_scheduler,
-                    training_data=train_ds,
-                    mpu=mpu if args.no_pipeline_parallel else None,
-                    config=args.deepspeed_config_dict,
+            with Profile("deepspeed.initialize"):
+                model, optimizer, args.deepspeed_dataloader, opt_param_scheduler = (
+                    deepspeed.initialize(
+                        model=model[0],
+                        optimizer=optimizer,
+                        args=args,
+                        lr_scheduler=opt_param_scheduler,
+                        training_data=train_ds,
+                        mpu=mpu if args.no_pipeline_parallel else None,
+                        config=args.deepspeed_config_dict,
+                    )
                 )
-            )
             model.set_data_post_process_func(data_post_process)
         else:
             log.info(
@@ -778,9 +778,8 @@ def setup_model_and_optimizer(
                     rank=RANK, outdir=args.save
                 )
             else:
-                from contextlib import nullcontext
-                profiler = nullcontext()
-            log.info(f"Calling 'deepspeed.initialize'...")
+                profiler = Profile("deepspeed.initialize")
+            log.info("Calling 'deepspeed.initialize'...")
             log.info(f"Wrapped with: {profiler=}")
             with profiler:
                 model, optimizer, _, opt_param_scheduler = deepspeed.initialize(
