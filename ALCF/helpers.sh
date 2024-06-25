@@ -894,7 +894,7 @@ setup_venv_from_conda() {
             export VENV_DIR="${WORKING_DIR}/venvs/${CONDA_NAME}"
             echo "    - Using VENV_DIR=${VENV_DIR}"
             if [[ ! -f "${VENV_DIR}/bin/activate" ]]; then
-                printf "\n    - Creating a new virtual env on top of %s in %s" "$(printBlue "${CONDA_NAME}")" "$(printGreen "${VENV_DIR}")"
+                printf "\n    - Creating a new virtual env on top of %s in %s\n" "$(printBlue "${CONDA_NAME}")" "$(printGreen "${VENV_DIR}")"
                 mkdir -p "${VENV_DIR}"
                 python3 -m venv "${VENV_DIR}" --system-site-packages
                 source "${VENV_DIR}/bin/activate" || exit
