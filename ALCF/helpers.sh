@@ -603,15 +603,19 @@ setup_ezpz() {
     else
         ezpz_getjobenv
     fi
-    ezloc=$(python3 -m pip list | grep ezpz | awk '{print $NF}')
-    if [[ -z "${ezloc:-}" ]]; then
+    ezdir="${WORKING_DIR}/deps/ezpz"
+    if [[ ! -d "${ezdir}" ]]; then
         mkdir -p "${WORKING_DIR}/deps"
         git clone https://github.com/saforem2/ezpz "${WORKING_DIR}/deps/ezpz"
+    fi
+    ezloc=$(python3 -m pip list | grep ezpz | awk '{print $NF}')
+    if [[ -z "${ezloc:-}" ]]; then
+        printf "[setup_ezpz] Installing ezpz from %s\n" "${ezdir}"
+        python3 -m pip install -e "${ezdir}" --require-virtualenv
     else
-        printf "Found ezpz @ %s\n" "${ezloc}"
+        printf "[setup_ezpz] Found ezpz @ %s\n" "${ezloc}"
     fi
     python3 -m ezpz.jobs && source "./.jobenv"
-    echo "Done with ezpz."
     # ezloc=$(python3 -m pip list | grep ezpz | awk '{print $NF}')
     # if [[ -n "${ezloc}" ]]; then
     #     # ezpz_savejobenv
