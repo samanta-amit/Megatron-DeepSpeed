@@ -460,9 +460,10 @@ setParams() {
     export OPT="${OPT:-adamw}"
     export HOSTFILE="${HOSTFILE:-${PBS_NODEFILE}}"
     NHOSTS=$(wc -l < "${HOSTFILE}")
-    if [[ -z "${NGPU_PER_HOST-}" ]]; then
+    if [[ -z "${NGPU_PER_HOST:-}" ]]; then
         NGPU_PER_HOST=$(python3 -c 'import ezpz as ez; print(ez.get_gpus_per_node())')
     fi
+    export NGPU_PER_HOST="${NGPU_PER_HOST}"
     export WORLD_SIZE="${WORLD_SIZE:-$(( NHOSTS * NGPU_PER_HOST ))}"
     # +---[Llama2 7B Config]--------------------------------------------------+
     # export MODEL_KEY="Llama-7B"
@@ -1231,7 +1232,7 @@ generateDSconfig() {
     # elif [[ $ZERO_STAGE == 2 ]]; then
     elif [ "${ZERO_STAGE}" == 2 ] || [ "${ZERO_STAGE}" == 1 ]; then
     # if [[ -n "${CPU_OPTIMIZER}" ]]; then
-    if [[ "${CPU_OPTIMIZER}" != 0 ]]; then
+    if [[ "${CPU_OPTIMIZER:-0}" != 0 ]]; then
     echo "!!!! CAUGHT CPU_OPTIMIZER !!!!"
     zero="\
         \"zero_optimization\": {
