@@ -66,7 +66,7 @@ from dftracer.logger import dftracer as logger, dft_fn as dft_event_logging
 dft_fn = dft_event_logging("IO")
 #dft_fn("COMPUTE")
 dft_pid=os.getpid()
-log_inst=logger.initialize_log(f"./llama_log/dft_fn_py_level-{dft_pid}.pfw", "", dft_pid)
+log_inst=logger.initialize_log(f"./llama_log/dft_fn_py_level-{dft_pid}.pfw", "./ALCF/data-lists/polaris/books.txt", dft_pid)
 
 dlp = Profile("TRAINING")
 
@@ -1950,7 +1950,6 @@ def evaluate(
 
     return total_loss_dict, collected_non_loss_data
 
-
 @dlp.log
 def evaluate_and_print_results(
     prefix,
@@ -2176,3 +2175,9 @@ def build_train_valid_test_data_iterators(build_train_valid_test_datasets_provid
         test_data_iterator = None
 
     return train_data_iterator, valid_data_iterator, test_data_iterator
+
+def main():
+    log_inst=logger.initialize_log(None, None, -1)
+
+if __name__ == '__main__':
+    main()
