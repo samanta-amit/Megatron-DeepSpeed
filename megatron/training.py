@@ -62,6 +62,12 @@ from megatron.model.transformer import ParallelTransformerLayer
 import ezpz as ez
 import logging
 
+from dftracer.logger import dftracer as logger, dft_fn as dft_event_logging
+dft_fn = dft_event_logging("IO")
+#dft_fn("COMPUTE")
+dft_pid=os.getpid()
+log_inst=logger.initialize_log(f"./llama_log/dft_fn_py_level-{dft_pid}.pfw", "", dft_pid)
+
 dlp = Profile("TRAINING")
 
 # from deepspeed import comm as dist
@@ -88,7 +94,7 @@ def print_datetime(string):
     time_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     log.info("[" + string + "] datetime={} ".format(time_str))
 
-
+@dft_fn.log
 def num_floating_point_operations(args, batch_size):
     # Group Query Attention.
     # if not args.group_query_attention:
@@ -141,6 +147,7 @@ def _create_ds_config_dict():
     return ds_config_dict
 
 
+@dft_fn.log
 @dlp.log
 def pretrain(
         train_valid_test_dataset_provider,
@@ -363,7 +370,7 @@ def pretrain(
     return model
 
 
-@dlp.log
+@dft_fn.log
 def update_train_iters(args):
     # For iteration-based training, we don't need to do anything
     if args.train_iters:
@@ -838,7 +845,7 @@ def setup_model_and_optimizer(
         model[0] = convert_to_random_ltd(model[0], ParallelTransformerLayer)
     return model, optimizer, opt_param_scheduler
 
-
+@dft_fn.log
 @dlp.log
 def train_step(
     forward_step_func, data_iterator, model, optimizer, opt_param_scheduler, config
@@ -1612,7 +1619,7 @@ def save_checkpoint_and_time(iteration, model, optimizer, opt_param_scheduler):
     )
     timers.log(["save-checkpoint"])
 
-
+@dft_fn.log
 @dlp.log
 def train(
     forward_step_func,
