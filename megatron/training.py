@@ -66,7 +66,10 @@ from dftracer.logger import dftracer as logger, dft_fn as dft_event_logging
 dft_fn = dft_event_logging("IO")
 #dft_fn("COMPUTE")
 dft_pid=os.getpid()
-log_inst=logger.initialize_log(f"./llama_log/dft_fn_py_level-{dft_pid}.pfw", "./ALCF/data-lists/polaris/books.txt", dft_pid)
+log_inst=logger.initialize_log(None, None, -1)
+#log_inst=logger.initialize_log(f"./llama_log/dft_fn_py_level-{dft_pid}.pfw", None, -1)
+compute_dft = dft_event_logging("Compute")
+io_dft = dft_event_logging("IO", name="real_IO")
 
 dlp = Profile("TRAINING")
 
@@ -369,7 +372,7 @@ def pretrain(
         )
     return model
 
-
+@dft_fn.log
 @dft_fn.log
 def update_train_iters(args):
     # For iteration-based training, we don't need to do anything
@@ -398,7 +401,7 @@ def update_train_iters(args):
 
     log.info("setting training iterations to {}".format(args.train_iters))
 
-
+@dft_fn.log
 @dlp.log
 def setup_teacher_model(args, model_provider):
     log.info("***>>>>> Student model checkpoint iteration:{}".format(args.iteration))
@@ -428,7 +431,7 @@ def setup_teacher_model(args, model_provider):
 
     return teacher_model
 
-
+@dft_fn.log
 @dlp.log
 @ez.dist.timeitlogit(rank=RANK)
 def get_model(
@@ -575,7 +578,7 @@ def get_model(
 
     return model
 
-
+@dft_fn.log
 @dlp.log
 @ez.dist.timeitlogit(rank=RANK)
 def get_optimizer_param_scheduler(optimizer):
@@ -626,7 +629,7 @@ def get_optimizer_param_scheduler(optimizer):
 
     return opt_param_scheduler
 
-
+@dft_fn.log
 @dlp.log
 def load_model_weights_only(model_provider_func):
     """Setup model and optimizer."""
@@ -761,7 +764,8 @@ def setup_model_and_optimizer(
                 train_ds, _, _ = build_train_valid_test_datasets_provider(
                     train_val_test_num_samples
                 )
-            with Profile("deepspeed.initialize"):
+            #with Profile("deepspeed.initialize"):
+            with dft_event_logging("compute", name="model-compute-backward-prop") as compute:
                 model, optimizer, args.deepspeed_dataloader, opt_param_scheduler = (
                     deepspeed.initialize(
                         model=model[0],
@@ -1834,7 +1838,7 @@ def train(
             sys.exit()
     return iteration
 
-
+@dft_fn.log
 @dlp.log
 def evaluate(
     forward_step_func,
@@ -1950,6 +1954,7 @@ def evaluate(
 
     return total_loss_dict, collected_non_loss_data
 
+@dft_fn.log
 @dlp.log
 def evaluate_and_print_results(
     prefix,
@@ -2177,7 +2182,7 @@ def build_train_valid_test_data_iterators(build_train_valid_test_datasets_provid
     return train_data_iterator, valid_data_iterator, test_data_iterator
 
 def main():
-    log_inst=logger.initialize_log(None, None, -1)
+    log_inst.finalize()
 
 if __name__ == '__main__':
     main()
