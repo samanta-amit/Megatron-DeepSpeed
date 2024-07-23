@@ -66,8 +66,8 @@ from dftracer.logger import dftracer as logger, dft_fn as dft_event_logging
 dft_fn = dft_event_logging("IO")
 #dft_fn("COMPUTE")
 dft_pid=os.getpid()
-log_inst=logger.initialize_log(None, None, -1)
-#log_inst=logger.initialize_log(f"./llama_log/dft_fn_py_level-{dft_pid}.pfw", None, -1)
+#log_inst=logger.initialize_log(None, None, -1)
+log_inst=logger.initialize_log(f"./llama_log/dft_fn_py_level-{dft_pid}.pfw", None, -1)
 compute_dft = dft_event_logging("Compute")
 io_dft = dft_event_logging("IO", name="real_IO")
 
@@ -764,8 +764,8 @@ def setup_model_and_optimizer(
                 train_ds, _, _ = build_train_valid_test_datasets_provider(
                     train_val_test_num_samples
                 )
-            #with Profile("deepspeed.initialize"):
-            with dft_event_logging("compute", name="model-compute-backward-prop") as compute:
+            with Profile("deepspeed.initialize"):
+            #with dft_event_logging("compute", name="model-compute-backward-prop") as compute:
                 model, optimizer, args.deepspeed_dataloader, opt_param_scheduler = (
                     deepspeed.initialize(
                         model=model[0],
