@@ -6,5 +6,6 @@ export WANDB_MODE=disabled
 export DFTRACER_LOG_LEVEL=ERROR
 export DFTRACER_ENABLE=1
 export DFTRACER_INC_METADATA=1
-export DFTRACER_DATA_DIR=/eagle/datasets/dolma/data_v1.7_Llama2Tokenizer/
+export DFTRACER_DATA_DIR="all"
+#export DFTRACER_DATA_DIR=/eagle/datasets/dolma/data_v1.7_Llama2Tokenizer/
 export DFTRACER_LOG_FILE=./dft_fn_posix_level.pfw
