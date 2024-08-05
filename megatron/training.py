@@ -324,15 +324,16 @@ def pretrain(
             log.info("retro cyclic train iters : %d" % args.train_iters)
         iteration = 0
         if args.do_train and args.train_iters > 0:
-            iteration = train(
-                forward_step_func,
-                model,
-                optimizer,
-                opt_param_scheduler,
-                train_data_iterator,
-                valid_data_iterator,
-                process_non_loss_data_func,
-            )
+            with dft_event_logging("compute", name="model-compute-forward-prop") as compute:
+                iteration = train(
+                    forward_step_func,
+                    model,
+                    optimizer,
+                    opt_param_scheduler,
+                    train_data_iterator,
+                    valid_data_iterator,
+                    process_non_loss_data_func,
+                )
         print_datetime("after training is done")
         # Clean the model
         if args.compression_training:
@@ -882,28 +883,30 @@ def train_step(
         optimizer.zero_grad()
 
     # Forward pass.
-    timers("forward-backward", log_level=1).start(barrier=args.barrier_with_L1_time)
-    forward_backward_func = get_forward_backward_func()
-    if args.mos or args.kd:
-        # args.teacher_forward is used as global variable to enable kd loss
-        # calculation in forward pass. Users do not need to set it in the
-        # command line to use kd.
-        args.teacher_forward = True
+    with dft_event_logging("compute", name="model-compute-forward-prop") as compute:
+        timers("forward-backward", log_level=1).start(barrier=args.barrier_with_L1_time)
+        forward_backward_func = get_forward_backward_func()
+        if args.mos or args.kd:
+            # args.teacher_forward is used as global variable to enable kd loss
+            # calculation in forward pass. Users do not need to set it in the
+            # command line to use kd.
+            args.teacher_forward = True
 
     # set timers to None if none of the timers in fwd_bwd are active, just to save the checks
     if args.timing_log_level < 2:
         config.timers = None
 
-    losses_reduced = forward_backward_func(
-        forward_step_func=forward_step_func,
-        data_iterator=data_iterator,
-        model=model,
-        num_microbatches=get_num_microbatches(),
-        seq_length=args.seq_length,
-        micro_batch_size=args.micro_batch_size,
-        decoder_seq_length=args.decoder_seq_length,
-        forward_only=False,
-    )
+    with dft_event_logging("compute", name="model-compute-forward-prop") as compute:
+        losses_reduced = forward_backward_func(
+            forward_step_func=forward_step_func,
+            data_iterator=data_iterator,
+            model=model,
+            num_microbatches=get_num_microbatches(),
+            seq_length=args.seq_length,
+            micro_batch_size=args.micro_batch_size,
+            decoder_seq_length=args.decoder_seq_length,
+            forward_only=False,
+        )
 
     # reset timers if necessary
     if config.timers is None:
@@ -1697,7 +1700,8 @@ def train(
             except Exception:
                 log.warning("TORCH PROFILER WARNING: XPU is not supported")
                 activities = [ProfilerActivity.CPU, ProfilerActivity.CUDA]
-            with profile(activities=activities) as prof:
+            #with profile(activities=activities) as prof:
+            with dft_event_logging("compute", name="model-compute-forward-prop") as compute:
                 loss_dict, skipped_iter, grad_norm, num_zeros_in_grad = train_step(
                     forward_step_func,
                     train_data_iterator,
@@ -1884,20 +1888,22 @@ def evaluate(
             config.timers = None
             if args.deepspeed and args.ds_pipeline_enabled:
                 # DeepSpeed uses eval_batch() and already aggregates losses.
-                assert isinstance(model, list) and len(model) == 1
-                loss = model[0].eval_batch(data_iterator)
-                loss_dicts = [{"lm loss": loss}] * get_num_microbatches()
+                with dft_event_logging("compute", name="model-compute-forward-prop") as compute:
+                    assert isinstance(model, list) and len(model) == 1
+                    loss = model[0].eval_batch(data_iterator)
+                    loss_dicts = [{"lm loss": loss}] * get_num_microbatches()
             else:
-                loss_dicts = forward_backward_func(
-                    forward_step_func=forward_step_func,
-                    data_iterator=data_iterator,
-                    model=model,
-                    num_microbatches=get_num_microbatches(),
-                    seq_length=args.seq_length,
-                    micro_batch_size=args.micro_batch_size,
-                    decoder_seq_length=args.decoder_seq_length,
-                    forward_only=True,
-                )
+                with dft_event_logging("compute", name="model-compute-forward-prop") as compute:
+                    loss_dicts = forward_backward_func(
+                        forward_step_func=forward_step_func,
+                        data_iterator=data_iterator,
+                        model=model,
+                        num_microbatches=get_num_microbatches(),
+                        seq_length=args.seq_length,
+                        micro_batch_size=args.micro_batch_size,
+                        decoder_seq_length=args.decoder_seq_length,
+                        forward_only=True,
+                    )
             config.timers = get_timers()
 
             # Empty unused memory
@@ -1923,17 +1929,18 @@ def evaluate(
             )
         collected_non_loss_data = None
         if process_non_loss_data_func is not None and is_last_rank():
-            collected_non_loss_data = forward_backward_func(
-                forward_step_func=forward_step_func,
-                data_iterator=data_iterator,
-                model=model,
-                num_microbatches=get_num_microbatches(),
-                seq_length=args.seq_length,
-                micro_batch_size=args.micro_batch_size,
-                decoder_seq_length=args.decoder_seq_length,
-                forward_only=True,
-                collect_non_loss_data=True,
-            )
+            with dft_event_logging("compute", name="model-compute-forward-prop") as compute:
+                collected_non_loss_data = forward_backward_func(
+                    forward_step_func=forward_step_func,
+                    data_iterator=data_iterator,
+                    model=model,
+                    num_microbatches=get_num_microbatches(),
+                    seq_length=args.seq_length,
+                    micro_batch_size=args.micro_batch_size,
+                    decoder_seq_length=args.decoder_seq_length,
+                    forward_only=True,
+                    collect_non_loss_data=True,
+                )
 
     # Move model back to the train mode.
     for model_module in model:
